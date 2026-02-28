@@ -110,7 +110,7 @@ voiceme transcribe audio.wav -o result.txt     # save to file
 |------|-------|-------------|---------|
 | `--model` | `-m` | Whisper model | `large-v3-turbo` |
 | `--lang` | `-l` | Force language code | auto-detect |
-| `--output` | `-o` | Save text to file | stdout |
+| `--output` | `-o` | Save text to file | `STT/texts_out/` |
 | `--json` | | JSON output with timestamps | off |
 
 Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
@@ -216,6 +216,13 @@ Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
 ## Project Structure
 
 ```
+TTS/
+  texts_in/         # authored .md scripts (tracked in git)
+  voices_out/       # generated WAV/MP3 (gitignored)
+  samples/          # voice samples for cloning (gitignored)
+STT/
+  audio_in/         # audio files to transcribe (gitignored)
+  texts_out/        # transcription results (gitignored)
 src/voiceme/
   cli.py            # Typer commands (entry point)
   engine.py         # Abstract TTSEngine + registry

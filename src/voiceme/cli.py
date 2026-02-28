@@ -16,7 +16,7 @@ app.add_typer(samples_app, name="samples")
 
 @samples_app.command("list")
 def samples_list():
-    """List all samples in the samples/ directory."""
+    """List all samples in the TTS/samples/ directory."""
     from voiceme.samples import list_samples
 
     items = list_samples()
