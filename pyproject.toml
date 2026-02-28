@@ -8,8 +8,8 @@ dependencies = [
     "qwen-tts",
     "chatterbox-tts",
     "soundfile",
-    "torch>=2.6",
-    "torchaudio>=2.6",
+    "torch>=2.7",
+    "torchaudio>=2.7",
 ]
 
 [project.scripts]
@@ -26,8 +26,14 @@ packages = ["src/voiceme"]
 target-version = "py312"
 line-length = 100
 
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+
 [tool.uv]
 override-dependencies = [
+    "torch>=2.7",
+    "torchaudio>=2.7",
     # chatterbox pins transformers==4.46.3, qwen-tts pins ==4.57.3
     "transformers>=4.57.3",
     # chatterbox pins numpy<1.26.0 which doesn't build on Python 3.12

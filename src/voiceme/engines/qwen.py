@@ -77,6 +77,9 @@ class QwenEngine(TTSEngine):
         gen_kwargs = dict(text=text, language=language, ref_audio=str(ref_audio))
         if ref_text:
             gen_kwargs["ref_text"] = ref_text
+        else:
+            # No transcript provided — use x-vector only mode (speaker embedding, no ICL)
+            gen_kwargs["x_vector_only_mode"] = True
 
         wavs, sr = model.generate_voice_clone(**gen_kwargs)
         output_path.parent.mkdir(parents=True, exist_ok=True)
