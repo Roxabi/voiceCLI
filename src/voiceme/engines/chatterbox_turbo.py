@@ -1,27 +1,10 @@
-import re
-
 import numpy as np
 import soundfile as sf
 from pathlib import Path
 
 from voiceme.engine import TTSEngine, cuda_guard
-from voiceme.models import warn_if_first_download
-
-
-def _split_sentences(text: str, max_chars: int = 250) -> list[str]:
-    """Split text into sentence-sized chunks for Chatterbox (avoids 40s cutoff)."""
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    chunks, current = [], ""
-    for s in sentences:
-        if len(current) + len(s) <= max_chars:
-            current += (" " + s if current else s)
-        else:
-            if current:
-                chunks.append(current.strip())
-            current = s
-    if current:
-        chunks.append(current.strip())
-    return chunks
+from voiceme.models import CHATTERBOX_MODEL, warn_if_first_download
+from voiceme.utils import split_sentences
 
 
 class ChatterboxTurboEngine(TTSEngine):
@@ -35,7 +18,7 @@ class ChatterboxTurboEngine(TTSEngine):
             with cuda_guard("chatterbox-turbo"):
                 from chatterbox.tts import ChatterboxTTS
 
-                warn_if_first_download("ResembleAI/chatterbox")
+                warn_if_first_download(CHATTERBOX_MODEL)
                 print("[chatterbox-turbo] Loading model...")
                 self._model = ChatterboxTTS.from_pretrained(device="cuda")
                 print("[chatterbox-turbo] Model loaded.")
@@ -44,7 +27,7 @@ class ChatterboxTurboEngine(TTSEngine):
     def _generate_chunked(self, text: str, **gen_kwargs) -> np.ndarray:
         """Generate audio in sentence-sized chunks and concatenate."""
         model = self._load_model()
-        chunks = _split_sentences(text)
+        chunks = split_sentences(text)
         wavs = []
         for i, chunk in enumerate(chunks):
             print(f"  [{i + 1}/{len(chunks)}] {chunk[:60]}...")

@@ -6,11 +6,16 @@ from pathlib import Path
 
 from huggingface_hub.constants import HF_HUB_CACHE
 
+# Named constants for model repo IDs (single source of truth)
+QWEN_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+QWEN_CLONE_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+CHATTERBOX_MODEL = "ResembleAI/chatterbox"
+
 # repo_id → (display_name, estimated_size_gb)
 MODEL_REGISTRY: dict[str, tuple[str, float]] = {
-    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice": ("Qwen3 TTS CustomVoice", 3.5),
-    "Qwen/Qwen3-TTS-12Hz-1.7B-Base": ("Qwen3 TTS Base (clone)", 3.5),
-    "ResembleAI/chatterbox": ("Chatterbox (turbo + multilingual)", 1.8),
+    QWEN_MODEL: ("Qwen3 TTS CustomVoice", 3.5),
+    QWEN_CLONE_MODEL: ("Qwen3 TTS Base (clone)", 3.5),
+    CHATTERBOX_MODEL: ("Chatterbox (turbo + multilingual)", 1.8),
 }
 
 

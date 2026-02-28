@@ -58,6 +58,24 @@ def build_output_prefix(
     return "_".join(parts)
 
 
+def split_sentences(text: str, max_chars: int = 250) -> list[str]:
+    """Split text into sentence-sized chunks (avoids Chatterbox 40s cutoff)."""
+    import re
+
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks, current = [], ""
+    for s in sentences:
+        if len(current) + len(s) <= max_chars:
+            current += (" " + s if current else s)
+        else:
+            if current:
+                chunks.append(current.strip())
+            current = s
+    if current:
+        chunks.append(current.strip())
+    return chunks
+
+
 def wav_to_mp3(wav_path: Path, bitrate: int = 192) -> Path:
     """Convert a WAV file to MP3 using lameenc. Returns the MP3 path."""
     import lameenc
