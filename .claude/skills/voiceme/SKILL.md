@@ -74,9 +74,27 @@ Your text to synthesize goes here.
 | `exaggeration` | Expressiveness 0.25-2.0 (default 0.5) | chatterbox only |
 | `cfg_weight` | Pacing control 0.0-1.0 (default 0.5) | chatterbox only |
 
+## Multi-Segment Emotion (Qwen generate only)
+
+Use `<!-- instruct: ... -->` HTML comments for per-section emotion:
+
+```markdown
+---
+language: French
+engine: qwen
+---
+
+<!-- instruct: Speak with gravitas -->
+First paragraph.
+
+<!-- instruct: Laughing, amused -->
+Second paragraph.
+```
+
 ## Engine Notes
 
-- **Qwen**: Supports built-in voices and voice cloning. Use `instruct` for emotion. Clone without ref_text uses x_vector_only_mode.
+- **Qwen generate**: Supports built-in voices + `instruct` for emotion (including multi-segment). French works great.
+- **Qwen clone**: Voice cloning works but does NOT support `instruct` — emotion control unavailable.
 - **Chatterbox**: English-only base model. Paralinguistic tags (`[laugh]`, `[sigh]`) only work in Turbo model. For passionate speech: exaggeration 0.7-0.8, cfg_weight 0.3.
 
 ## Handling the user's request

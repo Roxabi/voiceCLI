@@ -133,6 +133,8 @@ def generate(
             extra_kwargs["exaggeration"] = doc.exaggeration
         if doc.cfg_weight is not None:
             extra_kwargs["cfg_weight"] = doc.cfg_weight
+        if doc.segments and len(doc.segments) > 1:
+            extra_kwargs["segments"] = doc.segments
 
     eng = get_engine(engine)
     out = output or default_output_path(engine)
@@ -181,6 +183,8 @@ def clone(
             extra_kwargs["exaggeration"] = doc.exaggeration
         if doc.cfg_weight is not None:
             extra_kwargs["cfg_weight"] = doc.cfg_weight
+        if doc.segments and len(doc.segments) > 1:
+            extra_kwargs["segments"] = doc.segments
 
     # Fall back to active sample if --ref not provided
     if ref is None:

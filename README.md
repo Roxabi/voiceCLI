@@ -98,7 +98,7 @@ voiceme emotions
 
 ## Markdown File Input
 
-Instead of raw text, `generate` accepts a `.md` file with YAML frontmatter:
+Instead of raw text, `generate` and `clone` accept a `.md` file with YAML frontmatter:
 
 ```markdown
 ---
@@ -128,17 +128,49 @@ All optional — CLI flags override frontmatter values.
 
 Markdown formatting (`# headers`, `**bold**`, `[links](url)`, etc.) is stripped automatically. Paralinguistic tags like `[laugh]` and `[sigh]` are preserved for Chatterbox.
 
+### Multi-segment emotion control
+
+Use `<!-- instruct: ... -->` HTML comments to vary the tone per section:
+
+```markdown
+---
+language: French
+engine: qwen
+instruct: "Default calm tone"
+---
+
+<!-- instruct: Speak with gravitas and suspense -->
+Le darwinisme et le socialisme ! Deux visions du monde...
+
+<!-- instruct: Rising indignation and outrage -->
+Et certains ont osé appliquer cette logique à la société humaine !
+
+<!-- instruct: Warm, earnest tenderness -->
+L'être humain ne survit pas seul. Il survit en groupe.
+```
+
+Each section is generated with its own emotion, then concatenated into a single audio file.
+
+> **Note:** Multi-segment instruct only works with `voiceme generate` (built-in voices). The clone model does not support `instruct`.
+
 ## Emotion Controls
 
-**Qwen** — use `instruct` (free-form text):
-- `"Speak angrily"`, `"Whispering"`, `"With excitement"`
+**Qwen** — use `instruct` (free-form text, English or Chinese):
+- `"Speak angrily"`, `"Whispering"`, `"With excitement"`, `"Laughing, amused"`
+- Works even when generating French speech — write instructions in English
 
-**Chatterbox** — inline tags in text:
+**Chatterbox** — inline tags in text (Turbo model only, not base):
 - `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`
 
 **Chatterbox** — numeric controls:
 - `exaggeration` (0.25–2.0): how expressive
 - `cfg_weight` (0.0–1.0): pacing tightness
+
+### Known limitations
+
+- **Qwen clone** (`voiceme clone`): does NOT support `instruct` — emotion control is not available when cloning a voice
+- **Chatterbox**: English-only base model. French output will sound off. Use Qwen for French.
+- **Chatterbox tags**: `[laugh]`, `[sigh]` etc. only work in the Turbo model, not the base model we ship
 
 ## Available Voices (Qwen)
 

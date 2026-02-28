@@ -64,11 +64,37 @@ voiceme emotions                           # emotion/expressiveness cheat sheet
 language: French          # both engines
 voice: Ryan               # qwen only
 engine: qwen              # qwen | chatterbox
-instruct: "Speak angrily" # qwen only (free-form tone instruction)
+instruct: "Speak angrily" # qwen only — default instruct for all sections
 exaggeration: 0.75        # chatterbox only (0.25-2.0, default 0.5)
 cfg_weight: 0.3           # chatterbox only (0.0-1.0, default 0.5)
 ---
 ```
+
+## Multi-Segment Instruct (Qwen generate only)
+
+Use `<!-- instruct: ... -->` HTML comments to vary emotion per section:
+
+```markdown
+---
+language: French
+engine: qwen
+instruct: "Default tone"
+---
+
+<!-- instruct: Speak with gravitas -->
+First paragraph gets gravitas.
+
+<!-- instruct: Laughing, amused -->
+This part sounds amused.
+
+<!-- instruct: Fierce intensity -->
+Back to intensity here.
+```
+
+Each section is generated separately with its own instruct, then concatenated.
+
+**Limitation:** Multi-segment instruct only works with `voiceme generate` (CustomVoice model).
+The clone model (`generate_voice_clone`) does NOT support `instruct` — it is silently ignored.
 
 ## Key Patterns
 
@@ -78,8 +104,9 @@ cfg_weight: 0.3           # chatterbox only (0.0-1.0, default 0.5)
 - `clone` falls back to active sample when `--ref` is omitted
 - CLI flags always override frontmatter values
 - Qwen clone uses `x_vector_only_mode=True` when no `--ref-text` is provided
+- Qwen clone does NOT support `instruct` — only `generate` (CustomVoice) does
 - Chatterbox splits long text into sentence chunks (~250 chars) to avoid 40s cutoff
-- Chatterbox is English-only (base model). For French, results vary.
+- Chatterbox is English-only (base model). For French, use Qwen.
 - Recommended Chatterbox settings: passionate speech = exaggeration 0.7-0.8, cfg_weight 0.3
 
 ## Conventions

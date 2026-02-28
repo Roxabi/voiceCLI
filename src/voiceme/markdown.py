@@ -6,6 +6,14 @@ from pathlib import Path
 
 
 @dataclass
+class Segment:
+    """A text segment with its own instruct directive."""
+
+    text: str
+    instruct: str | None = None
+
+
+@dataclass
 class TTSDocument:
     text: str
     language: str | None = None
@@ -15,6 +23,7 @@ class TTSDocument:
     exaggeration: float | None = None
     cfg_weight: float | None = None
     extra: dict = field(default_factory=dict)
+    segments: list[Segment] = field(default_factory=list)
 
 
 def parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -71,14 +80,46 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
+_INSTRUCT_RE = re.compile(r"<!--\s*instruct:\s*(.+?)\s*-->")
+
+
+def _parse_segments(body: str, default_instruct: str | None) -> list[Segment]:
+    """Split body on <!-- instruct: ... --> comments into per-section segments."""
+    parts = _INSTRUCT_RE.split(body)
+
+    # No instruct comments found → single segment
+    if len(parts) == 1:
+        text = strip_markdown(parts[0])
+        if text:
+            return [Segment(text=text, instruct=default_instruct)]
+        return []
+
+    segments: list[Segment] = []
+
+    # parts[0] is text before the first <!-- instruct: --> (may be empty)
+    pre_text = strip_markdown(parts[0])
+    if pre_text:
+        segments.append(Segment(text=pre_text, instruct=default_instruct))
+
+    # Remaining parts alternate: instruct_value, text, instruct_value, text, ...
+    for i in range(1, len(parts), 2):
+        instruct = parts[i].strip()
+        text = strip_markdown(parts[i + 1]) if i + 1 < len(parts) else ""
+        if text:
+            segments.append(Segment(text=text, instruct=instruct or default_instruct))
+
+    return segments
+
+
 def parse_md_file(path: Path) -> TTSDocument:
     """Parse a .md file into a TTSDocument."""
     content = path.read_text(encoding="utf-8")
     metadata, body = parse_frontmatter(content)
-    text = strip_markdown(body)
 
     known_keys = {"language", "voice", "engine", "instruct", "exaggeration", "cfg_weight"}
     extra = {k: v for k, v in metadata.items() if k not in known_keys}
+
+    default_instruct = metadata.get("instruct")
 
     # Parse numeric fields
     exaggeration = None
@@ -95,13 +136,18 @@ def parse_md_file(path: Path) -> TTSDocument:
         except ValueError:
             pass
 
+    segments = _parse_segments(body, default_instruct)
+    # Full text is the concatenation of all segments (for backward compat)
+    text = " ".join(seg.text for seg in segments) if segments else strip_markdown(body)
+
     return TTSDocument(
         text=text,
         language=metadata.get("language"),
         voice=metadata.get("voice"),
         engine=metadata.get("engine"),
-        instruct=metadata.get("instruct"),
+        instruct=default_instruct,
         exaggeration=exaggeration,
         cfg_weight=cfg_weight,
         extra=extra,
+        segments=segments,
     )
