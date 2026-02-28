@@ -63,6 +63,8 @@ TAG_TO_INSTRUCT_FR = {
     "clear throat": "En se raclant la gorge",
 }
 
+assert TAG_TO_INSTRUCT_FR.keys() == TAG_TO_INSTRUCT_EN.keys(), "Tag maps must have identical keys"
+
 _TAG_TO_INSTRUCT_BY_LANG = {
     "french": TAG_TO_INSTRUCT_FR,
     "français": TAG_TO_INSTRUCT_FR,

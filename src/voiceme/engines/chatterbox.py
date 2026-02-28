@@ -5,26 +5,7 @@ import soundfile as sf
 from pathlib import Path
 
 from voiceme.engine import TTSEngine
-
-# Map full language names to ISO 639-1 codes for Chatterbox Multilingual
-_LANG_MAP = {
-    "arabic": "ar", "danish": "da", "german": "de", "greek": "el",
-    "english": "en", "spanish": "es", "finnish": "fi", "french": "fr",
-    "hebrew": "he", "hindi": "hi", "italian": "it", "japanese": "ja",
-    "korean": "ko", "malay": "ms", "dutch": "nl", "norwegian": "no",
-    "polish": "pl", "portuguese": "pt", "russian": "ru", "swedish": "sv",
-    "swahili": "sw", "turkish": "tr", "chinese": "zh",
-}
-
-
-def _resolve_language(language: str) -> str:
-    """Convert a language name or code to an ISO 639-1 code."""
-    lang = language.lower().strip()
-    if lang in _LANG_MAP.values():
-        return lang
-    if lang in _LANG_MAP:
-        return _LANG_MAP[lang]
-    return "en"
+from voiceme.utils import resolve_language as _resolve_language
 
 
 def _split_sentences(text: str, max_chars: int = 250) -> list[str]:

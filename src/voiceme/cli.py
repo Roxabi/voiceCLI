@@ -112,7 +112,7 @@ def generate(
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     extra_kwargs: dict = {}
-    script_name: str | None = None
+    script_stem: str | None = None
 
     # Detect .md file input
     text_path = Path(text)
@@ -120,7 +120,7 @@ def generate(
         from voiceme.markdown import parse_md_file
         from voiceme.translate import translate_for_engine
 
-        script_name = text
+        script_stem = text_path.stem
         doc = parse_md_file(text_path)
         # Frontmatter provides defaults; CLI flags override
         if doc.engine:
@@ -141,7 +141,7 @@ def generate(
             extra_kwargs["segments"] = doc.segments
 
     eng = get_engine(engine)
-    prefix = build_output_prefix(engine, script=script_name, voice=voice, language=language)
+    prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
     out = output or default_output_path(prefix)
     result = eng.generate(text, voice, out, language=language, **extra_kwargs)
     typer.echo(f"Saved to {result}")
@@ -170,7 +170,7 @@ def clone(
 ):
     """Clone a voice from reference audio and synthesize text."""
     extra_kwargs: dict = {}
-    script_name: str | None = None
+    script_stem: str | None = None
 
     # Detect .md file input
     text_path = Path(text)
@@ -178,7 +178,7 @@ def clone(
         from voiceme.markdown import parse_md_file
         from voiceme.translate import translate_for_engine
 
-        script_name = text
+        script_stem = text_path.stem
         doc = parse_md_file(text_path)
         if doc.engine:
             engine = doc.engine
@@ -214,7 +214,7 @@ def clone(
         raise typer.Exit(1)
 
     eng = get_engine(engine)
-    prefix = build_output_prefix(engine, script=script_name, language=language, clone=True)
+    prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
     out = output or default_output_path(prefix)
     result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
     typer.echo(f"Saved to {result}")

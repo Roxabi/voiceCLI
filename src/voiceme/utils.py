@@ -3,6 +3,26 @@ from pathlib import Path
 
 OUTPUT_DIR = Path("output")
 
+# Map full language names to ISO 639-1 codes (shared across engines and utils)
+LANG_MAP = {
+    "arabic": "ar", "danish": "da", "german": "de", "greek": "el",
+    "english": "en", "spanish": "es", "finnish": "fi", "french": "fr",
+    "hebrew": "he", "hindi": "hi", "italian": "it", "japanese": "ja",
+    "korean": "ko", "malay": "ms", "dutch": "nl", "norwegian": "no",
+    "polish": "pl", "portuguese": "pt", "russian": "ru", "swedish": "sv",
+    "swahili": "sw", "turkish": "tr", "chinese": "zh",
+}
+
+
+def resolve_language(language: str) -> str:
+    """Convert a language name or code to an ISO 639-1 code."""
+    lang = language.lower().strip()
+    if lang in LANG_MAP.values():
+        return lang
+    if lang in LANG_MAP:
+        return LANG_MAP[lang]
+    return "en"
+
 
 def default_output_path(prefix: str = "voiceme", fmt: str = "wav") -> Path:
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -27,14 +47,14 @@ def build_output_prefix(
     """
     parts: list[str] = []
     if script:
-        parts.append(Path(script).stem)
+        parts.append(script)
     parts.append(engine)
     if clone:
         parts.append("clone")
     if voice and voice != "default":
         parts.append(voice.lower())
     if language:
-        parts.append(language[:2].lower())
+        parts.append(resolve_language(language))
     return "_".join(parts)
 
 
