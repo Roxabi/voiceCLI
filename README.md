@@ -159,18 +159,17 @@ Each section is generated with its own emotion, then concatenated into a single 
 - `"Speak angrily"`, `"Whispering"`, `"With excitement"`, `"Laughing, amused"`
 - Works even when generating French speech — write instructions in English
 
-**Chatterbox** — inline tags in text (Turbo model only, not base):
-- `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`
-
-**Chatterbox** — numeric controls:
+**Chatterbox** — numeric controls (works in all 23 languages):
 - `exaggeration` (0.25–2.0): how expressive
-- `cfg_weight` (0.0–1.0): pacing tightness
+- `cfg_weight` (0.0–1.0): pacing tightness (use 0.0 for cross-language cloning to reduce accent bleed)
+
+**Chatterbox** — supported languages:
+Arabic, Danish, German, Greek, English, Spanish, Finnish, French, Hebrew, Hindi, Italian, Japanese, Korean, Malay, Dutch, Norwegian, Polish, Portuguese, Russian, Swedish, Swahili, Turkish, Chinese
 
 ### Known limitations
 
 - **Qwen clone** (`voiceme clone`): does NOT support `instruct` — emotion control is not available when cloning a voice
-- **Chatterbox**: English-only base model. French output will sound off. Use Qwen for French.
-- **Chatterbox tags**: `[laugh]`, `[sigh]` etc. only work in the Turbo model, not the base model we ship
+- **Chatterbox**: paralinguistic tags (`[laugh]`, `[sigh]`) only work in the Turbo model, not the Multilingual model we ship
 
 ## Available Voices (Qwen)
 

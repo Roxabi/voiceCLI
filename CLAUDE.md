@@ -105,8 +105,9 @@ The clone model (`generate_voice_clone`) does NOT support `instruct` — it is s
 - CLI flags always override frontmatter values
 - Qwen clone uses `x_vector_only_mode=True` when no `--ref-text` is provided
 - Qwen clone does NOT support `instruct` — only `generate` (CustomVoice) does
+- Chatterbox uses the Multilingual model (23 languages including French)
 - Chatterbox splits long text into sentence chunks (~250 chars) to avoid 40s cutoff
-- Chatterbox is English-only (base model). For French, use Qwen.
+- Chatterbox clone defaults to cfg_weight=0.0 to reduce accent bleed in cross-language cloning
 - Recommended Chatterbox settings: passionate speech = exaggeration 0.7-0.8, cfg_weight 0.3
 
 ## Conventions
