@@ -108,6 +108,7 @@ def generate(
         Optional[Path], typer.Option("--output", "-o", help="Output WAV path")
     ] = None,
     language: Annotated[str, typer.Option("--lang", help="Language")] = "English",
+    mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     extra_kwargs: dict = {}
@@ -137,6 +138,11 @@ def generate(
     out = output or default_output_path(engine)
     result = eng.generate(text, voice, out, language=language, **extra_kwargs)
     typer.echo(f"Saved to {result}")
+    if mp3:
+        from voiceme.utils import wav_to_mp3
+
+        mp3_path = wav_to_mp3(result)
+        typer.echo(f"Saved to {mp3_path}")
 
 
 @app.command()
@@ -153,6 +159,7 @@ def clone(
         Optional[Path], typer.Option("--output", "-o", help="Output WAV path")
     ] = None,
     language: Annotated[str, typer.Option("--lang", help="Language")] = "English",
+    mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
 ):
     """Clone a voice from reference audio and synthesize text."""
     extra_kwargs: dict = {}
@@ -196,6 +203,26 @@ def clone(
     eng = get_engine(engine)
     out = output or default_output_path(f"{engine}_clone")
     result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
+    typer.echo(f"Saved to {result}")
+    if mp3:
+        from voiceme.utils import wav_to_mp3
+
+        mp3_path = wav_to_mp3(result)
+        typer.echo(f"Saved to {mp3_path}")
+
+
+@app.command()
+def mp3(
+    file: Annotated[Path, typer.Argument(help="WAV file to convert")],
+    bitrate: Annotated[int, typer.Option("--bitrate", "-b", help="MP3 bitrate in kbps")] = 192,
+):
+    """Convert a WAV file to MP3."""
+    from voiceme.utils import wav_to_mp3
+
+    if not file.exists():
+        typer.echo(f"Error: file not found: {file}", err=True)
+        raise typer.Exit(1)
+    result = wav_to_mp3(file, bitrate=bitrate)
     typer.echo(f"Saved to {result}")
 
 

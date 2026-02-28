@@ -8,6 +8,7 @@ dependencies = [
     "qwen-tts",
     "chatterbox-tts",
     "soundfile",
+    "lameenc>=1.7",
     "torch>=2.7",
     "torchaudio>=2.7",
 ]
@@ -40,6 +41,9 @@ override-dependencies = [
     "numpy>=1.26",
     # pandas 2.1.0 doesn't build on 3.12, gradio pulls it in
     "pandas>=2.2",
+    # ml-dtypes/onnx need numpy 2.x compat builds
+    "ml-dtypes>=0.5",
+    "onnx>=1.20",
 ]
 
 [dependency-groups]
