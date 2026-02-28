@@ -10,6 +10,34 @@ def default_output_path(prefix: str = "voiceme", fmt: str = "wav") -> Path:
     return OUTPUT_DIR / f"{prefix}_{ts}.{fmt}"
 
 
+def build_output_prefix(
+    engine: str,
+    *,
+    script: str | None = None,
+    voice: str | None = None,
+    language: str | None = None,
+    clone: bool = False,
+) -> str:
+    """Build a descriptive output filename prefix.
+
+    Examples:
+        futur_ia_qwen_ono_anna_fr
+        darwinisme_chatterbox-turbo_clone_en
+        qwen_serena_fr
+    """
+    parts: list[str] = []
+    if script:
+        parts.append(Path(script).stem)
+    parts.append(engine)
+    if clone:
+        parts.append("clone")
+    if voice and voice != "default":
+        parts.append(voice.lower())
+    if language:
+        parts.append(language[:2].lower())
+    return "_".join(parts)
+
+
 def wav_to_mp3(wav_path: Path, bitrate: int = 192) -> Path:
     """Convert a WAV file to MP3 using lameenc. Returns the MP3 path."""
     import lameenc

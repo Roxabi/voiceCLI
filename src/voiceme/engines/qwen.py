@@ -89,7 +89,7 @@ class QwenEngine(TTSEngine):
 
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
         model = self._load_model()
-        voice = voice or "Ryan"
+        voice = voice or "Ono_Anna"
         if voice not in SPEAKERS:
             raise ValueError(f"Unknown voice '{voice}'. Available: {SPEAKERS}")
 

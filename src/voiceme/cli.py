@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 import typer
 
 from voiceme.engine import available_engines, get_engine
-from voiceme.utils import default_output_path
+from voiceme.utils import build_output_prefix, default_output_path
 
 app = typer.Typer(help="VoiceMe — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)")
 
@@ -112,6 +112,7 @@ def generate(
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     extra_kwargs: dict = {}
+    script_name: str | None = None
 
     # Detect .md file input
     text_path = Path(text)
@@ -119,6 +120,7 @@ def generate(
         from voiceme.markdown import parse_md_file
         from voiceme.translate import translate_for_engine
 
+        script_name = text
         doc = parse_md_file(text_path)
         # Frontmatter provides defaults; CLI flags override
         if doc.engine:
@@ -139,7 +141,8 @@ def generate(
             extra_kwargs["segments"] = doc.segments
 
     eng = get_engine(engine)
-    out = output or default_output_path(engine)
+    prefix = build_output_prefix(engine, script=script_name, voice=voice, language=language)
+    out = output or default_output_path(prefix)
     result = eng.generate(text, voice, out, language=language, **extra_kwargs)
     typer.echo(f"Saved to {result}")
     if mp3:
@@ -167,6 +170,7 @@ def clone(
 ):
     """Clone a voice from reference audio and synthesize text."""
     extra_kwargs: dict = {}
+    script_name: str | None = None
 
     # Detect .md file input
     text_path = Path(text)
@@ -174,6 +178,7 @@ def clone(
         from voiceme.markdown import parse_md_file
         from voiceme.translate import translate_for_engine
 
+        script_name = text
         doc = parse_md_file(text_path)
         if doc.engine:
             engine = doc.engine
@@ -209,7 +214,8 @@ def clone(
         raise typer.Exit(1)
 
     eng = get_engine(engine)
-    out = output or default_output_path(f"{engine}_clone")
+    prefix = build_output_prefix(engine, script=script_name, language=language, clone=True)
+    out = output or default_output_path(prefix)
     result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
     typer.echo(f"Saved to {result}")
     if mp3:

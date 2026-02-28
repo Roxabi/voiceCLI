@@ -39,7 +39,7 @@ ENGINE_CAPS = {
 
 # ── Tag → instruct mapping (for Qwen translation) ──────────────────────────
 
-TAG_TO_INSTRUCT = {
+TAG_TO_INSTRUCT_EN = {
     "laugh": "Laughing",
     "chuckle": "Chuckling softly",
     "cough": "Coughing",
@@ -51,7 +51,30 @@ TAG_TO_INSTRUCT = {
     "clear throat": "Clearing throat",
 }
 
-_TAG_RE = re.compile(r"\[(" + "|".join(re.escape(t) for t in TAG_TO_INSTRUCT) + r")\]")
+TAG_TO_INSTRUCT_FR = {
+    "laugh": "En riant",
+    "chuckle": "Avec un petit rire doux",
+    "cough": "En toussant",
+    "sigh": "En soupirant",
+    "gasp": "Avec un hoquet de surprise",
+    "groan": "En gémissant",
+    "sniff": "En reniflant",
+    "shush": "En chuchotant, comme pour faire taire",
+    "clear throat": "En se raclant la gorge",
+}
+
+_TAG_TO_INSTRUCT_BY_LANG = {
+    "french": TAG_TO_INSTRUCT_FR,
+    "français": TAG_TO_INSTRUCT_FR,
+}
+
+
+def _get_tag_instruct_map(language: str | None) -> dict[str, str]:
+    if language:
+        return _TAG_TO_INSTRUCT_BY_LANG.get(language.lower(), TAG_TO_INSTRUCT_EN)
+    return TAG_TO_INSTRUCT_EN
+
+_TAG_RE = re.compile(r"\[(" + "|".join(re.escape(t) for t in TAG_TO_INSTRUCT_EN) + r")\]")
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -62,7 +85,7 @@ def _strip_tags(text: str) -> str:
     return _TAG_RE.sub("", text).strip()
 
 
-def _split_segment_on_tags(seg: Segment) -> list[Segment]:
+def _split_segment_on_tags(seg: Segment, tag_map: dict[str, str]) -> list[Segment]:
     """Split a segment at each [tag], mapping tags to instruct directives.
 
     Tags modify the instruct of the text that follows them.
@@ -86,7 +109,7 @@ def _split_segment_on_tags(seg: Segment) -> list[Segment]:
         tag_name = parts[i]
         text = parts[i + 1].strip() if i + 1 < len(parts) else ""
         if text:
-            result.append(Segment(text=text, instruct=TAG_TO_INSTRUCT[tag_name]))
+            result.append(Segment(text=text, instruct=tag_map[tag_name]))
 
     return result
 
@@ -109,9 +132,10 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
         for seg in doc.segments:
             seg.text = _strip_tags(seg.text)
     elif tag_mode == "to_instruct":
+        tag_map = _get_tag_instruct_map(doc.language)
         expanded: list[Segment] = []
         for seg in doc.segments:
-            expanded.extend(_split_segment_on_tags(seg))
+            expanded.extend(_split_segment_on_tags(seg, tag_map))
         doc.segments = expanded
         # Rebuild flat text (tags removed since they're now instructs)
         doc.text = " ".join(seg.text for seg in doc.segments) if doc.segments else doc.text
