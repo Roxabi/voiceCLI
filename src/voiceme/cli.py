@@ -252,11 +252,19 @@ def transcribe(
             typer.echo(f"[detected: {result.language}]", err=True)
         text_out = result.text
 
-    if output:
-        output.write_text(text_out, encoding="utf-8")
-        typer.echo(f"Saved to {output}")
-    else:
-        typer.echo(text_out)
+    typer.echo(text_out)
+
+    if output is None:
+        from datetime import datetime
+
+        stt_dir = Path("STT/texts_out")
+        stt_dir.mkdir(parents=True, exist_ok=True)
+        ext = "json" if json_output else "txt"
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = stt_dir / f"{audio.stem}_{ts}.{ext}"
+
+    output.write_text(text_out, encoding="utf-8")
+    typer.echo(f"Saved to {output}", err=True)
 
 
 @app.command()

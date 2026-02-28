@@ -26,7 +26,7 @@ uv run voiceme generate "Hello" --mp3          # also save as MP3
 
 ### Clone a voice
 ```bash
-uv run voiceme clone "Text" --ref samples/my_voice.wav --engine qwen
+uv run voiceme clone "Text" --ref TTS/samples/my_voice.wav --engine qwen
 uv run voiceme clone "Text"                    # uses active sample
 uv run voiceme clone "Text" --mp3              # also save as MP3
 ```
@@ -58,7 +58,7 @@ uv run voiceme listen -m 2.6b                        # English-only 2.6b model
 
 ### Utilities
 ```bash
-uv run voiceme mp3 output/file.wav             # convert WAV to MP3
+uv run voiceme mp3 TTS/voices_out/file.wav      # convert WAV to MP3
 uv run voiceme voices --engine qwen            # list voices for engine
 uv run voiceme engines                         # list available engines
 uv run voiceme emotions                        # show emotion controls cheat sheet
@@ -66,7 +66,7 @@ uv run voiceme emotions                        # show emotion controls cheat she
 
 ## Markdown Frontmatter Format
 
-Create `.md` files in `scripts/` with YAML frontmatter:
+Create `.md` files in `TTS/texts_in/` with YAML frontmatter:
 
 ```markdown
 ---
@@ -124,6 +124,6 @@ Second paragraph.
 
 If the user provided arguments: `$ARGUMENTS`
 
-Parse the user's intent and run the appropriate `uv run voiceme` command. If they ask to generate or clone without specifying details, help them choose the right options. If they want to create a script, write a `.md` file in `scripts/` with appropriate frontmatter.
+Parse the user's intent and run the appropriate `uv run voiceme` command. If they ask to generate or clone without specifying details, help them choose the right options. If they want to create a script, write a `.md` file in `TTS/texts_in/` with appropriate frontmatter.
 
-Output files are saved to `output/` by default.
+Output files are saved to `TTS/voices_out/` by default. Transcription results are saved to `STT/texts_out/` by default.

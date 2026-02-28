@@ -3,12 +3,12 @@
 import shutil
 from pathlib import Path
 
-SAMPLES_DIR = Path("samples")
+SAMPLES_DIR = Path("TTS/samples")
 ACTIVE_FILE = SAMPLES_DIR / ".active"
 
 
 def ensure_dir() -> Path:
-    SAMPLES_DIR.mkdir(exist_ok=True)
+    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     return SAMPLES_DIR
 
 

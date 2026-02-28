@@ -6,8 +6,12 @@ build/
 .venv/
 *.egg
 .uv/
-output/*.wav
-output/*.mp3
-samples/*.wav
-samples/.active
+TTS/voices_out/*
+!TTS/voices_out/.gitkeep
+TTS/samples/*
+!TTS/samples/.gitkeep
+STT/audio_in/*
+!STT/audio_in/.gitkeep
+STT/texts_out/*
+!STT/texts_out/.gitkeep
 .ruff_cache/

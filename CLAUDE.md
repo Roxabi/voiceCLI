@@ -48,6 +48,13 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
+TTS/
+  texts_in/       — authored .md scripts (tracked in git)
+  voices_out/     — generated WAV/MP3 (gitignored)
+  samples/        — voice samples for cloning (gitignored)
+STT/
+  audio_in/       — audio files to transcribe (gitignored)
+  texts_out/      — transcription results (gitignored)
 src/voiceme/
   cli.py          — Typer app: command definitions, .md detection, flag overrides
   engine.py       — Abstract TTSEngine base class + engine registry
@@ -98,7 +105,7 @@ voiceme clone "text"                       # uses active sample (no --ref needed
 voiceme clone script.md --mp3              # from markdown + MP3 output
 
 # Sample management
-voiceme samples list                       # list all .wav in samples/
+voiceme samples list                       # list all .wav in TTS/samples/
 voiceme samples add file.wav               # import a WAV file
 voiceme samples record name -d 30          # record 30s from mic (PulseAudio)
 voiceme samples use name.wav               # set as active sample for clone
@@ -114,8 +121,8 @@ voiceme listen                             # live mic → text (Kyutai)
 voiceme listen -m 2.6b                     # English-only model
 
 # Utilities
-voiceme mp3 output/file.wav               # convert WAV to MP3 (192kbps default)
-voiceme mp3 output/file.wav -b 320        # convert at 320kbps
+voiceme mp3 TTS/voices_out/file.wav       # convert WAV to MP3 (192kbps default)
+voiceme mp3 TTS/voices_out/file.wav -b 320 # convert at 320kbps
 voiceme voices                             # list Qwen voices
 voiceme voices -e chatterbox               # list Chatterbox voices
 voiceme engines                            # list available engines
@@ -195,7 +202,9 @@ Given the universal script above, the translator produces:
 
 - No over-engineering — this is a thin CLI, keep it flat and simple
 - Imports of heavy libs (torch, qwen_tts, chatterbox) are deferred to function bodies
-- Output WAVs/MP3s go to `output/` dir by default
-- Samples stored in `samples/` dir
+- Output WAVs/MP3s go to `TTS/voices_out/` dir by default
+- Samples stored in `TTS/samples/` dir
+- Transcription results saved to `STT/texts_out/` by default
+- Scripts authored in `TTS/texts_in/`
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice

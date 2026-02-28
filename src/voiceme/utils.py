@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR = Path("TTS/voices_out")
 
 # Map full language names to ISO 639-1 codes (shared across engines and utils)
 LANG_MAP = {
@@ -25,7 +25,7 @@ def resolve_language(language: str) -> str:
 
 
 def default_output_path(prefix: str = "voiceme", fmt: str = "wav") -> Path:
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return OUTPUT_DIR / f"{prefix}_{ts}.{fmt}"
 
