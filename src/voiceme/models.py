@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+
+from huggingface_hub.constants import HF_HUB_CACHE
 
 # repo_id → (display_name, estimated_size_gb)
 MODEL_REGISTRY: dict[str, tuple[str, float]] = {
@@ -15,11 +16,7 @@ MODEL_REGISTRY: dict[str, tuple[str, float]] = {
 
 def hf_cache_dir() -> Path:
     """Return the HuggingFace Hub cache directory, respecting env vars."""
-    if d := os.environ.get("HUGGINGFACE_HUB_CACHE"):
-        return Path(d)
-    if d := os.environ.get("HF_HOME"):
-        return Path(d) / "hub"
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    return Path(HF_HUB_CACHE)
 
 
 def _model_cache_path(repo_id: str) -> Path:

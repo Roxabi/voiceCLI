@@ -378,8 +378,8 @@ def doctor():
                 ok(f"{display_name}: {size_str}")
             else:
                 warn(f"{display_name}: not yet downloaded (~{est_size} GB)")
-        except Exception:
-            fail(f"{display_name}: could not check cache")
+        except Exception as e:
+            fail(f"{display_name}: could not check cache ({e})")
 
     # Directory structure
     typer.echo(typer.style("\nDirectories", bold=True))

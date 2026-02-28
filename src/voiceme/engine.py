@@ -3,18 +3,18 @@ from __future__ import annotations
 import contextlib
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Generator
 
 _CUDA_PATTERNS = re.compile(
-    r"CUDA|cuda|cuDNN|NCCL|out of memory|CUBLAS|CUSOLVER|GPU|"
+    r"CUDA|cuDNN|NCCL|out of memory|CUBLAS|CUSOLVER|GPU|"
     r"device-side assert|no kernel image|CUDA_ERROR",
     re.IGNORECASE,
 )
 
 
 @contextlib.contextmanager
-def cuda_guard(engine_name: str) -> Generator[None, None, None]:
+def cuda_guard(engine_name: str) -> Iterator[None]:
     """Catch CUDA-related errors and re-raise as friendly SystemExit."""
     try:
         yield
