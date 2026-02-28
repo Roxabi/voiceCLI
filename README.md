@@ -1,6 +1,6 @@
 # VoiceMe
 
-Unified CLI for voice generation — Qwen3-TTS & Chatterbox backends.
+Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
 
 ## Requirements
 
@@ -29,6 +29,12 @@ voiceme generate "This is exciting!" --engine chatterbox
 
 # Clone a voice from a reference audio file
 voiceme clone "Say this in my voice" --ref my_recording.wav
+
+# Transcribe an audio file
+voiceme transcribe recording.wav
+
+# Live mic transcription
+voiceme listen
 ```
 
 ## Commands
@@ -89,6 +95,38 @@ voiceme voices --engine chatterbox
 ```bash
 voiceme engines
 ```
+
+### `transcribe` — Speech to text
+
+```bash
+voiceme transcribe audio.wav                   # auto-detect language
+voiceme transcribe audio.wav --lang fr         # force language
+voiceme transcribe audio.wav --model large-v3  # choose model
+voiceme transcribe audio.wav --json            # JSON with language + timestamps
+voiceme transcribe audio.wav -o result.txt     # save to file
+```
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--model` | `-m` | Whisper model | `large-v3-turbo` |
+| `--lang` | `-l` | Force language code | auto-detect |
+| `--output` | `-o` | Save text to file | stdout |
+| `--json` | | JSON output with timestamps | off |
+
+Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
+
+### `listen` — Live mic transcription
+
+```bash
+voiceme listen                                 # EN + FR (1b model)
+voiceme listen --model 2.6b                    # English-only, higher quality
+```
+
+Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--model` | `-m` | Kyutai model (`1b` or `2.6b`) | `1b` |
 
 ### `emotions` — Expressiveness cheat sheet
 
@@ -185,6 +223,9 @@ src/voiceme/
     qwen.py         # Qwen3-TTS backend
     chatterbox.py   # Chatterbox backend
   samples.py        # Sample management (add/record/use/remove)
+  transcribe.py     # Faster Whisper file transcription
+  listen.py         # Kyutai STT real-time mic transcription
   markdown.py       # .md frontmatter parser + markdown stripper
+  translate.py      # Engine capability matrix + document translator
   utils.py          # Output path helpers
 ```

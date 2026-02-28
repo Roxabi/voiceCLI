@@ -9,6 +9,7 @@ dependencies = [
     "chatterbox-tts",
     "soundfile",
     "lameenc>=1.7",
+    "faster-whisper>=1.2",
     "torch>=2.7",
     "torchaudio>=2.7",
 ]
