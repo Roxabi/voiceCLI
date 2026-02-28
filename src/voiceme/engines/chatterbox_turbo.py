@@ -4,7 +4,8 @@ import numpy as np
 import soundfile as sf
 from pathlib import Path
 
-from voiceme.engine import TTSEngine
+from voiceme.engine import TTSEngine, cuda_guard
+from voiceme.models import warn_if_first_download
 
 
 def _split_sentences(text: str, max_chars: int = 250) -> list[str]:
@@ -31,11 +32,13 @@ class ChatterboxTurboEngine(TTSEngine):
 
     def _load_model(self):
         if self._model is None:
-            from chatterbox.tts import ChatterboxTTS
+            with cuda_guard("chatterbox-turbo"):
+                from chatterbox.tts import ChatterboxTTS
 
-            print("[chatterbox-turbo] Loading model...")
-            self._model = ChatterboxTTS.from_pretrained(device="cuda")
-            print("[chatterbox-turbo] Model loaded.")
+                warn_if_first_download("ResembleAI/chatterbox")
+                print("[chatterbox-turbo] Loading model...")
+                self._model = ChatterboxTTS.from_pretrained(device="cuda")
+                print("[chatterbox-turbo] Model loaded.")
         return self._model
 
     def _generate_chunked(self, text: str, **gen_kwargs) -> np.ndarray:

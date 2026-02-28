@@ -4,7 +4,8 @@ import numpy as np
 import soundfile as sf
 from pathlib import Path
 
-from voiceme.engine import TTSEngine
+from voiceme.engine import TTSEngine, cuda_guard
+from voiceme.models import warn_if_first_download
 from voiceme.utils import resolve_language as _resolve_language
 
 
@@ -32,17 +33,19 @@ class ChatterboxEngine(TTSEngine):
 
     def _load_model(self):
         if self._model is None:
-            from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+            with cuda_guard("chatterbox"):
+                from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-            print("[chatterbox] Loading multilingual model...")
-            self._model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
-            # Multilingual AlignmentStreamAnalyzer needs output_attentions,
-            # which requires eager attention (not sdpa)
-            if hasattr(self._model, "t3") and hasattr(self._model.t3, "tfmr"):
-                cfg = self._model.t3.tfmr.config
-                if hasattr(cfg, "_attn_implementation"):
-                    cfg._attn_implementation = "eager"
-            print("[chatterbox] Model loaded.")
+                warn_if_first_download("ResembleAI/chatterbox")
+                print("[chatterbox] Loading multilingual model...")
+                self._model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+                # Multilingual AlignmentStreamAnalyzer needs output_attentions,
+                # which requires eager attention (not sdpa)
+                if hasattr(self._model, "t3") and hasattr(self._model.t3, "tfmr"):
+                    cfg = self._model.t3.tfmr.config
+                    if hasattr(cfg, "_attn_implementation"):
+                        cfg._attn_implementation = "eager"
+                print("[chatterbox] Model loaded.")
         return self._model
 
     def _generate_chunked(self, text: str, **gen_kwargs) -> np.ndarray:

@@ -6,7 +6,8 @@ import torch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voiceme.engine import TTSEngine
+from voiceme.engine import TTSEngine, cuda_guard
+from voiceme.models import warn_if_first_download
 
 if TYPE_CHECKING:
     from voiceme.markdown import Segment
@@ -29,32 +30,36 @@ class QwenEngine(TTSEngine):
 
     def _load_model(self):
         if self._model is None:
-            from qwen_tts import Qwen3TTSModel
+            with cuda_guard("qwen"):
+                from qwen_tts import Qwen3TTSModel
 
-            print(f"[qwen] Loading {DEFAULT_MODEL}...")
-            kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
-            try:
-                kwargs["attn_implementation"] = "flash_attention_2"
-                self._model = Qwen3TTSModel.from_pretrained(DEFAULT_MODEL, **kwargs)
-            except Exception:
-                kwargs.pop("attn_implementation", None)
-                self._model = Qwen3TTSModel.from_pretrained(DEFAULT_MODEL, **kwargs)
-            print("[qwen] Model loaded.")
+                warn_if_first_download(DEFAULT_MODEL)
+                print(f"[qwen] Loading {DEFAULT_MODEL}...")
+                kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
+                try:
+                    kwargs["attn_implementation"] = "flash_attention_2"
+                    self._model = Qwen3TTSModel.from_pretrained(DEFAULT_MODEL, **kwargs)
+                except Exception:
+                    kwargs.pop("attn_implementation", None)
+                    self._model = Qwen3TTSModel.from_pretrained(DEFAULT_MODEL, **kwargs)
+                print("[qwen] Model loaded.")
         return self._model
 
     def _load_clone_model(self):
         if self._clone_model is None:
-            from qwen_tts import Qwen3TTSModel
+            with cuda_guard("qwen"):
+                from qwen_tts import Qwen3TTSModel
 
-            print(f"[qwen] Loading {CLONE_MODEL}...")
-            kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
-            try:
-                kwargs["attn_implementation"] = "flash_attention_2"
-                self._clone_model = Qwen3TTSModel.from_pretrained(CLONE_MODEL, **kwargs)
-            except Exception:
-                kwargs.pop("attn_implementation", None)
-                self._clone_model = Qwen3TTSModel.from_pretrained(CLONE_MODEL, **kwargs)
-            print("[qwen] Clone model loaded.")
+                warn_if_first_download(CLONE_MODEL)
+                print(f"[qwen] Loading {CLONE_MODEL}...")
+                kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
+                try:
+                    kwargs["attn_implementation"] = "flash_attention_2"
+                    self._clone_model = Qwen3TTSModel.from_pretrained(CLONE_MODEL, **kwargs)
+                except Exception:
+                    kwargs.pop("attn_implementation", None)
+                    self._clone_model = Qwen3TTSModel.from_pretrained(CLONE_MODEL, **kwargs)
+                print("[qwen] Clone model loaded.")
         return self._clone_model
 
     def _generate_segmented(
