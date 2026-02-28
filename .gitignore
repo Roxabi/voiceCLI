@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+.uv/
+output/*.wav
+output/*.mp3
+samples/*.wav
+samples/.active
+.ruff_cache/
