@@ -39,7 +39,11 @@ voiceme listen
 
 ## User Config (`voiceme.toml`)
 
-Optional file at project root. Sets default values so you don't pass flags every time.
+Optional file at project root (gitignored). Sets default values so you don't pass flags every time.
+
+```bash
+cp voiceme.example.toml voiceme.toml   # then edit to taste
+```
 
 ```toml
 [defaults]
@@ -282,7 +286,7 @@ Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
 ## Project Structure
 
 ```
-voiceme.toml        # user config for default settings (optional)
+voiceme.example.toml # template — copy to voiceme.toml (gitignored)
 TTS/
   texts_in/         # authored .md scripts (tracked in git)
   voices_out/       # generated WAV/MP3 (gitignored)

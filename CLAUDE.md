@@ -24,10 +24,12 @@ User runs: voiceme generate script.md -e chatterbox
 Each step is pure Python, no LLM involved. The translator is the key new piece — it makes
 one universal `.md` file work across all three engines without manual adaptation.
 
-### LLM skill (`.claude/skills/voiceme/SKILL.md`)
+### LLM skill (`roxabi-plugins/voice-me`)
 
-The `/voiceme` skill is invoked when the user asks Claude Code to generate speech, clone
-voices, or manage samples. The LLM handles:
+The `/voiceme` skill is provided by the `voice-me` plugin (installed from `roxabi-plugins`).
+Locally, `.claude/skills/voiceme/SKILL.md` is a symlink to the plugin (gitignored).
+
+The LLM handles:
 
 - **Intent parsing** — understanding natural language requests ("make me a French speech with laughter")
 - **Command selection** — picking the right `uv run voiceme` command and flags
@@ -50,7 +52,7 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
-voiceme.toml        — user config file for default settings (optional, see below)
+voiceme.example.toml — template config — copy to voiceme.toml (gitignored)
 TTS/
   texts_in/         — authored .md scripts (tracked in git)
   voices_out/       — generated WAV/MP3 (gitignored)
@@ -76,7 +78,7 @@ src/voiceme/
 
 ## User Config (`voiceme.toml`)
 
-Optional TOML file at project root. Sets default values so you don't pass flags every time.
+Optional TOML file at project root (gitignored). Copy from `voiceme.example.toml` and customize.
 
 ```toml
 [defaults]
