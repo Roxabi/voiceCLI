@@ -192,7 +192,7 @@ def generate(
         extra_kwargs["crossfade"] = xfade_ms
 
     eng = get_engine(engine)
-    if fast and engine == "qwen":
+    if fast and engine in ("qwen", "qwen-fast"):
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
     out = output or default_output_path(prefix)
@@ -317,7 +317,7 @@ def clone(
         raise typer.Exit(1)
 
     eng = get_engine(engine)
-    if fast and engine == "qwen":
+    if fast and engine in ("qwen", "qwen-fast"):
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
     out = output or default_output_path(prefix)

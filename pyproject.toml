@@ -6,6 +6,7 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     "typer[all]>=0.12",
     "qwen-tts",
+    "faster-qwen3-tts",
     "chatterbox-tts",
     "soundfile",
     "lameenc>=1.7",

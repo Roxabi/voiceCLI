@@ -75,9 +75,11 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
     from voiceme.engines.chatterbox import ChatterboxEngine
     from voiceme.engines.chatterbox_turbo import ChatterboxTurboEngine
     from voiceme.engines.qwen import QwenEngine
+    from voiceme.engines.qwen_fast import QwenFastEngine
 
     return {
         "qwen": QwenEngine,
+        "qwen-fast": QwenFastEngine,
         "chatterbox": ChatterboxEngine,
         "chatterbox-turbo": ChatterboxTurboEngine,
     }

@@ -36,6 +36,7 @@ ENGINE_CAPS = {
         "voice": False,
     },
 }
+ENGINE_CAPS["qwen-fast"] = ENGINE_CAPS["qwen"]
 
 # ── Tag → instruct mapping (for Qwen translation) ──────────────────────────
 
