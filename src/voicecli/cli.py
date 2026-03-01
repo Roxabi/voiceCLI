@@ -117,16 +117,17 @@ def samples_remove(
 # ── Chunked output helpers ───────────────────────────────────────────────────
 
 
-def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: bool, total: int, **kwargs):
+def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: bool, total: int, *, daemon_fn=None, **kwargs):
     """Generate and save a single numbered chunk."""
     from voicecli.utils import wav_to_mp3 as _wav_to_mp3
 
     stem = out.stem
     chunk_path = out.parent / f"{stem}_{index:03d}.wav"
-    if method == "generate":
-        eng.generate(text, voice, chunk_path, **kwargs)
-    else:
-        eng.clone(text, kwargs.pop("ref_audio"), chunk_path, ref_text=kwargs.pop("ref_text", None), **kwargs)
+    if daemon_fn is None or not daemon_fn(method, text, voice, chunk_path, **kwargs):
+        if method == "generate":
+            eng.generate(text, voice, chunk_path, **kwargs)
+        else:
+            eng.clone(text, kwargs.pop("ref_audio"), chunk_path, ref_text=kwargs.pop("ref_text", None), **kwargs)
     typer.echo(f"  [{index}/{total}] {chunk_path.name}")
     if mp3:
         mp3_path = _wav_to_mp3(chunk_path)
@@ -139,7 +140,7 @@ def _write_done(out: Path):
     typer.echo(f"Done sentinel: {done_path}")
 
 
-def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments):
+def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None):
     """Generate speech in chunks, saving each as a separate file."""
     from voicecli.utils import smart_chunk
 
@@ -156,17 +157,17 @@ def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chu
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
             seg_voice = seg.voice or voice
-            _emit_chunk(eng, "generate", seg.text, seg_voice, out, i, mp3, total, **kw)
+            _emit_chunk(eng, "generate", seg.text, seg_voice, out, i, mp3, total, daemon_fn=daemon_fn, **kw)
     else:
         chunks = smart_chunk(text, chunk_size)
         total = len(chunks)
         for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(eng, "generate", chunk_text, voice, out, i, mp3, total, language=language, **extra_kwargs)
+            _emit_chunk(eng, "generate", chunk_text, voice, out, i, mp3, total, daemon_fn=daemon_fn, language=language, **extra_kwargs)
 
     _write_done(out)
 
 
-def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *, chunk_size, segments):
+def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None):
     """Clone voice in chunks, saving each as a separate file."""
     from voicecli.utils import smart_chunk
 
@@ -180,14 +181,64 @@ def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
-            _emit_chunk(eng, "clone", seg.text, None, out, i, mp3, total, **kw)
+            _emit_chunk(eng, "clone", seg.text, None, out, i, mp3, total, daemon_fn=daemon_fn, **kw)
     else:
         chunks = smart_chunk(text, chunk_size)
         total = len(chunks)
         for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(eng, "clone", chunk_text, None, out, i, mp3, total, language=language, ref_audio=ref, ref_text=ref_text, **extra_kwargs)
+            _emit_chunk(eng, "clone", chunk_text, None, out, i, mp3, total, daemon_fn=daemon_fn, language=language, ref_audio=ref, ref_text=ref_text, **extra_kwargs)
 
     _write_done(out)
+
+
+# ── Daemon client helpers ─────────────────────────────────────────────────────
+
+
+def _try_daemon(request: dict) -> Path | None:
+    """Send request to daemon. Returns WAV path on success, None to fall back."""
+    from voicecli.daemon import SOCKET_PATH, daemon_request
+
+    if not SOCKET_PATH.exists():
+        return None
+    try:
+        resp = daemon_request(request, timeout=300)
+        if resp.get("status") == "ok":
+            return Path(resp["path"])
+    except Exception:
+        pass
+    return None
+
+
+def _make_chunk_daemon_fn(engine_name: str):
+    """Return a daemon_fn for use in chunked generation/cloning.
+
+    The returned callable has signature:
+        (method, text, voice, chunk_path, **kwargs) -> bool
+    Returns True if the daemon handled the chunk, False to fall back locally.
+    """
+
+    def daemon_fn(method: str, text: str, voice, chunk_path: Path, **kwargs) -> bool:
+        req: dict = {
+            "action": method,
+            "engine": engine_name,
+            "text": text,
+            "voice": voice,
+            "output_path": str(chunk_path.resolve()),
+            "language": kwargs.get("language"),
+            "instruct": kwargs.get("instruct"),
+            "exaggeration": kwargs.get("exaggeration"),
+            "cfg_weight": kwargs.get("cfg_weight"),
+            "segment_gap": kwargs.get("segment_gap"),
+            "crossfade": kwargs.get("crossfade"),
+            "segments": [],
+        }
+        if method == "clone":
+            ref = kwargs.get("ref_audio")
+            req["ref_audio"] = str(ref.resolve()) if ref else None
+            req["ref_text"] = kwargs.get("ref_text")
+        return _try_daemon(req) is not None
+
+    return daemon_fn
 
 
 # ── Config → segments backfill ───────────────────────────────────────────────
@@ -337,12 +388,39 @@ def generate(
     out = output or default_output_path(prefix)
 
     if chunked:
+        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in ("qwen", "qwen-fast") else None
         _generate_chunked(
             eng, text, voice, out, language, extra_kwargs, mp3,
             chunk_size=chunk_size,
             segments=extra_kwargs.pop("segments", None),
+            daemon_fn=_daemon_chunk_fn,
         )
     else:
+        if engine in ("qwen", "qwen-fast"):
+            import dataclasses
+
+            daemon_result = _try_daemon({
+                "action": "generate",
+                "engine": engine,
+                "text": text,
+                "voice": voice,
+                "output_path": str(out.resolve()),
+                "language": language,
+                "instruct": extra_kwargs.get("instruct"),
+                "exaggeration": extra_kwargs.get("exaggeration"),
+                "cfg_weight": extra_kwargs.get("cfg_weight"),
+                "segment_gap": extra_kwargs.get("segment_gap"),
+                "crossfade": extra_kwargs.get("crossfade"),
+                "segments": [dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])],
+            })
+            if daemon_result:
+                typer.echo(f"Saved to {daemon_result}")
+                if mp3:
+                    from voicecli.utils import wav_to_mp3
+
+                    mp3_path = wav_to_mp3(daemon_result)
+                    typer.echo(f"Saved to {mp3_path}")
+                return
         result = eng.generate(text, voice, out, language=language, **extra_kwargs)
         typer.echo(f"Saved to {result}")
         if mp3:
@@ -473,12 +551,41 @@ def clone(
     out = output or default_output_path(prefix)
 
     if chunked:
+        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in ("qwen", "qwen-fast") else None
         _clone_chunked(
             eng, text, ref, ref_text, out, language, extra_kwargs, mp3,
             chunk_size=chunk_size,
             segments=extra_kwargs.pop("segments", None),
+            daemon_fn=_daemon_chunk_fn,
         )
     else:
+        if engine in ("qwen", "qwen-fast"):
+            import dataclasses
+
+            daemon_result = _try_daemon({
+                "action": "clone",
+                "engine": engine,
+                "text": text,
+                "voice": None,
+                "ref_audio": str(ref.resolve()),
+                "ref_text": ref_text,
+                "output_path": str(out.resolve()),
+                "language": language,
+                "instruct": extra_kwargs.get("instruct"),
+                "exaggeration": extra_kwargs.get("exaggeration"),
+                "cfg_weight": extra_kwargs.get("cfg_weight"),
+                "segment_gap": extra_kwargs.get("segment_gap"),
+                "crossfade": extra_kwargs.get("crossfade"),
+                "segments": [dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])],
+            })
+            if daemon_result:
+                typer.echo(f"Saved to {daemon_result}")
+                if mp3:
+                    from voicecli.utils import wav_to_mp3
+
+                    mp3_path = wav_to_mp3(daemon_result)
+                    typer.echo(f"Saved to {mp3_path}")
+                return
         result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
         typer.echo(f"Saved to {result}")
         if mp3:
@@ -949,6 +1056,31 @@ def doctor():
 
     typer.echo(typer.style(f"\nPlatform: {platform.platform()}", dim=True))
     typer.echo()
+
+
+@app.command()
+def serve(
+    engine: Annotated[
+        Optional[str], typer.Option("--engine", "-e", help="Engine to preload on startup (e.g. qwen)")
+    ] = None,
+    fast: Annotated[bool, typer.Option("--fast", help="Use smaller Qwen model")] = False,
+) -> None:
+    """Start the daemon to keep models loaded for fast generation.
+
+    Run in the background so subsequent 'voicecli generate' calls skip the ~60s cold start.
+
+    Example supervisord config:
+
+    \b
+    [program:voicecli_daemon]
+    command=uv run --directory /path/to/voiceCLI voicecli serve --engine qwen
+    autostart=true
+    autorestart=true
+    stdout_logfile=/var/log/voicecli_daemon.log
+    """
+    from voicecli.daemon import daemon_main
+
+    daemon_main(preload=engine, fast=fast)
 
 
 @app.command()
