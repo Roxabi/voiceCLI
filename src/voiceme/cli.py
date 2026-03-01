@@ -554,6 +554,40 @@ def engines():
 
 
 @app.command()
+def init():
+    """Create a starter voiceme.toml config file with commented-out defaults."""
+    config_path = Path("voiceme.toml")
+    if config_path.exists():
+        typer.echo(f"voiceme.toml already exists — not overwriting.")
+        raise typer.Exit(1)
+
+    template = """\
+[defaults]
+# language = "French"
+# engine = "qwen"                # qwen | chatterbox | chatterbox-turbo
+# voice = "Ryan"                 # built-in voice (Qwen only)
+
+# ── Structured instruct parts (Qwen) ──
+# These auto-compose into instruct: "accent. personality. speed. emotion"
+# Write them in the target language.
+# accent = "Light southern French accent"
+# personality = "Calm, warm and articulate"
+# speed = "Measured pace with natural pauses"
+# emotion = "Warm and engaged"
+
+# ── Chatterbox expressiveness ──
+# exaggeration = 0.5             # 0.25-2.0 (default 0.5)
+# cfg_weight = 0.5               # 0.0-1.0 (default 0.5)
+
+# ── Segment transitions ──
+# segment_gap = 0                # ms silence between segments
+# crossfade = 0                  # ms fade between segments
+"""
+    config_path.write_text(template)
+    typer.echo(f"Created voiceme.toml — edit it to set your defaults.")
+
+
+@app.command()
 def doctor():
     """Check system readiness: Python, CUDA, models, directories, disk space."""
     import platform
