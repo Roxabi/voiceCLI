@@ -1,0 +1,11 @@
+[defaults]
+language = "English"
+engine = "qwen"
+# accent = "Southern drawl"
+# personality = "Warm and friendly"
+# speed = "Measured pace"
+# emotion = "Calm and composed"
+# exaggeration = 0.5
+# cfg_weight = 0.5
+# segment_gap = 200
+# crossfade = 50
