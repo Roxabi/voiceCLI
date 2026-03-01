@@ -37,7 +37,7 @@ def cuda_guard(engine_name: str) -> Iterator[None]:
         print("\n  Troubleshooting:")
         print("    1. Check drivers: nvidia-smi")
         print("    2. Check CUDA toolkit: nvcc --version")
-        print("    3. Run: voiceme doctor")
+        print("    3. Run: voicecli doctor")
         print(f"{'=' * 60}\n")
         raise SystemExit(1) from exc
 
@@ -72,10 +72,10 @@ def available_engines() -> list[str]:
 
 
 def _get_registry() -> dict[str, type[TTSEngine]]:
-    from voiceme.engines.chatterbox import ChatterboxEngine
-    from voiceme.engines.chatterbox_turbo import ChatterboxTurboEngine
-    from voiceme.engines.qwen import QwenEngine
-    from voiceme.engines.qwen_fast import QwenFastEngine
+    from voicecli.engines.chatterbox import ChatterboxEngine
+    from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
+    from voicecli.engines.qwen import QwenEngine
+    from voicecli.engines.qwen_fast import QwenFastEngine
 
     return {
         "qwen": QwenEngine,

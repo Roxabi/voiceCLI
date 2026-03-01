@@ -3,10 +3,10 @@ from typing import Annotated, Optional
 
 import typer
 
-from voiceme.engine import available_engines, get_engine
-from voiceme.utils import build_output_prefix, default_output_path
+from voicecli.engine import available_engines, get_engine
+from voicecli.utils import build_output_prefix, default_output_path
 
-app = typer.Typer(help="VoiceMe — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)")
+app = typer.Typer(help="VoiceCLI — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)")
 
 # ── Samples sub-app ──────────────────────────────────────────────────────────
 
@@ -17,11 +17,11 @@ app.add_typer(samples_app, name="samples")
 @samples_app.command("list")
 def samples_list():
     """List all samples in the TTS/samples/ directory."""
-    from voiceme.samples import list_samples
+    from voicecli.samples import list_samples
 
     items = list_samples()
     if not items:
-        typer.echo("No samples found. Use 'voiceme samples add <file>' to add one.")
+        typer.echo("No samples found. Use 'voicecli samples add <file>' to add one.")
         return
     for name in items:
         typer.echo(f"  {name}")
@@ -32,7 +32,7 @@ def samples_add(
     file: Annotated[Path, typer.Argument(help="Path to a .wav file to import")],
 ):
     """Copy a local WAV file into the samples directory."""
-    from voiceme.samples import add_sample
+    from voicecli.samples import add_sample
 
     try:
         dest = add_sample(file)
@@ -48,7 +48,7 @@ def samples_record(
     duration: Annotated[float, typer.Option("--duration", "-d", help="Recording duration in seconds")] = 10.0,
 ):
     """Record audio from microphone and save as a sample."""
-    from voiceme.samples import record_sample
+    from voicecli.samples import record_sample
 
     dest = record_sample(name, duration=duration)
     typer.echo(f"Recorded {dest}")
@@ -59,7 +59,7 @@ def samples_use(
     name: Annotated[str, typer.Argument(help="Sample filename to set as active")],
 ):
     """Set a sample as the active reference for voice cloning."""
-    from voiceme.samples import set_active
+    from voicecli.samples import set_active
 
     try:
         set_active(name)
@@ -72,13 +72,13 @@ def samples_use(
 @samples_app.command("active")
 def samples_active():
     """Show the currently active sample."""
-    from voiceme.samples import get_active
+    from voicecli.samples import get_active
 
     name = get_active()
     if name:
         typer.echo(f"Active sample: {name}")
     else:
-        typer.echo("No active sample set. Use 'voiceme samples use <name>' to set one.")
+        typer.echo("No active sample set. Use 'voicecli samples use <name>' to set one.")
 
 
 @samples_app.command("remove")
@@ -86,7 +86,7 @@ def samples_remove(
     name: Annotated[str, typer.Argument(help="Sample filename to remove")],
 ):
     """Remove a sample from the samples directory."""
-    from voiceme.samples import remove_sample
+    from voicecli.samples import remove_sample
 
     try:
         remove_sample(name)
@@ -101,7 +101,7 @@ def samples_remove(
 
 def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: bool, total: int, **kwargs):
     """Generate and save a single numbered chunk."""
-    from voiceme.utils import wav_to_mp3 as _wav_to_mp3
+    from voicecli.utils import wav_to_mp3 as _wav_to_mp3
 
     stem = out.stem
     chunk_path = out.parent / f"{stem}_{index:03d}.wav"
@@ -123,7 +123,7 @@ def _write_done(out: Path):
 
 def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments):
     """Generate speech in chunks, saving each as a separate file."""
-    from voiceme.utils import smart_chunk
+    from voicecli.utils import smart_chunk
 
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -150,7 +150,7 @@ def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chu
 
 def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *, chunk_size, segments):
     """Clone voice in chunks, saving each as a separate file."""
-    from voiceme.utils import smart_chunk
+    from voicecli.utils import smart_chunk
 
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -176,12 +176,12 @@ def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *
 
 
 def _apply_config_defaults(doc, cfg: dict) -> None:
-    """Backfill structured instruct parts from voiceme.toml into doc/segments.
+    """Backfill structured instruct parts from voicecli.toml into doc/segments.
 
-    If frontmatter didn't set accent/personality/speed/emotion but voiceme.toml has them,
+    If frontmatter didn't set accent/personality/speed/emotion but voicecli.toml has them,
     fill them in and recompose instruct (unless the segment has a raw instruct bypass).
     """
-    from voiceme.markdown import compose_instruct
+    from voicecli.markdown import compose_instruct
 
     PARTS = ("accent", "personality", "speed", "emotion")
     cfg_parts = {p: cfg.get(p) for p in PARTS if cfg.get(p)}
@@ -242,13 +242,13 @@ def generate(
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
-    from voiceme.config import load_defaults
+    from voicecli.config import load_defaults
 
     cfg = load_defaults()
     extra_kwargs: dict = {}
     script_stem: str | None = None
 
-    # Layer defaults: CLI flag > voiceme.toml > hardcoded
+    # Layer defaults: CLI flag > voicecli.toml > hardcoded
     engine = engine or cfg.get("engine", "qwen")
     language = language or cfg.get("language", "English")
     voice = voice or cfg.get("voice")
@@ -262,7 +262,7 @@ def generate(
     if "instruct" in cfg:
         extra_kwargs["instruct"] = cfg["instruct"]
     else:
-        from voiceme.markdown import compose_instruct
+        from voicecli.markdown import compose_instruct
 
         composed = compose_instruct(
             cfg.get("accent"), cfg.get("personality"),
@@ -278,8 +278,8 @@ def generate(
     # Detect .md file input
     text_path = Path(text)
     if text.endswith(".md") and text_path.exists():
-        from voiceme.markdown import parse_md_file
-        from voiceme.translate import translate_for_engine
+        from voicecli.markdown import parse_md_file
+        from voicecli.translate import translate_for_engine
 
         script_stem = text_path.stem
         doc = parse_md_file(text_path)
@@ -328,7 +328,7 @@ def generate(
         result = eng.generate(text, voice, out, language=language, **extra_kwargs)
         typer.echo(f"Saved to {result}")
         if mp3:
-            from voiceme.utils import wav_to_mp3
+            from voicecli.utils import wav_to_mp3
 
             mp3_path = wav_to_mp3(result)
             typer.echo(f"Saved to {mp3_path}")
@@ -364,13 +364,13 @@ def clone(
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
 ):
     """Clone a voice from reference audio and synthesize text."""
-    from voiceme.config import load_defaults
+    from voicecli.config import load_defaults
 
     cfg = load_defaults()
     extra_kwargs: dict = {}
     script_stem: str | None = None
 
-    # Layer defaults: CLI flag > voiceme.toml > hardcoded
+    # Layer defaults: CLI flag > voicecli.toml > hardcoded
     engine = engine or cfg.get("engine", "qwen")
     language = language or cfg.get("language", "English")
 
@@ -383,7 +383,7 @@ def clone(
     if "instruct" in cfg:
         extra_kwargs["instruct"] = cfg["instruct"]
     else:
-        from voiceme.markdown import compose_instruct
+        from voicecli.markdown import compose_instruct
 
         composed = compose_instruct(
             cfg.get("accent"), cfg.get("personality"),
@@ -399,8 +399,8 @@ def clone(
     # Detect .md file input
     text_path = Path(text)
     if text.endswith(".md") and text_path.exists():
-        from voiceme.markdown import parse_md_file
-        from voiceme.translate import translate_for_engine
+        from voicecli.markdown import parse_md_file
+        from voicecli.translate import translate_for_engine
 
         script_stem = text_path.stem
         doc = parse_md_file(text_path)
@@ -432,13 +432,13 @@ def clone(
 
     # Fall back to active sample if --ref not provided
     if ref is None:
-        from voiceme.samples import get_active_path
+        from voicecli.samples import get_active_path
 
         ref = get_active_path()
         if ref is None:
             typer.echo(
                 "Error: no --ref provided and no active sample set.\n"
-                "Use 'voiceme samples use <name>' to set an active sample.",
+                "Use 'voicecli samples use <name>' to set an active sample.",
                 err=True,
             )
             raise typer.Exit(1)
@@ -464,7 +464,7 @@ def clone(
         result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
         typer.echo(f"Saved to {result}")
         if mp3:
-            from voiceme.utils import wav_to_mp3
+            from voicecli.utils import wav_to_mp3
 
             mp3_path = wav_to_mp3(result)
             typer.echo(f"Saved to {mp3_path}")
@@ -479,7 +479,7 @@ def transcribe(
     json_output: Annotated[bool, typer.Option("--json", help="JSON output with timestamps")] = False,
 ):
     """Transcribe speech from an audio file to text."""
-    from voiceme.transcribe import transcribe as do_transcribe
+    from voicecli.transcribe import transcribe as do_transcribe
 
     if not audio.exists():
         typer.echo(f"Error: file not found: {audio}", err=True)
@@ -500,7 +500,7 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from voiceme.utils import default_output_path
+        from voicecli.utils import default_output_path
         ext = "json" if json_output else "txt"
         output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=Path("STT/texts_out"))
 
@@ -513,7 +513,7 @@ def listen(
     model: Annotated[str, typer.Option("--model", "-m", help="Kyutai model: 1b or 2.6b")] = "1b",
 ):
     """Live speech-to-text from microphone (Kyutai STT)."""
-    from voiceme.listen import MODELS, listen_loop
+    from voicecli.listen import MODELS, listen_loop
 
     if model not in MODELS:
         typer.echo(f"Error: unknown model '{model}'. Choose from: {', '.join(MODELS)}", err=True)
@@ -527,7 +527,7 @@ def mp3(
     bitrate: Annotated[int, typer.Option("--bitrate", "-b", help="MP3 bitrate in kbps")] = 192,
 ):
     """Convert a WAV file to MP3."""
-    from voiceme.utils import wav_to_mp3
+    from voicecli.utils import wav_to_mp3
 
     if not file.exists():
         typer.echo(f"Error: file not found: {file}", err=True)
@@ -559,10 +559,10 @@ def init(
         bool, typer.Option("--yes", "-y", help="Skip prompts, write default template")
     ] = False,
 ):
-    """Create a voiceme.toml config file (interactive wizard or -y for defaults)."""
-    config_path = Path("voiceme.toml")
+    """Create a voicecli.toml config file (interactive wizard or -y for defaults)."""
+    config_path = Path("voicecli.toml")
     if config_path.exists():
-        typer.echo("voiceme.toml already exists — not overwriting.")
+        typer.echo("voicecli.toml already exists — not overwriting.")
         raise typer.Exit(1)
 
     if yes:
@@ -589,11 +589,11 @@ def init(
 # crossfade = 0                  # ms fade between segments
 """
         config_path.write_text(template)
-        typer.echo("Created voiceme.toml — edit it to set your defaults.")
+        typer.echo("Created voicecli.toml — edit it to set your defaults.")
         return
 
     # ── Interactive wizard ──────────────────────────────────────────────────
-    typer.echo("VoiceMe config wizard — press Enter to accept defaults.\n")
+    typer.echo("VoiceCLI config wizard — press Enter to accept defaults.\n")
     values: dict[str, object] = {}
     valid_engines = available_engines()
 
@@ -609,7 +609,7 @@ def init(
 
     # 2. Language (skip for chatterbox-turbo — English only)
     if engine != "chatterbox-turbo":
-        from voiceme.utils import LANG_MAP
+        from voicecli.utils import LANG_MAP
         lang_names = sorted({k.title() for k in LANG_MAP if k.isascii()})
         typer.echo(f"  Supported languages: {', '.join(lang_names)}")
         language = typer.prompt("Language", default="English").strip()
@@ -665,13 +665,13 @@ def init(
 
     # ── Write toml ──────────────────────────────────────────────────────────
     config_path.write_text(_build_toml(values, engine))
-    typer.echo(f"\nCreated voiceme.toml with {len(values)} setting(s).")
+    typer.echo(f"\nCreated voicecli.toml with {len(values)} setting(s).")
 
 
 def _list_voices_for_engine(engine_name: str) -> list[str]:
     """Get voice list without loading heavy models."""
     if engine_name in ("qwen", "qwen-fast"):
-        from voiceme.engines.qwen import SPEAKERS
+        from voicecli.engines.qwen import SPEAKERS
         return list(SPEAKERS)
     return ["default"]
 
@@ -701,7 +701,7 @@ def _prompt_int(label: str, default: int, minimum: int) -> int:
 
 
 def _build_toml(values: dict[str, object], engine: str) -> str:
-    """Build voiceme.toml with set fields uncommented, others commented out."""
+    """Build voicecli.toml with set fields uncommented, others commented out."""
     is_qwen = engine.startswith("qwen")
     is_chatterbox = engine.startswith("chatterbox")
 
@@ -756,7 +756,7 @@ def doctor():
     import shutil
     import sys
 
-    from voiceme.models import MODEL_REGISTRY, cached_model_size_gb, hf_cache_dir, is_model_cached
+    from voicecli.models import MODEL_REGISTRY, cached_model_size_gb, hf_cache_dir, is_model_cached
 
     def ok(msg: str) -> None:
         typer.echo(typer.style("  \u2713 ", fg=typer.colors.GREEN, bold=True) + msg)
@@ -767,7 +767,7 @@ def doctor():
     def fail(msg: str) -> None:
         typer.echo(typer.style("  \u2717 ", fg=typer.colors.RED, bold=True) + msg)
 
-    typer.echo(typer.style("\nVoiceMe Doctor", bold=True))
+    typer.echo(typer.style("\nVoiceCLI Doctor", bold=True))
     typer.echo("=" * 40)
 
     # Python version
@@ -833,24 +833,24 @@ def doctor():
     # User config
     typer.echo(typer.style("\nConfig", bold=True))
     try:
-        from voiceme.config import load_defaults
+        from voicecli.config import load_defaults
 
         cfg = load_defaults()
         if cfg:
-            ok(f"voiceme.toml loaded ({len(cfg)} defaults: {', '.join(cfg)})")
+            ok(f"voicecli.toml loaded ({len(cfg)} defaults: {', '.join(cfg)})")
         else:
-            config_path = Path("voiceme.toml")
+            config_path = Path("voicecli.toml")
             if config_path.is_file():
-                warn("voiceme.toml found but [defaults] section is empty")
+                warn("voicecli.toml found but [defaults] section is empty")
             else:
-                warn("No voiceme.toml (optional — set default language, engine, etc.)")
+                warn("No voicecli.toml (optional — set default language, engine, etc.)")
     except Exception as e:
-        warn(f"Could not read voiceme.toml: {e}")
+        warn(f"Could not read voicecli.toml: {e}")
 
     # Active voice sample
     typer.echo(typer.style("\nVoice Sample", bold=True))
     try:
-        from voiceme.samples import get_active
+        from voicecli.samples import get_active
 
         active = get_active()
         if active:
@@ -905,7 +905,7 @@ IMPORTANT: Write instruct parts in the TARGET LANGUAGE.
   Japanese speech -> accent in Japanese, etc.
 
 Raw 'instruct' still works as bypass — overrides all parts.
-Set in frontmatter, per-section directives, or voiceme.toml.
+Set in frontmatter, per-section directives, or voicecli.toml.
 
 Qwen (raw instruct mode)
 -------------------------
@@ -946,6 +946,6 @@ Segment Transitions
   gap=0, crossfade>0    fade-out then fade-in
   gap>0, crossfade>0    fade-out | silence | fade-in
 
-Set via frontmatter, per-section directives, CLI flags, or voiceme.toml.
+Set via frontmatter, per-section directives, CLI flags, or voicecli.toml.
 """
     )

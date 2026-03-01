@@ -1,9 +1,9 @@
-"""Tests for voiceme.markdown — parsing, directives, segments."""
+"""Tests for voicecli.markdown — parsing, directives, segments."""
 
 import pytest
 from pathlib import Path
 
-from voiceme.markdown import (
+from voicecli.markdown import (
     _parse_comment_kvs,
     compose_instruct,
     parse_frontmatter,

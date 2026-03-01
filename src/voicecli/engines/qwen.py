@@ -6,14 +6,14 @@ import torch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voiceme.engine import TTSEngine, cuda_guard
-from voiceme.models import (
+from voicecli.engine import TTSEngine, cuda_guard
+from voicecli.models import (
     QWEN_CLONE_MODEL, QWEN_CLONE_MODEL_SMALL, QWEN_MODEL, QWEN_MODEL_SMALL,
     warn_if_first_download,
 )
 
 if TYPE_CHECKING:
-    from voiceme.markdown import Segment
+    from voicecli.markdown import Segment
 
 SPEAKERS = [
     "Vivian", "Serena", "Uncle_Fu", "Dylan",
@@ -80,7 +80,7 @@ class QwenEngine(TTSEngine):
         default_crossfade: int = 0,
     ) -> tuple[np.ndarray, int]:
         """Generate audio per-segment with individual overrides, then concatenate."""
-        from voiceme.utils import concat_audio
+        from voicecli.utils import concat_audio
 
         if method == "custom_voice":
             model = self._load_model()

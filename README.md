@@ -1,4 +1,4 @@
-# VoiceMe
+# VoiceCLI
 
 Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
 
@@ -11,7 +11,7 @@ Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Fa
 ## Install
 
 ```bash
-git clone <repo-url> && cd voiceMe
+git clone <repo-url> && cd voiceCLI
 uv sync
 ```
 
@@ -19,30 +19,30 @@ uv sync
 
 ```bash
 # Generate speech with default voice (Qwen, Ryan)
-voiceme generate "Hello, how are you today?"
+voicecligenerate "Hello, how are you today?"
 
 # Pick a different voice
-voiceme generate "Bonjour" --voice Vivian --lang French
+voicecligenerate "Bonjour" --voice Vivian --lang French
 
 # Use Chatterbox engine
-voiceme generate "This is exciting!" --engine chatterbox
+voicecligenerate "This is exciting!" --engine chatterbox
 
 # Clone a voice from a reference audio file
-voiceme clone "Say this in my voice" --ref my_recording.wav
+voicecliclone "Say this in my voice" --ref my_recording.wav
 
 # Transcribe an audio file
-voiceme transcribe recording.wav
+voiceclitranscribe recording.wav
 
 # Live mic transcription
-voiceme listen
+voiceclilisten
 ```
 
-## User Config (`voiceme.toml`)
+## User Config (`voicecli.toml`)
 
 Optional file at project root (gitignored). Sets default values so you don't pass flags every time.
 
 ```bash
-cp voiceme.example.toml voiceme.toml   # then edit to taste
+cp voicecli.example.toml voicecli.toml   # then edit to taste
 ```
 
 ```toml
@@ -61,20 +61,20 @@ Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-com
 `instruct`: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
 
 **Segment propagation**: toml structured parts are backfilled into `.md` segments where frontmatter
-didn't set them, so a script with no frontmatter still inherits instruct from voiceme.toml.
+didn't set them, so a script with no frontmatter still inherits instruct from voicecli.toml.
 
-Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
+Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default**
 
 ## Commands
 
 ### `generate` — Text to speech
 
 ```bash
-voiceme generate "Your text here"
-voiceme generate "Your text" --engine chatterbox --output out.wav
-voiceme generate script.md                      # read from markdown file
-voiceme generate script.md --segment-gap 300    # 300ms silence between segments
-voiceme generate script.md --crossfade 50       # 50ms fade between segments
+voicecligenerate "Your text here"
+voicecligenerate "Your text" --engine chatterbox --output out.wav
+voicecligenerate script.md                      # read from markdown file
+voicecligenerate script.md --segment-gap 300    # 300ms silence between segments
+voicecligenerate script.md --crossfade 50       # 50ms fade between segments
 ```
 
 | Flag | Short | Description | Default |
@@ -90,9 +90,9 @@ voiceme generate script.md --crossfade 50       # 50ms fade between segments
 ### `clone` — Voice cloning
 
 ```bash
-voiceme clone "Text to speak" --ref reference.wav
-voiceme clone "Text to speak"              # uses active sample (see below)
-voiceme clone script.md --segment-gap 200  # with segment transitions
+voicecliclone "Text to speak" --ref reference.wav
+voicecliclone "Text to speak"              # uses active sample (see below)
+voicecliclone script.md --segment-gap 200  # with segment transitions
 ```
 
 | Flag | Short | Description | Default |
@@ -109,13 +109,13 @@ voiceme clone script.md --segment-gap 200  # with segment transitions
 ### `samples` — Manage voice samples
 
 ```bash
-voiceme samples list                       # list all samples
-voiceme samples add voice.wav              # import a WAV file
-voiceme samples record my_voice            # record from microphone (10s)
-voiceme samples record my_voice -d 5       # record for 5 seconds
-voiceme samples use my_voice.wav           # set as active sample
-voiceme samples active                     # show current active sample
-voiceme samples remove my_voice.wav        # delete a sample
+voiceclisamples list                       # list all samples
+voiceclisamples add voice.wav              # import a WAV file
+voiceclisamples record my_voice            # record from microphone (10s)
+voiceclisamples record my_voice -d 5       # record for 5 seconds
+voiceclisamples use my_voice.wav           # set as active sample
+voiceclisamples active                     # show current active sample
+voiceclisamples remove my_voice.wav        # delete a sample
 ```
 
 Once you set an active sample, `clone` uses it automatically — no `--ref` needed.
@@ -123,24 +123,24 @@ Once you set an active sample, `clone` uses it automatically — no `--ref` need
 ### `voices` — List available voices
 
 ```bash
-voiceme voices                             # Qwen voices
-voiceme voices --engine chatterbox
+voiceclivoices                             # Qwen voices
+voiceclivoices --engine chatterbox
 ```
 
 ### `engines` — List available engines
 
 ```bash
-voiceme engines
+voicecliengines
 ```
 
 ### `transcribe` — Speech to text
 
 ```bash
-voiceme transcribe audio.wav                   # auto-detect language
-voiceme transcribe audio.wav --lang fr         # force language
-voiceme transcribe audio.wav --model large-v3  # choose model
-voiceme transcribe audio.wav --json            # JSON with language + timestamps
-voiceme transcribe audio.wav -o result.txt     # save to file
+voiceclitranscribe audio.wav                   # auto-detect language
+voiceclitranscribe audio.wav --lang fr         # force language
+voiceclitranscribe audio.wav --model large-v3  # choose model
+voiceclitranscribe audio.wav --json            # JSON with language + timestamps
+voiceclitranscribe audio.wav -o result.txt     # save to file
 ```
 
 | Flag | Short | Description | Default |
@@ -155,8 +155,8 @@ Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo
 ### `listen` — Live mic transcription
 
 ```bash
-voiceme listen                                 # EN + FR (1b model)
-voiceme listen --model 2.6b                    # English-only, higher quality
+voiceclilisten                                 # EN + FR (1b model)
+voiceclilisten --model 2.6b                    # English-only, higher quality
 ```
 
 Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
@@ -168,7 +168,7 @@ Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
 ### `emotions` — Expressiveness cheat sheet
 
 ```bash
-voiceme emotions
+voicecliemotions
 ```
 
 ## Markdown File Input
@@ -286,7 +286,7 @@ Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
 ## Project Structure
 
 ```
-voiceme.example.toml # template — copy to voiceme.toml (gitignored)
+voicecli.example.toml # template — copy to voicecli.toml (gitignored)
 TTS/
   texts_in/         # authored .md scripts (tracked in git)
   voices_out/       # generated WAV/MP3 (gitignored)
@@ -294,9 +294,9 @@ TTS/
 STT/
   audio_in/         # audio files to transcribe (gitignored)
   texts_out/        # transcription results (gitignored)
-src/voiceme/
+src/voicecli/
   cli.py            # Typer commands (entry point)
-  config.py         # TOML config loader (reads voiceme.toml)
+  config.py         # TOML config loader (reads voicecli.toml)
   engine.py         # Abstract TTSEngine + registry
   engines/
     qwen.py         # Qwen3-TTS backend

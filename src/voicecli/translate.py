@@ -4,7 +4,7 @@ import random
 import re
 from copy import deepcopy
 
-from voiceme.markdown import Segment, TTSDocument
+from voicecli.markdown import Segment, TTSDocument
 
 # ── Engine capability matrix ────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ for _lang, _pools in _TAG_DATA_BY_LANG.items():
 
 def _resolve_tag_pool(pool_name: str, language: str | None) -> dict:
     """Resolve a tag data pool by name and language, falling back to English."""
-    from voiceme.utils import resolve_language
+    from voicecli.utils import resolve_language
     lang_code = resolve_language(language) if language else "en"
     lang_data = _TAG_DATA_BY_LANG.get(lang_code, _TAG_DATA_EN)
     return lang_data[pool_name]

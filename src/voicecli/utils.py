@@ -26,7 +26,7 @@ def resolve_language(language: str) -> str:
 
 
 def default_output_path(
-    prefix: str = "voiceme", fmt: str = "wav", base_dir: Path | None = None,
+    prefix: str = "voicecli", fmt: str = "wav", base_dir: Path | None = None,
 ) -> Path:
     now = datetime.now()
     day_dir = (base_dir or OUTPUT_DIR) / now.strftime("%Y%m%d")

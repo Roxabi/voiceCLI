@@ -1,4 +1,4 @@
-# VoiceMe
+# VoiceCLI
 
 Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual and Chatterbox Turbo backends.
 
@@ -7,12 +7,12 @@ Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual a
 ### Code pipeline (deterministic, at runtime)
 
 ```
-User runs: voiceme generate script.md -e chatterbox
+User runs: voicecli generate script.md -e chatterbox
 
   1. cli.py         — detects .md input, resolves engine from CLI flag / frontmatter
   2. markdown.py    — parses YAML frontmatter + body into TTSDocument
                       (extracts instruct, segments, tags, exaggeration, etc.)
-  2b. cli.py        — _apply_config_defaults(): backfills voiceme.toml structured parts
+  2b. cli.py        — _apply_config_defaults(): backfills voicecli.toml structured parts
                       (accent, personality, speed, emotion) into doc/segments, recomposes instruct
   3. translate.py   — adapts TTSDocument for the target engine via ENGINE_CAPS matrix
                       (strips/converts tags, nulls unsupported fields)
@@ -26,13 +26,13 @@ one universal `.md` file work across all three engines without manual adaptation
 
 ### LLM skill (`roxabi-plugins/voice-me`)
 
-The `/voiceme` skill is provided by the `voice-me` plugin (installed from `roxabi-plugins`).
-Locally, `.claude/skills/voiceme/SKILL.md` is a symlink to the plugin (gitignored).
+The `/voicecli` skill is provided by the `voice-me` plugin (installed from `roxabi-plugins`).
+Locally, `.claude/skills/voicecli/SKILL.md` is a symlink to the plugin (gitignored).
 
 The LLM handles:
 
 - **Intent parsing** — understanding natural language requests ("make me a French speech with laughter")
-- **Command selection** — picking the right `uv run voiceme` command and flags
+- **Command selection** — picking the right `uv run voicecli` command and flags
 - **Script authoring** — writing `.md` files with appropriate frontmatter when the user wants a script
 - **Engine guidance** — knowing which features each engine supports (from the Engine Notes)
 
@@ -52,7 +52,7 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
-voiceme.example.toml — template config — copy to voiceme.toml (gitignored)
+voicecli.example.toml — template config — copy to voicecli.toml (gitignored)
 TTS/
   texts_in/         — authored .md scripts (tracked in git)
   voices_out/       — generated WAV/MP3 (gitignored)
@@ -60,9 +60,9 @@ TTS/
 STT/
   audio_in/         — audio files to transcribe (gitignored)
   texts_out/        — transcription results (gitignored)
-src/voiceme/
+src/voicecli/
   cli.py            — Typer app: command definitions, .md detection, flag overrides
-  config.py         — TOML config loader (reads voiceme.toml)
+  config.py         — TOML config loader (reads voicecli.toml)
   engine.py         — Abstract TTSEngine base class + engine registry
   translate.py      — Engine capability matrix (ENGINE_CAPS) + translate_for_engine()
   markdown.py       — YAML frontmatter parser + markdown-to-plaintext + directive parser
@@ -76,9 +76,9 @@ src/voiceme/
     chatterbox_turbo.py  — Chatterbox Turbo engine (English-only, paralinguistic tags)
 ```
 
-## User Config (`voiceme.toml`)
+## User Config (`voicecli.toml`)
 
-Optional TOML file at project root (gitignored). Copy from `voiceme.example.toml` and customize.
+Optional TOML file at project root (gitignored). Copy from `voicecli.example.toml` and customize.
 
 ```toml
 [defaults]
@@ -97,10 +97,10 @@ Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-com
 
 **Segment propagation**: When a `.md` file is parsed, toml structured parts (accent, personality,
 speed, emotion) are backfilled into segments where frontmatter didn't set them, then instruct is
-recomposed. This means a `.md` file with no frontmatter still gets instruct from voiceme.toml.
+recomposed. This means a `.md` file with no frontmatter still gets instruct from voicecli.toml.
 Segments with a raw `instruct` bypass (instruct set but no structured parts) are left untouched.
 
-Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
+Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default**
 
 ## Engine Capability Matrix
 
@@ -125,42 +125,42 @@ Tag handling modes:
 
 ```bash
 # Speech generation (built-in voices)
-voiceme generate "text"                    # Qwen default voice (Ryan)
-voiceme generate "text" -e chatterbox      # Chatterbox Multilingual engine
-voiceme generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
-voiceme generate script.md                 # from markdown with frontmatter
-voiceme generate script.md --mp3           # also save as MP3
-voiceme generate script.md --segment-gap 300  # 300ms silence between segments
-voiceme generate script.md --crossfade 50     # 50ms fade between segments
+voicecli generate "text"                    # Qwen default voice (Ryan)
+voicecli generate "text" -e chatterbox      # Chatterbox Multilingual engine
+voicecli generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
+voicecli generate script.md                 # from markdown with frontmatter
+voicecli generate script.md --mp3           # also save as MP3
+voicecli generate script.md --segment-gap 300  # 300ms silence between segments
+voicecli generate script.md --crossfade 50     # 50ms fade between segments
 
 # Voice cloning
-voiceme clone "text" --ref voice.wav       # clone from reference audio
-voiceme clone "text"                       # uses active sample (no --ref needed)
-voiceme clone script.md --mp3              # from markdown + MP3 output
+voicecli clone "text" --ref voice.wav       # clone from reference audio
+voicecli clone "text"                       # uses active sample (no --ref needed)
+voicecli clone script.md --mp3              # from markdown + MP3 output
 
 # Sample management
-voiceme samples list                       # list all .wav in TTS/samples/
-voiceme samples add file.wav               # import a WAV file
-voiceme samples record name -d 30          # record 30s from mic (PulseAudio)
-voiceme samples use name.wav               # set as active sample for clone
-voiceme samples active                     # show current active sample
-voiceme samples remove name.wav            # delete a sample
+voicecli samples list                       # list all .wav in TTS/samples/
+voicecli samples add file.wav               # import a WAV file
+voicecli samples record name -d 30          # record 30s from mic (PulseAudio)
+voicecli samples use name.wav               # set as active sample for clone
+voicecli samples active                     # show current active sample
+voicecli samples remove name.wav            # delete a sample
 
 # Speech-to-text
-voiceme transcribe audio.wav               # transcribe audio file
-voiceme transcribe audio.wav --json        # JSON with language + timestamps
-voiceme transcribe audio.wav -m large-v3   # choose model
-voiceme transcribe audio.wav -l fr         # force language
-voiceme listen                             # live mic → text (Kyutai)
-voiceme listen -m 2.6b                     # English-only model
+voicecli transcribe audio.wav               # transcribe audio file
+voicecli transcribe audio.wav --json        # JSON with language + timestamps
+voicecli transcribe audio.wav -m large-v3   # choose model
+voicecli transcribe audio.wav -l fr         # force language
+voicecli listen                             # live mic → text (Kyutai)
+voicecli listen -m 2.6b                     # English-only model
 
 # Utilities
-voiceme mp3 TTS/voices_out/file.wav       # convert WAV to MP3 (192kbps default)
-voiceme mp3 TTS/voices_out/file.wav -b 320 # convert at 320kbps
-voiceme voices                             # list Qwen voices
-voiceme voices -e chatterbox               # list Chatterbox voices
-voiceme engines                            # list available engines
-voiceme emotions                           # emotion/expressiveness cheat sheet
+voicecli mp3 TTS/voices_out/file.wav       # convert WAV to MP3 (192kbps default)
+voicecli mp3 TTS/voices_out/file.wav -b 320 # convert at 320kbps
+voicecli voices                             # list Qwen voices
+voicecli voices -e chatterbox               # list Chatterbox voices
+voicecli engines                            # list available engines
+voicecli emotions                           # emotion/expressiveness cheat sheet
 ```
 
 ## Unified Markdown Format
@@ -271,7 +271,7 @@ Given the universal script above, the translator produces:
 - Engine registry in `engine.py:_get_registry()` — add new engines there
 - `generate` and `clone` both accept raw text OR a `.md` file path (auto-detected)
 - `clone` falls back to active sample when `--ref` is omitted
-- Priority chain: CLI flag > markdown frontmatter > voiceme.toml > hardcoded default
+- Priority chain: CLI flag > markdown frontmatter > voicecli.toml > hardcoded default
 - Config backfill (`_apply_config_defaults`) runs after `parse_md_file()`, before `translate_for_engine()`
 - Translation happens after config backfill but before field extraction in cli.py
 - All engines support segment-aware generation with per-segment parameter overrides

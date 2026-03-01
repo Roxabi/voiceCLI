@@ -18,4 +18,4 @@ STT/texts_out/*
 !STT/texts_out/.gitkeep
 .ruff_cache/
 .claude/skills/
-voiceme.toml
+voicecli.toml

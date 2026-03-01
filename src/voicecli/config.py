@@ -1,4 +1,4 @@
-"""Load user defaults from voiceme.toml."""
+"""Load user defaults from voicecli.toml."""
 
 import tomllib
 from pathlib import Path
@@ -20,8 +20,8 @@ _KNOWN_DEFAULTS: dict[str, type] = {
 
 
 def load_defaults() -> dict:
-    """Load [defaults] from voiceme.toml in CWD. Returns empty dict if not found."""
-    path = Path("voiceme.toml")
+    """Load [defaults] from voicecli.toml in CWD. Returns empty dict if not found."""
+    path = Path("voicecli.toml")
     if not path.is_file():
         return {}
     with open(path, "rb") as f:
