@@ -100,6 +100,8 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
     # Remove images ![alt](url)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    # Strip before newline conversion to avoid leading ". " from frontmatter gap
+    text = text.strip()
     # Join paragraphs: collapse multiple newlines into ". " for natural pausing
     text = re.sub(r"\n{2,}", ". ", text)
     # Single newlines → space

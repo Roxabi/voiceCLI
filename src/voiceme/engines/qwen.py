@@ -32,6 +32,8 @@ class QwenEngine(TTSEngine):
     def _load_model(self):
         if self._model is None:
             with cuda_guard("qwen"):
+                import transformers
+                transformers.logging.set_verbosity_error()
                 from qwen_tts import Qwen3TTSModel
 
                 torch.set_float32_matmul_precision("high")
@@ -51,6 +53,8 @@ class QwenEngine(TTSEngine):
     def _load_clone_model(self):
         if self._clone_model is None:
             with cuda_guard("qwen"):
+                import transformers
+                transformers.logging.set_verbosity_error()
                 from qwen_tts import Qwen3TTSModel
 
                 torch.set_float32_matmul_precision("high")

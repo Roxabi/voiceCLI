@@ -6,7 +6,8 @@ OUTPUT_DIR = Path("TTS/voices_out")
 # Map full language names to ISO 639-1 codes (shared across engines and utils)
 LANG_MAP = {
     "arabic": "ar", "danish": "da", "german": "de", "greek": "el",
-    "english": "en", "spanish": "es", "finnish": "fi", "french": "fr",
+    "english": "en", "spanish": "es", "finnish": "fi",
+    "french": "fr", "français": "fr",
     "hebrew": "he", "hindi": "hi", "italian": "it", "japanese": "ja",
     "korean": "ko", "malay": "ms", "dutch": "nl", "norwegian": "no",
     "polish": "pl", "portuguese": "pt", "russian": "ru", "swedish": "sv",
@@ -24,10 +25,14 @@ def resolve_language(language: str) -> str:
     return "en"
 
 
-def default_output_path(prefix: str = "voiceme", fmt: str = "wav") -> Path:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return OUTPUT_DIR / f"{prefix}_{ts}.{fmt}"
+def default_output_path(
+    prefix: str = "voiceme", fmt: str = "wav", base_dir: Path | None = None,
+) -> Path:
+    now = datetime.now()
+    day_dir = (base_dir or OUTPUT_DIR) / now.strftime("%Y%m%d")
+    day_dir.mkdir(parents=True, exist_ok=True)
+    ts = now.strftime("%Y%m%d_%H%M%S")
+    return day_dir / f"{prefix}_{ts}.{fmt}"
 
 
 def build_output_prefix(

@@ -456,13 +456,9 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from datetime import datetime
-
-        stt_dir = Path("STT/texts_out")
-        stt_dir.mkdir(parents=True, exist_ok=True)
+        from voiceme.utils import default_output_path
         ext = "json" if json_output else "txt"
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output = stt_dir / f"{audio.stem}_{ts}.{ext}"
+        output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=Path("STT/texts_out"))
 
     output.write_text(text_out, encoding="utf-8")
     typer.echo(f"Saved to {output}", err=True)
