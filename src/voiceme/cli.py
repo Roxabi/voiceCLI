@@ -466,6 +466,23 @@ def doctor():
         except Exception:
             fail(f"{d}: check failed")
 
+    # User config
+    typer.echo(typer.style("\nConfig", bold=True))
+    try:
+        from voiceme.config import load_defaults
+
+        cfg = load_defaults()
+        if cfg:
+            ok(f"voiceme.toml loaded ({len(cfg)} defaults: {', '.join(cfg)})")
+        else:
+            config_path = Path("voiceme.toml")
+            if config_path.is_file():
+                warn("voiceme.toml found but [defaults] section is empty")
+            else:
+                warn("No voiceme.toml (optional — set default language, engine, etc.)")
+    except Exception as e:
+        warn(f"Could not read voiceme.toml: {e}")
+
     # Active voice sample
     typer.echo(typer.style("\nVoice Sample", bold=True))
     try:
@@ -506,7 +523,7 @@ def emotions():
 
 Qwen (instruct mode)
 --------------------
-Use the 'instruct' field in .md frontmatter or pass via script:
+Use the 'instruct' field in .md frontmatter or per-section:
   instruct: "Speak angrily"
   instruct: "Whispering"
   instruct: "With excitement"
@@ -522,13 +539,27 @@ Insert tags directly in your text (engine: chatterbox-turbo):
 
 Chatterbox (numeric controls — both turbo & multilingual)
 ---------------------------------------------------------
-Set in .md frontmatter or as kwargs:
+Set in .md frontmatter or per-section via <!-- key: value -->:
   exaggeration: 0.25 - 2.0  (expressiveness, default 0.5)
   cfg_weight:   0.0  - 1.0  (speaker adherence, default 0.5)
 
-Chatterbox Multilingual (23 languages)
---------------------------------------
-  engine: chatterbox     — supports language field
-  No paralinguistic tags — use exaggeration/cfg_weight for expressiveness
+Per-Section Directives
+----------------------
+Override any parameter per section using HTML comments:
+  <!-- instruct: "Speak seriously" -->       (Qwen)
+  <!-- exaggeration: 0.8 -->                 (Chatterbox)
+  <!-- language: Japanese -->                 (per-section language)
+  <!-- voice: Ono_Anna -->                   (per-section voice, Qwen)
+  <!-- segment_gap: 500 -->                  (silence before section, ms)
+  <!-- crossfade: 100 -->                    (fade before section, ms)
+
+Segment Transitions
+-------------------
+  gap=0, crossfade=0    direct concat (default)
+  gap>0, crossfade=0    hard cut | silence | hard cut
+  gap=0, crossfade>0    fade-out then fade-in
+  gap>0, crossfade>0    fade-out | silence | fade-in
+
+Set via frontmatter, per-section directives, CLI flags, or voiceme.toml.
 """
     )

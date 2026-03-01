@@ -37,6 +37,22 @@ voiceme transcribe recording.wav
 voiceme listen
 ```
 
+## User Config (`voiceme.toml`)
+
+Optional file at project root. Sets default values so you don't pass flags every time.
+
+```toml
+[defaults]
+language = "French"
+engine = "chatterbox"
+exaggeration = 0.7
+cfg_weight = 0.3
+segment_gap = 200
+crossfade = 50
+```
+
+Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
+
 ## Commands
 
 ### `generate` — Text to speech
@@ -44,21 +60,27 @@ voiceme listen
 ```bash
 voiceme generate "Your text here"
 voiceme generate "Your text" --engine chatterbox --output out.wav
-voiceme generate script.md                 # read from markdown file
+voiceme generate script.md                      # read from markdown file
+voiceme generate script.md --segment-gap 300    # 300ms silence between segments
+voiceme generate script.md --crossfade 50       # 50ms fade between segments
 ```
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
-| `--engine` | `-e` | TTS engine (`qwen` or `chatterbox`) | `qwen` |
-| `--voice` | `-v` | Voice name (Qwen only) | `Ryan` |
+| `--engine` | `-e` | TTS engine (`qwen`, `chatterbox`, `chatterbox-turbo`) | `qwen` |
+| `--voice` | `-v` | Voice name (Qwen only) | `Ono_Anna` |
 | `--output` | `-o` | Output WAV path | auto-generated |
 | `--lang` | | Language | `English` |
+| `--mp3` | | Also save as MP3 | off |
+| `--segment-gap` | | Silence between segments (ms) | `0` |
+| `--crossfade` | | Fade between segments (ms) | `0` |
 
 ### `clone` — Voice cloning
 
 ```bash
 voiceme clone "Text to speak" --ref reference.wav
 voiceme clone "Text to speak"              # uses active sample (see below)
+voiceme clone script.md --segment-gap 200  # with segment transitions
 ```
 
 | Flag | Short | Description | Default |
@@ -68,6 +90,9 @@ voiceme clone "Text to speak"              # uses active sample (see below)
 | `--ref-text` | | Transcript of reference audio | none |
 | `--output` | `-o` | Output WAV path | auto-generated |
 | `--lang` | | Language | `English` |
+| `--mp3` | | Also save as MP3 | off |
+| `--segment-gap` | | Silence between segments (ms) | `0` |
+| `--crossfade` | | Fade between segments (ms) | `0` |
 
 ### `samples` — Manage voice samples
 
@@ -144,11 +169,15 @@ language: French
 voice: Ryan
 engine: qwen
 instruct: "Parle avec un ton chaleureux et amical"
+segment_gap: 200
+crossfade: 50
 ---
 
 Bonjour, comment allez-vous aujourd'hui ?
 
-Ceci est un deuxième paragraphe.
+<!-- instruct: "Parle sérieusement" -->
+<!-- segment_gap: 500 -->
+Maintenant, parlons de choses importantes.
 ```
 
 ### Frontmatter fields
@@ -157,57 +186,74 @@ All optional — CLI flags override frontmatter values.
 
 | Field | Engine | Description |
 |-------|--------|-------------|
-| `language` | both | Language for synthesis |
+| `language` | qwen + chatterbox | Language for synthesis |
 | `voice` | qwen | Speaker name |
-| `engine` | both | `qwen` or `chatterbox` |
+| `engine` | all | `qwen`, `chatterbox`, or `chatterbox-turbo` |
 | `instruct` | qwen | Free-form tone/emotion instruction |
 | `exaggeration` | chatterbox | Expressiveness 0.25–2.0 (default 0.5) |
-| `cfg_weight` | chatterbox | Pacing control 0.0–1.0 (default 0.5) |
+| `cfg_weight` | chatterbox | Speaker adherence 0.0–1.0 (default 0.5) |
+| `segment_gap` | all | Silence between segments in ms (default 0) |
+| `crossfade` | all | Fade between segments in ms (default 0) |
 
-Markdown formatting (`# headers`, `**bold**`, `[links](url)`, etc.) is stripped automatically. Paralinguistic tags like `[laugh]` and `[sigh]` are preserved for Chatterbox.
+Markdown formatting (`# headers`, `**bold**`, `[links](url)`, etc.) is stripped automatically. Paralinguistic tags like `[laugh]` and `[sigh]` are preserved for Chatterbox Turbo.
 
-### Multi-segment emotion control
+### Per-section directives
 
-Use `<!-- instruct: ... -->` HTML comments to vary the tone per section:
+All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults.
 
 ```markdown
 ---
 language: French
-engine: qwen
-instruct: "Default calm tone"
+instruct: "Parle chaleureusement"
+exaggeration: 0.5
+segment_gap: 200
 ---
 
-<!-- instruct: Speak with gravitas and suspense -->
-Le darwinisme et le socialisme ! Deux visions du monde...
+Bienvenue à tous.
 
-<!-- instruct: Rising indignation and outrage -->
-Et certains ont osé appliquer cette logique à la société humaine !
+<!-- instruct: "Parle sérieusement" -->
+<!-- exaggeration: 0.8 -->
+<!-- segment_gap: 500 -->
+Maintenant parlons de choses importantes.
 
-<!-- instruct: Warm, earnest tenderness -->
-L'être humain ne survit pas seul. Il survit en groupe.
+<!-- language: Japanese -->
+<!-- voice: Ono_Anna -->
+<!-- crossfade: 100 -->
+<!-- segment_gap: 0 -->
+A section in Japanese with a different voice, crossfaded in.
 ```
 
-Each section is generated with its own emotion, then concatenated into a single audio file.
+Available directives: `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
 
-> **Note:** Multi-segment instruct only works with `voiceme generate` (built-in voices). The clone model does not support `instruct`.
+### Segment transitions
+
+| gap | crossfade | Result |
+|-----|-----------|--------|
+| 0   | 0         | Direct concat (default) |
+| >0  | 0         | Hard cut, silence, hard cut |
+| 0   | >0        | Fade-out then fade-in (no silence) |
+| >0  | >0        | Fade-out, silence, fade-in |
+
+> **Note:** Qwen clone does NOT support `instruct` — only `generate` does. All engines support per-section overrides for their supported parameters.
 
 ## Emotion Controls
 
-**Qwen** — use `instruct` (free-form text, English or Chinese):
+**Qwen** — use `instruct` (free-form text):
 - `"Speak angrily"`, `"Whispering"`, `"With excitement"`, `"Laughing, amused"`
-- Works even when generating French speech — write instructions in English
+- Works even when generating French speech — write instructions in English or French
+- Can be set per-section via `<!-- instruct: "..." -->`
 
-**Chatterbox** — numeric controls (works in all 23 languages):
-- `exaggeration` (0.25–2.0): how expressive
-- `cfg_weight` (0.0–1.0): pacing tightness (use 0.0 for cross-language cloning to reduce accent bleed)
+**Chatterbox Turbo** — paralinguistic tags (English only):
+- Insert inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`
+- Tags are converted to instruct on Qwen, stripped on Multilingual
 
-**Chatterbox** — supported languages:
+**Chatterbox** — numeric controls (both turbo & multilingual):
+- `exaggeration` (0.25–2.0): how expressive — can be set per-section
+- `cfg_weight` (0.0–1.0): speaker adherence — can be set per-section
+- Use 0.0 for cross-language cloning to reduce accent bleed
+
+**Chatterbox Multilingual** — 23 languages:
 Arabic, Danish, German, Greek, English, Spanish, Finnish, French, Hebrew, Hindi, Italian, Japanese, Korean, Malay, Dutch, Norwegian, Polish, Portuguese, Russian, Swedish, Swahili, Turkish, Chinese
-
-### Known limitations
-
-- **Qwen clone** (`voiceme clone`): does NOT support `instruct` — emotion control is not available when cloning a voice
-- **Chatterbox**: paralinguistic tags (`[laugh]`, `[sigh]`) only work in the Turbo model, not the Multilingual model we ship
 
 ## Available Voices (Qwen)
 
@@ -216,6 +262,7 @@ Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
 ## Project Structure
 
 ```
+voiceme.toml        # user config for default settings (optional)
 TTS/
   texts_in/         # authored .md scripts (tracked in git)
   voices_out/       # generated WAV/MP3 (gitignored)
@@ -225,14 +272,16 @@ STT/
   texts_out/        # transcription results (gitignored)
 src/voiceme/
   cli.py            # Typer commands (entry point)
+  config.py         # TOML config loader (reads voiceme.toml)
   engine.py         # Abstract TTSEngine + registry
   engines/
     qwen.py         # Qwen3-TTS backend
-    chatterbox.py   # Chatterbox backend
+    chatterbox.py   # Chatterbox Multilingual backend
+    chatterbox_turbo.py  # Chatterbox Turbo backend
+  markdown.py       # Frontmatter parser + directive parser
+  translate.py      # Engine capability matrix + document translator
+  utils.py          # Output paths + concat_audio + WAV→MP3
   samples.py        # Sample management (add/record/use/remove)
   transcribe.py     # Faster Whisper file transcription
   listen.py         # Kyutai STT real-time mic transcription
-  markdown.py       # .md frontmatter parser + markdown stripper
-  translate.py      # Engine capability matrix + document translator
-  utils.py          # Output path helpers
 ```
