@@ -44,12 +44,17 @@ Optional file at project root. Sets default values so you don't pass flags every
 ```toml
 [defaults]
 language = "French"
-engine = "chatterbox"
+engine = "qwen"
+accent = "Léger accent du sud provençal"
+personality = "Voix calme, douce et flamboyante"
 exaggeration = 0.7
 cfg_weight = 0.3
 segment_gap = 200
 crossfade = 50
 ```
+
+Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into
+`instruct`: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
 
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
@@ -166,16 +171,16 @@ Instead of raw text, `generate` and `clone` accept a `.md` file with YAML frontm
 ```markdown
 ---
 language: French
-voice: Ryan
-engine: qwen
-instruct: "Parle avec un ton chaleureux et amical"
+accent: "Léger accent provençal"
+personality: "Calme et douce"
+emotion: "Chaleureuse"
 segment_gap: 200
 crossfade: 50
 ---
 
 Bonjour, comment allez-vous aujourd'hui ?
 
-<!-- instruct: "Parle sérieusement" -->
+<!-- emotion: "Passionnée" -->
 <!-- segment_gap: 500 -->
 Maintenant, parlons de choses importantes.
 ```
@@ -189,29 +194,39 @@ All optional — CLI flags override frontmatter values.
 | `language` | qwen + chatterbox | Language for synthesis |
 | `voice` | qwen | Speaker name |
 | `engine` | all | `qwen`, `chatterbox`, or `chatterbox-turbo` |
-| `instruct` | qwen | Free-form tone/emotion instruction |
+| `accent` | qwen | Pronunciation/regional origin (composes into instruct) |
+| `personality` | qwen | Character traits (composes into instruct) |
+| `speed` | qwen | Tempo/pace (composes into instruct) |
+| `emotion` | qwen | Emotional state (composes into instruct) |
+| `instruct` | qwen | Raw instruct bypass (overrides all structured parts) |
 | `exaggeration` | chatterbox | Expressiveness 0.25–2.0 (default 0.5) |
 | `cfg_weight` | chatterbox | Speaker adherence 0.0–1.0 (default 0.5) |
 | `segment_gap` | all | Silence between segments in ms (default 0) |
 | `crossfade` | all | Fade between segments in ms (default 0) |
 
+Structured parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into `instruct`: `"accent. personality. speed. emotion"`. Only non-empty parts are joined. Raw `instruct` bypasses composition.
+
+**Write instruct parts in the target language** — French speech needs French instructs, English speech needs English instructs.
+
 Markdown formatting (`# headers`, `**bold**`, `[links](url)`, etc.) is stripped automatically. Paralinguistic tags like `[laugh]` and `[sigh]` are preserved for Chatterbox Turbo.
 
 ### Per-section directives
 
-All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults.
+All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults — override only what changes.
 
 ```markdown
 ---
 language: French
-instruct: "Parle chaleureusement"
+accent: "Provençal"
+personality: "Calme et douce"
+emotion: "Chaleureuse"
 exaggeration: 0.5
 segment_gap: 200
 ---
 
 Bienvenue à tous.
 
-<!-- instruct: "Parle sérieusement" -->
+<!-- emotion: "Passionnée" -->
 <!-- exaggeration: 0.8 -->
 <!-- segment_gap: 500 -->
 Maintenant parlons de choses importantes.
@@ -223,7 +238,7 @@ Maintenant parlons de choses importantes.
 A section in Japanese with a different voice, crossfaded in.
 ```
 
-Available directives: `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
+Available directives: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
 
 ### Segment transitions
 
@@ -238,10 +253,15 @@ Available directives: `instruct`, `exaggeration`, `cfg_weight`, `language`, `voi
 
 ## Emotion Controls
 
-**Qwen** — use `instruct` (free-form text):
-- `"Speak angrily"`, `"Whispering"`, `"With excitement"`, `"Laughing, amused"`
-- Works even when generating French speech — write instructions in English or French
-- Can be set per-section via `<!-- instruct: "..." -->`
+**Qwen** — structured instruct parts (recommended):
+- `accent`: pronunciation/origin — `"Léger accent provençal"`
+- `personality`: character traits — `"Calme, douce et flamboyante"`
+- `speed`: tempo/pace — `"Rythme posé"`
+- `emotion`: emotional state — `"Chaleureuse"`, `"Passionnée"`
+- Parts auto-compose: `"accent. personality. speed. emotion"`
+- Per-section: `<!-- emotion: "Passionnée" -->` overrides just emotion
+- Raw `instruct` still works as bypass: `"Parle avec colère"`, `"En chuchotant"`
+- Write instruct parts in the target language (French speech → French instructs)
 
 **Chatterbox Turbo** — paralinguistic tags (English only):
 - Insert inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`

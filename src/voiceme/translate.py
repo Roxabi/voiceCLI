@@ -145,8 +145,16 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
     # ── Instruct ──
     if not caps["instruct"]:
         doc.instruct = None
+        doc.accent = None
+        doc.personality = None
+        doc.speed = None
+        doc.emotion = None
         for seg in doc.segments:
             seg.instruct = None
+            seg.accent = None
+            seg.personality = None
+            seg.speed = None
+            seg.emotion = None
 
     # ── Segments ──
     if not caps["segments"]:

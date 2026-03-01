@@ -79,12 +79,17 @@ Optional TOML file at project root. Sets default values so you don't pass flags 
 ```toml
 [defaults]
 language = "French"
-engine = "chatterbox"
+engine = "qwen"
+accent = "Léger accent du sud provençal"
+personality = "Voix calme, douce et flamboyante"
 exaggeration = 0.7
 cfg_weight = 0.3
 segment_gap = 200       # ms silence between segments
 crossfade = 50          # ms fade between segments
 ```
+
+Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into a single
+`instruct` string: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
 
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
@@ -156,7 +161,9 @@ Write one `.md` file using ALL features — the translator adapts it per engine:
 ```markdown
 ---
 language: French
-instruct: "Speak warmly"
+accent: "Léger accent provençal"
+personality: "Calme et douce"
+emotion: "Chaleureuse"
 exaggeration: 0.7
 cfg_weight: 0.3
 segment_gap: 200
@@ -165,7 +172,7 @@ crossfade: 50
 
 Welcome everyone. [laugh] This is going to be fun!
 
-<!-- instruct: "Speak seriously" -->
+<!-- emotion: "Passionnée et excitée" -->
 <!-- segment_gap: 500 -->
 Now let me tell you something important. [sigh] It has been a long road.
 
@@ -183,7 +190,11 @@ A section in Japanese with a different voice.
 language: French          # any language name (Qwen + Chatterbox Multilingual)
 voice: Ryan               # built-in voice name (Qwen only)
 engine: qwen              # qwen | chatterbox | chatterbox-turbo
-instruct: "Speak angrily" # free-form emotion/tone instruction (Qwen only)
+instruct: "Parle avec colère" # raw instruct bypass (Qwen only) — overrides structured parts
+accent: "Provençal"       # pronunciation/origin (Qwen, composes into instruct)
+personality: "Calme"      # character traits (Qwen, composes into instruct)
+speed: "Rythme posé"      # tempo/pace (Qwen, composes into instruct)
+emotion: "Chaleureuse"    # emotional state (Qwen, composes into instruct)
 exaggeration: 0.75        # expressiveness 0.25-2.0, default 0.5 (Chatterbox only)
 cfg_weight: 0.3           # speaker adherence 0.0-1.0, default 0.5 (Chatterbox only)
 segment_gap: 200          # ms silence between segments, default 0
@@ -191,11 +202,25 @@ crossfade: 50             # ms fade between segments, default 0
 ---
 ```
 
+### Structured instruct composition
+
+The `accent`, `personality`, `speed`, `emotion` fields auto-compose into `instruct`:
+`"accent. personality. speed. emotion"` (only non-empty parts are joined).
+
+- Per-section: `<!-- emotion: "Passionnée" -->` overrides just emotion, other parts inherited
+- Raw `instruct` (frontmatter or directive) bypasses composition entirely
+- Priority: raw `instruct` > composed parts
+- **Write instruct parts in the target language** — French speech needs French instructs, English speech needs English instructs
+
 ### In-body directives
 
 All frontmatter fields can also be set per-section using HTML comments:
 
-- `<!-- instruct: "..." -->` — per-section emotion (Qwen, ignored by Chatterbox)
+- `<!-- accent: "Parisien" -->` — per-section accent (Qwen, composes into instruct)
+- `<!-- personality: "Vif" -->` — per-section personality (Qwen, composes into instruct)
+- `<!-- speed: "Rapide" -->` — per-section speed (Qwen, composes into instruct)
+- `<!-- emotion: "Passionnée" -->` — per-section emotion (Qwen, composes into instruct)
+- `<!-- instruct: "..." -->` — raw instruct bypass (Qwen, overrides all structured parts)
 - `<!-- exaggeration: 0.8 -->` — per-section expressiveness (Chatterbox)
 - `<!-- cfg_weight: 0.3 -->` — per-section speaker adherence (Chatterbox)
 - `<!-- language: Japanese -->` — per-section language
@@ -221,21 +246,21 @@ Each section inherits frontmatter defaults, overridden by its inline directives.
 Given the universal script above, the translator produces:
 
 **Qwen** (`tags: to_instruct`, `segments: True`):
-- Segment 1: "Welcome everyone." — instruct: "Speak warmly"
+- Segment 1: "Welcome everyone." — instruct: "Léger accent provençal. Calme et douce. Chaleureuse"
 - Segment 2: "This is going to be fun!" — instruct: "Laughing"
-- Segment 3: "Now let me tell you something important." — instruct: "Speak seriously"
+- Segment 3: "Now let me tell you something important." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée"
 - Segment 4: "It has been a long road." — instruct: "Sighing"
 - exaggeration/cfg_weight: nulled
 
 **Chatterbox Multilingual** (`tags: strip`, `segments: True`):
 - Segment 1: "Welcome everyone. This is going to be fun!" — exaggeration: 0.7, language: French
 - Segment 2: "Now let me tell you something important. It has been a long road." — segment_gap: 500
-- instruct: nulled per-segment
+- instruct/accent/personality/emotion: nulled per-segment
 
 **Chatterbox Turbo** (`tags: native`, `segments: True`):
 - Segment 1: "Welcome everyone. [laugh] This is going to be fun!" — exaggeration: 0.7
 - Segment 2: "Now let me tell you something important. [sigh] It has been a long road." — segment_gap: 500
-- instruct: nulled per-segment, language: nulled
+- instruct/accent/personality/emotion: nulled per-segment, language: nulled
 
 ## Key Patterns
 

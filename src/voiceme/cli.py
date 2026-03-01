@@ -137,6 +137,19 @@ def generate(
         if field in cfg:
             extra_kwargs[field] = cfg[field]
 
+    # Instruct default from config (raw bypass > composed from parts)
+    if "instruct" in cfg:
+        extra_kwargs["instruct"] = cfg["instruct"]
+    else:
+        from voiceme.markdown import compose_instruct
+
+        composed = compose_instruct(
+            cfg.get("accent"), cfg.get("personality"),
+            cfg.get("speed"), cfg.get("emotion"),
+        )
+        if composed:
+            extra_kwargs["instruct"] = composed
+
     # Segment gap / crossfade: CLI > config > 0
     gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
     xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
@@ -230,6 +243,19 @@ def clone(
     for field in ("exaggeration", "cfg_weight"):
         if field in cfg:
             extra_kwargs[field] = cfg[field]
+
+    # Instruct default from config (raw bypass > composed from parts)
+    if "instruct" in cfg:
+        extra_kwargs["instruct"] = cfg["instruct"]
+    else:
+        from voiceme.markdown import compose_instruct
+
+        composed = compose_instruct(
+            cfg.get("accent"), cfg.get("personality"),
+            cfg.get("speed"), cfg.get("emotion"),
+        )
+        if composed:
+            extra_kwargs["instruct"] = composed
 
     # Segment gap / crossfade: CLI > config > 0
     gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
@@ -521,14 +547,34 @@ def emotions():
         """Emotion & Expressiveness Controls
 ==================================
 
-Qwen (instruct mode)
---------------------
-Use the 'instruct' field in .md frontmatter or per-section:
-  instruct: "Speak angrily"
-  instruct: "Whispering"
-  instruct: "With excitement"
-  instruct: "Parle avec un ton chaleureux et amical"
-Any free-form text instruction works.
+Qwen (structured instruct parts)
+---------------------------------
+Use structured parts to control the voice character:
+  accent:      "Leger accent du sud provencal"  (pronunciation, origin)
+  personality: "Calme, douce et flamboyante"    (character traits)
+  speed:       "Rythme pose"                    (tempo/pace)
+  emotion:     "Chaleureuse"                    (emotional state)
+
+Parts auto-compose into instruct:
+  "Leger accent du sud provencal. Calme, douce et flamboyante. Rythme pose. Chaleureuse"
+
+Per-section override:
+  <!-- emotion: "Passionnee" -->  (only emotion changes, rest inherited)
+
+IMPORTANT: Write instruct parts in the TARGET LANGUAGE.
+  French speech  -> accent: "Leger accent provencal"
+  English speech -> accent: "Light southern French accent"
+  Japanese speech -> accent in Japanese, etc.
+
+Raw 'instruct' still works as bypass — overrides all parts.
+Set in frontmatter, per-section directives, or voiceme.toml.
+
+Qwen (raw instruct mode)
+-------------------------
+Use 'instruct' for full free-form control (in the target language):
+  instruct: "Parle avec colere"          (French target)
+  instruct: "Speak angrily"              (English target)
+  instruct: "En chuchotant doucement"    (French target)
 
 Chatterbox Turbo (paralinguistic tags — English only)
 -----------------------------------------------------
@@ -546,12 +592,14 @@ Set in .md frontmatter or per-section via <!-- key: value -->:
 Per-Section Directives
 ----------------------
 Override any parameter per section using HTML comments:
-  <!-- instruct: "Speak seriously" -->       (Qwen)
-  <!-- exaggeration: 0.8 -->                 (Chatterbox)
-  <!-- language: Japanese -->                 (per-section language)
-  <!-- voice: Ono_Anna -->                   (per-section voice, Qwen)
-  <!-- segment_gap: 500 -->                  (silence before section, ms)
-  <!-- crossfade: 100 -->                    (fade before section, ms)
+  <!-- accent: "Accent parisien" -->           (Qwen)
+  <!-- emotion: "Passionnee" -->               (Qwen)
+  <!-- instruct: "Parle serieusement" -->      (Qwen, raw bypass)
+  <!-- exaggeration: 0.8 -->                   (Chatterbox)
+  <!-- language: Japanese -->                  (per-section language)
+  <!-- voice: Ono_Anna -->                     (per-section voice, Qwen)
+  <!-- segment_gap: 500 -->                    (silence before section, ms)
+  <!-- crossfade: 100 -->                      (fade before section, ms)
 
 Segment Transitions
 -------------------

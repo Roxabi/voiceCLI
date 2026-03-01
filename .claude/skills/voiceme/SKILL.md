@@ -74,12 +74,17 @@ Optional file at project root for default settings:
 ```toml
 [defaults]
 language = "French"
-engine = "chatterbox"
+engine = "qwen"
+accent = "Léger accent du sud provençal"
+personality = "Voix calme, douce et flamboyante"
 exaggeration = 0.7
 cfg_weight = 0.3
 segment_gap = 200
 crossfade = 50
 ```
+
+Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into `instruct`.
+Raw `instruct` bypasses composition. **Write instruct parts in the target language.**
 
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
@@ -91,8 +96,9 @@ Create `.md` files in `TTS/texts_in/` with YAML frontmatter:
 ---
 language: French
 engine: qwen
-voice: Chelsie
-instruct: "Speak with warmth and conviction"
+accent: "Léger accent provençal"
+personality: "Calme et douce"
+emotion: "Chaleureuse"
 segment_gap: 200
 crossfade: 50
 ---
@@ -106,7 +112,11 @@ Your text to synthesize goes here.
 | `language` | Language name | qwen + chatterbox |
 | `engine` | `qwen`, `chatterbox`, or `chatterbox-turbo` | all |
 | `voice` | Speaker name | qwen only |
-| `instruct` | Free-form tone/emotion instruction | qwen only |
+| `accent` | Pronunciation/regional origin (composes into instruct) | qwen only |
+| `personality` | Character traits (composes into instruct) | qwen only |
+| `speed` | Tempo/pace (composes into instruct) | qwen only |
+| `emotion` | Emotional state (composes into instruct) | qwen only |
+| `instruct` | Raw instruct bypass (overrides structured parts) | qwen only |
 | `exaggeration` | Expressiveness 0.25-2.0 (default 0.5) | chatterbox only |
 | `cfg_weight` | Speaker adherence 0.0-1.0 (default 0.5) | chatterbox only |
 | `segment_gap` | Silence between segments (ms, default 0) | all |
@@ -119,14 +129,16 @@ All frontmatter fields can be overridden per-section using `<!-- key: value -->`
 ```markdown
 ---
 language: French
-instruct: "Parle chaleureusement"
+accent: "Provençal"
+personality: "Calme et douce"
+emotion: "Chaleureuse"
 exaggeration: 0.5
 segment_gap: 200
 ---
 
 Bienvenue à tous.
 
-<!-- instruct: "Parle sérieusement" -->
+<!-- emotion: "Passionnée" -->
 <!-- exaggeration: 0.8 -->
 <!-- segment_gap: 500 -->
 Maintenant parlons de choses importantes.
@@ -139,7 +151,7 @@ A section in Japanese with a different voice, crossfaded in.
 ```
 
 ### Available inline directives
-`instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
+`accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
 
 ### Segment transition modes
 

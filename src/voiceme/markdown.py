@@ -5,12 +5,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+_INSTRUCT_PARTS = ("accent", "personality", "speed", "emotion")
+
+
+def compose_instruct(
+    accent: str | None = None,
+    personality: str | None = None,
+    speed: str | None = None,
+    emotion: str | None = None,
+) -> str | None:
+    """Join non-None instruct parts into a single instruct string."""
+    parts = [p for p in (accent, personality, speed, emotion) if p]
+    return ". ".join(parts) if parts else None
+
+
 @dataclass
 class Segment:
     """A text segment with per-section overrides."""
 
     text: str
     instruct: str | None = None
+    accent: str | None = None
+    personality: str | None = None
+    speed: str | None = None
+    emotion: str | None = None
     exaggeration: float | None = None
     cfg_weight: float | None = None
     segment_gap: int | None = None
@@ -26,6 +44,10 @@ class TTSDocument:
     voice: str | None = None
     engine: str | None = None
     instruct: str | None = None
+    accent: str | None = None
+    personality: str | None = None
+    speed: str | None = None
+    emotion: str | None = None
     exaggeration: float | None = None
     cfg_weight: float | None = None
     segment_gap: int | None = None
@@ -91,7 +113,7 @@ def strip_markdown(text: str) -> str:
 _DIRECTIVE_RE = re.compile(r"<!--\s*(\w+):\s*(.+?)\s*-->")
 
 # Fields that can appear as <!-- key: value --> inline directives
-_STR_DIRECTIVES = {"instruct", "language", "voice"}
+_STR_DIRECTIVES = {"instruct", "accent", "personality", "speed", "emotion", "language", "voice"}
 _FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight"}
 _INT_DIRECTIVES = {"segment_gap", "crossfade"}
 _ALL_DIRECTIVES = _STR_DIRECTIVES | _FLOAT_DIRECTIVES | _INT_DIRECTIVES
@@ -110,6 +132,25 @@ def _parse_directive_value(key: str, raw: str) -> object:
     return raw
 
 
+def _compose_segment_instruct(seg: Segment, pending_overrides: dict) -> None:
+    """Compose instruct from structured parts if appropriate.
+
+    Rules:
+    - If instruct was explicitly set via inline directive → keep as-is (bypass)
+    - If any structured part was overridden at this section level → compose from all parts
+    - Otherwise, compose from inherited parts if no inherited instruct
+    """
+    parts_overridden = any(k in pending_overrides for k in _INSTRUCT_PARTS)
+    if parts_overridden:
+        composed = compose_instruct(seg.accent, seg.personality, seg.speed, seg.emotion)
+        if composed:
+            seg.instruct = composed
+    elif "instruct" not in pending_overrides and seg.instruct is None:
+        composed = compose_instruct(seg.accent, seg.personality, seg.speed, seg.emotion)
+        if composed:
+            seg.instruct = composed
+
+
 def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     """Split body on <!-- key: value --> directives into per-section segments.
 
@@ -123,7 +164,9 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     if not matches:
         text = strip_markdown(body)
         if text:
-            return [Segment(text=text, **{k: v for k, v in defaults.items() if k != "text"})]
+            seg = Segment(text=text, **{k: v for k, v in defaults.items() if k != "text"})
+            _compose_segment_instruct(seg, {})
+            return [seg]
         return []
 
     segments: list[Segment] = []
@@ -136,7 +179,9 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
         stripped = strip_markdown(text_before)
         if stripped:
             seg_kwargs = {**defaults, **pending_overrides, "text": stripped}
-            segments.append(Segment(**seg_kwargs))
+            seg = Segment(**seg_kwargs)
+            _compose_segment_instruct(seg, pending_overrides)
+            segments.append(seg)
             pending_overrides = {}
 
         # Accumulate this directive
@@ -153,7 +198,9 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     remaining = strip_markdown(body[prev_end:])
     if remaining:
         seg_kwargs = {**defaults, **pending_overrides, "text": remaining}
-        segments.append(Segment(**seg_kwargs))
+        seg = Segment(**seg_kwargs)
+        _compose_segment_instruct(seg, pending_overrides)
+        segments.append(seg)
 
     return segments
 
@@ -183,6 +230,7 @@ def parse_md_file(path: Path) -> TTSDocument:
 
     known_keys = {
         "language", "voice", "engine", "instruct",
+        "accent", "personality", "speed", "emotion",
         "exaggeration", "cfg_weight", "segment_gap", "crossfade",
     }
     extra = {k: v for k, v in metadata.items() if k not in known_keys}
@@ -196,6 +244,9 @@ def parse_md_file(path: Path) -> TTSDocument:
     seg_defaults: dict = {}
     if metadata.get("instruct"):
         seg_defaults["instruct"] = metadata["instruct"]
+    for part in _INSTRUCT_PARTS:
+        if metadata.get(part):
+            seg_defaults[part] = metadata[part]
     if metadata.get("language"):
         seg_defaults["language"] = metadata["language"]
     if metadata.get("voice"):
@@ -212,12 +263,24 @@ def parse_md_file(path: Path) -> TTSDocument:
     segments = _parse_segments(body, seg_defaults)
     text = " ".join(seg.text for seg in segments) if segments else strip_markdown(body)
 
+    # Doc-level instruct: explicit wins, otherwise compose from parts
+    doc_instruct = metadata.get("instruct")
+    if doc_instruct is None:
+        doc_instruct = compose_instruct(
+            metadata.get("accent"), metadata.get("personality"),
+            metadata.get("speed"), metadata.get("emotion"),
+        )
+
     return TTSDocument(
         text=text,
         language=metadata.get("language"),
         voice=metadata.get("voice"),
         engine=metadata.get("engine"),
-        instruct=metadata.get("instruct"),
+        instruct=doc_instruct,
+        accent=metadata.get("accent"),
+        personality=metadata.get("personality"),
+        speed=metadata.get("speed"),
+        emotion=metadata.get("emotion"),
         exaggeration=exaggeration,
         cfg_weight=cfg_weight,
         segment_gap=segment_gap,

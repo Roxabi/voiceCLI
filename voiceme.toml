@@ -1,0 +1,7 @@
+[defaults]
+language = "French"
+engine = "qwen"
+accent = "Léger accent du sud provençal"
+personality = "Voix calme, douce et flamboyante"
+segment_gap = 200
+crossfade = 50
