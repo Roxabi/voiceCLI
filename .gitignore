@@ -10,6 +10,8 @@ TTS/voices_out/*
 !TTS/voices_out/.gitkeep
 TTS/samples/*
 !TTS/samples/.gitkeep
+TTS/texts_in/*
+!TTS/texts_in/.gitkeep
 STT/audio_in/*
 !STT/audio_in/.gitkeep
 STT/texts_out/*
