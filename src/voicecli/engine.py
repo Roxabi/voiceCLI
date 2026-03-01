@@ -60,6 +60,9 @@ class TTSEngine(ABC):
         """Return available built-in voice names."""
 
 
+QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})
+
+
 def get_engine(name: str) -> TTSEngine:
     engines = _get_registry()
     if name not in engines:

@@ -1,10 +1,11 @@
+import dataclasses
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
 from voicecli import __version__
-from voicecli.engine import available_engines, get_engine
+from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
 from voicecli.utils import build_output_prefix, default_output_path
 
 
@@ -382,13 +383,13 @@ def generate(
         extra_kwargs["crossfade"] = xfade_ms
 
     eng = get_engine(engine)
-    if fast and engine in ("qwen", "qwen-fast"):
+    if fast and engine in QWEN_ENGINES:
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
     out = output or default_output_path(prefix)
 
     if chunked:
-        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in ("qwen", "qwen-fast") else None
+        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
         _generate_chunked(
             eng, text, voice, out, language, extra_kwargs, mp3,
             chunk_size=chunk_size,
@@ -396,9 +397,7 @@ def generate(
             daemon_fn=_daemon_chunk_fn,
         )
     else:
-        if engine in ("qwen", "qwen-fast"):
-            import dataclasses
-
+        if engine in QWEN_ENGINES:
             daemon_result = _try_daemon({
                 "action": "generate",
                 "engine": engine,
@@ -545,13 +544,13 @@ def clone(
         raise typer.Exit(1)
 
     eng = get_engine(engine)
-    if fast and engine in ("qwen", "qwen-fast"):
+    if fast and engine in QWEN_ENGINES:
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
     out = output or default_output_path(prefix)
 
     if chunked:
-        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in ("qwen", "qwen-fast") else None
+        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
         _clone_chunked(
             eng, text, ref, ref_text, out, language, extra_kwargs, mp3,
             chunk_size=chunk_size,
@@ -559,9 +558,7 @@ def clone(
             daemon_fn=_daemon_chunk_fn,
         )
     else:
-        if engine in ("qwen", "qwen-fast"):
-            import dataclasses
-
+        if engine in QWEN_ENGINES:
             daemon_result = _try_daemon({
                 "action": "clone",
                 "engine": engine,
@@ -799,7 +796,7 @@ def init(
 
 def _list_voices_for_engine(engine_name: str) -> list[str]:
     """Get voice list without loading heavy models."""
-    if engine_name in ("qwen", "qwen-fast"):
+    if engine_name in QWEN_ENGINES:
         from voicecli.engines.qwen import SPEAKERS
         return list(SPEAKERS)
     return ["default"]

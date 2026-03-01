@@ -14,6 +14,8 @@ import json
 import socket
 from pathlib import Path
 
+from voicecli.engine import QWEN_ENGINES
+
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "daemon.sock"
 _DEFAULT_TIMEOUT = 300  # seconds
 
@@ -44,8 +46,7 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
         fast:    If True, use the smaller Qwen model for all Qwen engines.
     """
     SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if SOCKET_PATH.exists():
-        SOCKET_PATH.unlink()
+    SOCKET_PATH.unlink(missing_ok=True)
 
     engines: dict[str, object] = {}
     if preload:
@@ -70,7 +71,7 @@ def _load_engine(name: str, fast: bool = False):
     from voicecli.engine import get_engine
 
     eng = get_engine(name)
-    if fast and name in ("qwen", "qwen-fast"):
+    if fast and name in QWEN_ENGINES:
         eng._small = True
     return eng
 
@@ -161,5 +162,5 @@ def _recv_json(sock: socket.socket) -> dict:
         buf.extend(chunk)
         if b"\n" in buf:
             break
-    line = bytes(buf).split(b"\n")[0]
+    line = buf.split(b"\n")[0]
     return json.loads(line)
