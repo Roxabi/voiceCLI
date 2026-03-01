@@ -3,10 +3,28 @@ from typing import Annotated, Optional
 
 import typer
 
+from voicecli import __version__
 from voicecli.engine import available_engines, get_engine
 from voicecli.utils import build_output_prefix, default_output_path
 
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"voicecli {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(help="VoiceCLI — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)")
+
+
+@app.callback()
+def _main(
+    version: Annotated[
+        bool,
+        typer.Option("--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True),
+    ] = False,
+) -> None:
+    """VoiceCLI — unified voice generation CLI."""
 
 # ── Samples sub-app ──────────────────────────────────────────────────────────
 
@@ -590,6 +608,7 @@ def init(
 """
         config_path.write_text(template)
         typer.echo("Created voicecli.toml — edit it to set your defaults.")
+        _offer_path_install()
         return
 
     # ── Interactive wizard ──────────────────────────────────────────────────
@@ -667,6 +686,9 @@ def init(
     config_path.write_text(_build_toml(values, engine))
     typer.echo(f"\nCreated voicecli.toml with {len(values)} setting(s).")
 
+    # ── Offer PATH install ────────────────────────────────────────────────
+    _offer_path_install()
+
 
 def _list_voices_for_engine(engine_name: str) -> list[str]:
     """Get voice list without loading heavy models."""
@@ -674,6 +696,57 @@ def _list_voices_for_engine(engine_name: str) -> list[str]:
         from voicecli.engines.qwen import SPEAKERS
         return list(SPEAKERS)
     return ["default"]
+
+
+def _offer_path_install() -> None:
+    """Offer to create a wrapper script in ~/.local/bin so voicecli works globally."""
+    import os
+    import shutil
+
+    bin_dir = Path.home() / ".local" / "bin"
+    wrapper = bin_dir / "voicecli"
+    project_dir = Path.cwd().resolve()
+
+    # Skip if voicecli is already reachable outside uv (e.g. pipx, previous install)
+    existing = shutil.which("voicecli")
+    if existing and Path(existing).resolve() != (project_dir / ".venv" / "bin" / "voicecli"):
+        return  # already installed globally via another method
+
+    typer.echo("")
+    install = typer.confirm(
+        f"Install 'voicecli' command to {bin_dir}?\n"
+        "  (creates a small wrapper so you can run voicecli from anywhere)",
+        default=True,
+    )
+    if not install:
+        return
+
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script = (
+        "#!/usr/bin/env bash\n"
+        f'cd "{project_dir}" && exec uv run voicecli "$@"\n'
+    )
+
+    if wrapper.exists():
+        overwrite = typer.confirm(f"  {wrapper} already exists. Overwrite?", default=False)
+        if not overwrite:
+            typer.echo("  Skipped.")
+            return
+
+    wrapper.write_text(script)
+    wrapper.chmod(0o755)
+
+    # Check if ~/.local/bin is in PATH
+    bin_dir_resolved = bin_dir.resolve()
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    in_path = any(Path(p).resolve() == bin_dir_resolved for p in path_dirs if p)
+
+    typer.echo(f"  Installed wrapper to {wrapper}")
+    if not in_path:
+        typer.echo(
+            f'  Note: {bin_dir} is not in your PATH. Add this to your shell rc:\n'
+            f'    export PATH="$HOME/.local/bin:$PATH"'
+        )
 
 
 def _prompt_float(label: str, default: float, lo: float, hi: float) -> float:
