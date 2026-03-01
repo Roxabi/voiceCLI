@@ -56,6 +56,9 @@ crossfade = 50
 Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into
 `instruct`: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
 
+**Segment propagation**: toml structured parts are backfilled into `.md` segments where frontmatter
+didn't set them, so a script with no frontmatter still inherits instruct from voiceme.toml.
+
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
 ## Commands
@@ -265,7 +268,7 @@ Available directives: `accent`, `personality`, `speed`, `emotion`, `instruct`, `
 
 **Chatterbox Turbo** — paralinguistic tags (English only):
 - Insert inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`
-- Tags are converted to instruct on Qwen, stripped on Multilingual
+- Tags are converted to instruct on Qwen (base instruct preserved), stripped on Multilingual
 
 **Chatterbox** — numeric controls (both turbo & multilingual):
 - `exaggeration` (0.25–2.0): how expressive — can be set per-section

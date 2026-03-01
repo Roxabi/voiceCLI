@@ -87,6 +87,9 @@ crossfade = 50
 Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into `instruct`.
 Raw `instruct` bypasses composition. **Write instruct parts in the target language.**
 
+**Segment propagation**: toml structured parts are backfilled into `.md` segments where frontmatter
+didn't set them, so a script with no frontmatter still inherits instruct from voiceme.toml.
+
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
 ## Markdown Frontmatter Format
@@ -170,7 +173,7 @@ A section in Japanese with a different voice, crossfaded in.
 - **Chatterbox Multilingual** (`-e chatterbox`): 23 languages. No paralinguistic tags — use exaggeration/cfg_weight for expressiveness. Per-section exaggeration/cfg_weight/language. For passionate speech: exaggeration 0.7-0.8, cfg_weight 0.3.
 - **Chatterbox Turbo** (`-e chatterbox-turbo`): English-only. Supports paralinguistic tags inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`. Per-section exaggeration/cfg_weight.
 
-**Unified format**: Scripts can use ALL features (tags, directives, exaggeration, language, segment transitions) simultaneously. The translator (`translate.py`) automatically adapts the document for the target engine — unsupported fields are nulled per-segment. All engines support per-section overrides and configurable segment transitions (gap, crossfade, or both).
+**Unified format**: Scripts can use ALL features (tags, directives, exaggeration, language, segment transitions) simultaneously. The translator (`translate.py`) automatically adapts the document for the target engine — unsupported fields are nulled per-segment. All engines support per-section overrides and configurable segment transitions (gap, crossfade, or both). Base instruct is preserved in tag-split segments (e.g. `[laugh]` on Qwen keeps the original instruct alongside the tag instruct).
 
 ## STT Notes
 

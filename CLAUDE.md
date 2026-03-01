@@ -12,6 +12,8 @@ User runs: voiceme generate script.md -e chatterbox
   1. cli.py         — detects .md input, resolves engine from CLI flag / frontmatter
   2. markdown.py    — parses YAML frontmatter + body into TTSDocument
                       (extracts instruct, segments, tags, exaggeration, etc.)
+  2b. cli.py        — _apply_config_defaults(): backfills voiceme.toml structured parts
+                      (accent, personality, speed, emotion) into doc/segments, recomposes instruct
   3. translate.py   — adapts TTSDocument for the target engine via ENGINE_CAPS matrix
                       (strips/converts tags, nulls unsupported fields)
   4. cli.py         — extracts fields from translated doc into engine kwargs
@@ -91,6 +93,11 @@ crossfade = 50          # ms fade between segments
 Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into a single
 `instruct` string: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
 
+**Segment propagation**: When a `.md` file is parsed, toml structured parts (accent, personality,
+speed, emotion) are backfilled into segments where frontmatter didn't set them, then instruct is
+recomposed. This means a `.md` file with no frontmatter still gets instruct from voiceme.toml.
+Segments with a raw `instruct` bypass (instruct set but no structured parts) are left untouched.
+
 Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
 ## Engine Capability Matrix
@@ -110,7 +117,7 @@ Defined in `translate.py:ENGINE_CAPS` — drives all translation decisions:
 Tag handling modes:
 - `native` — keep `[laugh]` etc. in text as-is (engine processes them)
 - `strip` — remove all `[tag]` markers (engine can't use them)
-- `to_instruct` — split text at tags, create new segments with mapped instruct (e.g. `[laugh]` → `instruct: "Laughing"`)
+- `to_instruct` — split text at tags, create new segments with mapped instruct (e.g. `[laugh]` → `instruct: "Laughing"`). Base instruct is preserved in both pre-tag and post-tag segments (e.g. `"Provençal. Calme, En riant, puis retrouve son calme"`).
 
 ## All CLI Commands
 
@@ -246,11 +253,12 @@ Each section inherits frontmatter defaults, overridden by its inline directives.
 Given the universal script above, the translator produces:
 
 **Qwen** (`tags: to_instruct`, `segments: True`):
-- Segment 1: "Welcome everyone." — instruct: "Léger accent provençal. Calme et douce. Chaleureuse"
-- Segment 2: "This is going to be fun!" — instruct: "Laughing"
-- Segment 3: "Now let me tell you something important." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée"
-- Segment 4: "It has been a long road." — instruct: "Sighing"
+- Segment 1: "Welcome everyone." — instruct: "Léger accent provençal. Calme et douce. Chaleureuse, de plus en plus amusé, prêt à éclater de rire"
+- Segment 2: "Ah ah ah ah ! This is going to be fun!" — instruct: "Léger accent provençal. Calme et douce. Chaleureuse, En riant, puis retrouve progressivement son calme"
+- Segment 3: "Now let me tell you something important." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée, avec une lassitude croissante"
+- Segment 4: "Haaa... It has been a long road." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée, En soupirant, puis reprend doucement contenance"
 - exaggeration/cfg_weight: nulled
+- Note: base instruct (from frontmatter/toml) is preserved in all tag-split segments
 
 **Chatterbox Multilingual** (`tags: strip`, `segments: True`):
 - Segment 1: "Welcome everyone. This is going to be fun!" — exaggeration: 0.7, language: French
@@ -269,7 +277,8 @@ Given the universal script above, the translator produces:
 - `generate` and `clone` both accept raw text OR a `.md` file path (auto-detected)
 - `clone` falls back to active sample when `--ref` is omitted
 - Priority chain: CLI flag > markdown frontmatter > voiceme.toml > hardcoded default
-- Translation happens after engine resolution but before field extraction in cli.py
+- Config backfill (`_apply_config_defaults`) runs after `parse_md_file()`, before `translate_for_engine()`
+- Translation happens after config backfill but before field extraction in cli.py
 - All engines support segment-aware generation with per-segment parameter overrides
 - Qwen clone uses `x_vector_only_mode=True` when no `--ref-text` is provided
 - Qwen clone does NOT support `instruct` — only `generate` (CustomVoice) does
