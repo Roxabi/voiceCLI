@@ -112,13 +112,75 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
-_DIRECTIVE_RE = re.compile(r"<!--\s*(\w+):\s*(.+?)\s*-->")
+_COMMENT_RE = re.compile(r"<!--(.+?)-->", re.DOTALL)
 
 # Fields that can appear as <!-- key: value --> inline directives
 _STR_DIRECTIVES = {"instruct", "accent", "personality", "speed", "emotion", "language", "voice"}
 _FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight"}
 _INT_DIRECTIVES = {"segment_gap", "crossfade"}
 _ALL_DIRECTIVES = _STR_DIRECTIVES | _FLOAT_DIRECTIVES | _INT_DIRECTIVES
+
+
+def _parse_comment_kvs(content: str) -> dict[str, str]:
+    """Parse comma-separated key: value pairs from an HTML comment body.
+
+    Handles quoted values (with commas inside), unquoted values, single/double quotes.
+    Example: 'emotion: "Passionnée, mais contenue", speed: "Rapide"' →
+             {"emotion": "Passionnée, mais contenue", "speed": "Rapide"}
+    """
+    result: dict[str, str] = {}
+    content = content.strip()
+    i = 0
+    n = len(content)
+
+    while i < n:
+        # Skip whitespace and commas between pairs
+        while i < n and content[i] in (" ", "\t", "\n", "\r", ","):
+            i += 1
+        if i >= n:
+            break
+
+        # Parse key (word chars until colon)
+        key_start = i
+        while i < n and content[i] not in (":", " ", "\t", "\n"):
+            i += 1
+        key = content[key_start:i].strip()
+        if not key:
+            break
+
+        # Skip to colon
+        while i < n and content[i] in (" ", "\t"):
+            i += 1
+        if i >= n or content[i] != ":":
+            break
+        i += 1  # skip colon
+
+        # Skip whitespace after colon
+        while i < n and content[i] in (" ", "\t"):
+            i += 1
+        if i >= n:
+            break
+
+        # Parse value — quoted or unquoted
+        if content[i] in ('"', "'"):
+            quote = content[i]
+            i += 1  # skip opening quote
+            val_start = i
+            while i < n and content[i] != quote:
+                i += 1
+            value = content[val_start:i]
+            if i < n:
+                i += 1  # skip closing quote
+        else:
+            # Unquoted: read until comma or end
+            val_start = i
+            while i < n and content[i] != ",":
+                i += 1
+            value = content[val_start:i].strip()
+
+        result[key] = value
+
+    return result
 
 
 def _parse_directive_value(key: str, raw: str) -> object:
@@ -159,8 +221,8 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     Each section inherits from frontmatter defaults, overridden by inline directives.
     Consecutive directives accumulate and apply to the text that follows.
     """
-    # Find all directives and their positions
-    matches = list(_DIRECTIVE_RE.finditer(body))
+    # Find all HTML comments and their positions
+    matches = list(_COMMENT_RE.finditer(body))
 
     # No directives found → single segment with defaults
     if not matches:
@@ -176,7 +238,7 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     prev_end = 0
 
     for match in matches:
-        # Text between previous position and this directive
+        # Text between previous position and this comment
         text_before = body[prev_end:match.start()]
         stripped = strip_markdown(text_before)
         if stripped:
@@ -186,13 +248,14 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
             segments.append(seg)
             pending_overrides = {}
 
-        # Accumulate this directive
-        key, raw_value = match.group(1), match.group(2)
-        if key in _ALL_DIRECTIVES:
-            try:
-                pending_overrides[key] = _parse_directive_value(key, raw_value)
-            except (ValueError, TypeError):
-                pass
+        # Parse all key-value pairs from this comment
+        kvs = _parse_comment_kvs(match.group(1))
+        for key, raw_value in kvs.items():
+            if key in _ALL_DIRECTIVES:
+                try:
+                    pending_overrides[key] = _parse_directive_value(key, raw_value)
+                except (ValueError, TypeError):
+                    pass
 
         prev_end = match.end()
 

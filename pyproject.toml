@@ -49,4 +49,4 @@ override-dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff"]
+dev = ["ruff", "pytest"]
