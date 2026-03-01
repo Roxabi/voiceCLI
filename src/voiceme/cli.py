@@ -96,6 +96,82 @@ def samples_remove(
         raise typer.Exit(1)
 
 
+# ── Chunked output helpers ───────────────────────────────────────────────────
+
+
+def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: bool, total: int, **kwargs):
+    """Generate and save a single numbered chunk."""
+    from voiceme.utils import wav_to_mp3 as _wav_to_mp3
+
+    stem = out.stem
+    chunk_path = out.parent / f"{stem}_{index:03d}.wav"
+    if method == "generate":
+        eng.generate(text, voice, chunk_path, **kwargs)
+    else:
+        eng.clone(text, kwargs.pop("ref_audio"), chunk_path, ref_text=kwargs.pop("ref_text", None), **kwargs)
+    typer.echo(f"  [{index}/{total}] {chunk_path.name}")
+    if mp3:
+        mp3_path = _wav_to_mp3(chunk_path)
+        typer.echo(f"  [{index}/{total}] {mp3_path.name}")
+
+
+def _write_done(out: Path):
+    done_path = out.with_suffix(".done")
+    done_path.write_text("done\n")
+    typer.echo(f"Done sentinel: {done_path}")
+
+
+def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments):
+    """Generate speech in chunks, saving each as a separate file."""
+    from voiceme.utils import smart_chunk
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if segments and len(segments) > 1:
+        total = len(segments)
+        for i, seg in enumerate(segments, 1):
+            kw = {**extra_kwargs, "language": seg.language or language}
+            if seg.instruct:
+                kw["instruct"] = seg.instruct
+            if seg.exaggeration is not None:
+                kw["exaggeration"] = seg.exaggeration
+            if seg.cfg_weight is not None:
+                kw["cfg_weight"] = seg.cfg_weight
+            seg_voice = seg.voice or voice
+            _emit_chunk(eng, "generate", seg.text, seg_voice, out, i, mp3, total, **kw)
+    else:
+        chunks = smart_chunk(text, chunk_size)
+        total = len(chunks)
+        for i, chunk_text in enumerate(chunks, 1):
+            _emit_chunk(eng, "generate", chunk_text, voice, out, i, mp3, total, language=language, **extra_kwargs)
+
+    _write_done(out)
+
+
+def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *, chunk_size, segments):
+    """Clone voice in chunks, saving each as a separate file."""
+    from voiceme.utils import smart_chunk
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if segments and len(segments) > 1:
+        total = len(segments)
+        for i, seg in enumerate(segments, 1):
+            kw = {**extra_kwargs, "language": seg.language or language, "ref_audio": ref, "ref_text": ref_text}
+            if seg.exaggeration is not None:
+                kw["exaggeration"] = seg.exaggeration
+            if seg.cfg_weight is not None:
+                kw["cfg_weight"] = seg.cfg_weight
+            _emit_chunk(eng, "clone", seg.text, None, out, i, mp3, total, **kw)
+    else:
+        chunks = smart_chunk(text, chunk_size)
+        total = len(chunks)
+        for i, chunk_text in enumerate(chunks, 1):
+            _emit_chunk(eng, "clone", chunk_text, None, out, i, mp3, total, language=language, ref_audio=ref, ref_text=ref_text, **extra_kwargs)
+
+    _write_done(out)
+
+
 # ── Core commands ────────────────────────────────────────────────────────────
 
 
@@ -120,6 +196,8 @@ def generate(
     crossfade: Annotated[
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
+    chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
+    chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     from voiceme.config import load_defaults
@@ -196,13 +274,21 @@ def generate(
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
     out = output or default_output_path(prefix)
-    result = eng.generate(text, voice, out, language=language, **extra_kwargs)
-    typer.echo(f"Saved to {result}")
-    if mp3:
-        from voiceme.utils import wav_to_mp3
 
-        mp3_path = wav_to_mp3(result)
-        typer.echo(f"Saved to {mp3_path}")
+    if chunked:
+        _generate_chunked(
+            eng, text, voice, out, language, extra_kwargs, mp3,
+            chunk_size=chunk_size,
+            segments=extra_kwargs.pop("segments", None),
+        )
+    else:
+        result = eng.generate(text, voice, out, language=language, **extra_kwargs)
+        typer.echo(f"Saved to {result}")
+        if mp3:
+            from voiceme.utils import wav_to_mp3
+
+            mp3_path = wav_to_mp3(result)
+            typer.echo(f"Saved to {mp3_path}")
 
 
 @app.command()
@@ -231,6 +317,8 @@ def clone(
     crossfade: Annotated[
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
+    chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
+    chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
 ):
     """Clone a voice from reference audio and synthesize text."""
     from voiceme.config import load_defaults
@@ -321,13 +409,21 @@ def clone(
         eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
     out = output or default_output_path(prefix)
-    result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
-    typer.echo(f"Saved to {result}")
-    if mp3:
-        from voiceme.utils import wav_to_mp3
 
-        mp3_path = wav_to_mp3(result)
-        typer.echo(f"Saved to {mp3_path}")
+    if chunked:
+        _clone_chunked(
+            eng, text, ref, ref_text, out, language, extra_kwargs, mp3,
+            chunk_size=chunk_size,
+            segments=extra_kwargs.pop("segments", None),
+        )
+    else:
+        result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
+        typer.echo(f"Saved to {result}")
+        if mp3:
+            from voiceme.utils import wav_to_mp3
+
+            mp3_path = wav_to_mp3(result)
+            typer.echo(f"Saved to {mp3_path}")
 
 
 @app.command()

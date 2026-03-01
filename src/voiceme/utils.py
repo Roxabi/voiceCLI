@@ -58,22 +58,51 @@ def build_output_prefix(
     return "_".join(parts)
 
 
-def split_sentences(text: str, max_chars: int = 250) -> list[str]:
-    """Split text into sentence-sized chunks (avoids Chatterbox 40s cutoff)."""
+def split_sentences(text: str) -> list[str]:
+    """Split text into individual sentences (avoids Chatterbox 40s cutoff)."""
     import re
 
     sentences = re.split(r"(?<=[.!?])\s+", text)
-    chunks, current = [], ""
-    for s in sentences:
-        if len(current) + len(s) <= max_chars:
-            current += (" " + s if current else s)
+    return [s.strip() for s in sentences if s.strip()]
+
+
+def smart_chunk(text: str, target_chars: int = 500) -> list[str]:
+    """Split text into chunks of ~target_chars at natural boundaries.
+
+    Hierarchy: paragraphs > sentences > target_chars.
+    Each chunk is between 1 and ~1.5x target_chars.
+    """
+    import re
+
+    paragraphs = re.split(r"\n\n+", text.strip())
+    chunks: list[str] = []
+    current = ""
+
+    for para in paragraphs:
+        if current and len(current) + len(para) + 2 <= target_chars:
+            current += "\n\n" + para
         else:
             if current:
                 chunks.append(current.strip())
-            current = s
+            if len(para) > target_chars:
+                # Split long paragraph by sentences
+                sentences = split_sentences(para)
+                sub = ""
+                for sent in sentences:
+                    if sub and len(sub) + len(sent) + 1 <= target_chars:
+                        sub += " " + sent
+                    else:
+                        if sub:
+                            chunks.append(sub.strip())
+                        sub = sent
+                current = sub
+            else:
+                current = para
+
     if current:
         chunks.append(current.strip())
-    return chunks
+
+    return chunks if chunks else [text]
 
 
 def concat_audio(
