@@ -179,14 +179,10 @@ crossfade: 50
 
 Welcome everyone. [laugh] This is going to be fun!
 
-<!-- emotion: "Passionnée et excitée" -->
-<!-- segment_gap: 500 -->
+<!-- emotion: "Passionnée et excitée", segment_gap: 500 -->
 Now let me tell you something important. [sigh] It has been a long road.
 
-<!-- language: Japanese -->
-<!-- voice: Ono_Anna -->
-<!-- crossfade: 0 -->
-<!-- segment_gap: 300 -->
+<!-- language: Japanese, voice: Ono_Anna, crossfade: 0, segment_gap: 300 -->
 A section in Japanese with a different voice.
 ```
 
@@ -221,20 +217,17 @@ The `accent`, `personality`, `speed`, `emotion` fields auto-compose into `instru
 
 ### In-body directives
 
-All frontmatter fields can also be set per-section using HTML comments:
+All frontmatter fields can also be set per-section using HTML comments. Multiple keys can be combined in a single comment, separated by commas:
 
-- `<!-- accent: "Parisien" -->` — per-section accent (Qwen, composes into instruct)
-- `<!-- personality: "Vif" -->` — per-section personality (Qwen, composes into instruct)
-- `<!-- speed: "Rapide" -->` — per-section speed (Qwen, composes into instruct)
-- `<!-- emotion: "Passionnée" -->` — per-section emotion (Qwen, composes into instruct)
+- `<!-- emotion: "Passionnée", speed: "Rapide et haché" -->` — multi-key on one line
+- `<!-- accent: "Parisien" -->` — single-key still works
 - `<!-- instruct: "..." -->` — raw instruct bypass (Qwen, overrides all structured parts)
-- `<!-- exaggeration: 0.8 -->` — per-section expressiveness (Chatterbox)
-- `<!-- cfg_weight: 0.3 -->` — per-section speaker adherence (Chatterbox)
-- `<!-- language: Japanese -->` — per-section language
-- `<!-- voice: Serena -->` — per-section voice (Qwen only)
-- `<!-- segment_gap: 500 -->` — silence before this section (ms)
-- `<!-- crossfade: 100 -->` — fade before this section (ms)
+- `<!-- exaggeration: 0.8, cfg_weight: 0.3 -->` — per-section expressiveness (Chatterbox)
+- `<!-- language: Japanese, voice: Ono_Anna -->` — per-section language + voice switch
+- `<!-- segment_gap: 500, crossfade: 100 -->` — per-section transition control
 - `[laugh]` `[chuckle]` `[sigh]` etc. — paralinguistic tags (native on Turbo, converted to instruct on Qwen, stripped on Multilingual)
+
+Commas inside quoted values are handled correctly: `<!-- emotion: "Passionnée, mais contenue" -->`.
 
 Directives accumulate before a text block and apply to the text that follows.
 Each section inherits frontmatter defaults, overridden by its inline directives.

@@ -128,7 +128,7 @@ Your text to synthesize goes here.
 
 ## Per-Section Directives
 
-All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults.
+All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Multiple keys can be combined in a single comment, separated by commas. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults. Commas inside quoted values are safe: `<!-- emotion: "Passionnée, mais contenue" -->`.
 
 ```markdown
 ---
@@ -142,15 +142,10 @@ segment_gap: 200
 
 Bienvenue à tous.
 
-<!-- emotion: "Passionnée" -->
-<!-- exaggeration: 0.8 -->
-<!-- segment_gap: 500 -->
+<!-- emotion: "Passionnée", exaggeration: 0.8, segment_gap: 500 -->
 Maintenant parlons de choses importantes.
 
-<!-- language: Japanese -->
-<!-- voice: Ono_Anna -->
-<!-- crossfade: 100 -->
-<!-- segment_gap: 0 -->
+<!-- language: Japanese, voice: Ono_Anna, crossfade: 100, segment_gap: 0 -->
 A section in Japanese with a different voice, crossfaded in.
 ```
 

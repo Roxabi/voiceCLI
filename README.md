@@ -215,7 +215,7 @@ Markdown formatting (`# headers`, `**bold**`, `[links](url)`, etc.) is stripped 
 
 ### Per-section directives
 
-All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults — override only what changes.
+All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Multiple keys can be set in a single comment, separated by commas. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults — override only what changes.
 
 ```markdown
 ---
@@ -229,17 +229,14 @@ segment_gap: 200
 
 Bienvenue à tous.
 
-<!-- emotion: "Passionnée" -->
-<!-- exaggeration: 0.8 -->
-<!-- segment_gap: 500 -->
+<!-- emotion: "Passionnée", exaggeration: 0.8, segment_gap: 500 -->
 Maintenant parlons de choses importantes.
 
-<!-- language: Japanese -->
-<!-- voice: Ono_Anna -->
-<!-- crossfade: 100 -->
-<!-- segment_gap: 0 -->
+<!-- language: Japanese, voice: Ono_Anna, crossfade: 100, segment_gap: 0 -->
 A section in Japanese with a different voice, crossfaded in.
 ```
+
+Commas inside quoted values are handled correctly: `<!-- emotion: "Passionnée, mais contenue" -->`.
 
 Available directives: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
 
