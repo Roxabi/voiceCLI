@@ -21,17 +21,18 @@ You are helping the user with the VoiceMe voice generation CLI. Run commands via
 ```bash
 uv run voiceme generate "Text to speak" --engine qwen --voice Chelsie --lang English
 uv run voiceme generate script.md              # from markdown file with frontmatter
-uv run voiceme generate "Hello" --mp3          # also save as MP3
 uv run voiceme generate script.md --segment-gap 300   # 300ms silence between segments
 uv run voiceme generate script.md --crossfade 50      # 50ms fade between segments
+uv run voiceme generate "Long text" --chunked  # output each chunk as a separate file
+uv run voiceme generate "Long text" --chunked --chunk-size 300  # smaller chunks (~20s each)
 ```
 
 ### Clone a voice
 ```bash
 uv run voiceme clone "Text" --ref TTS/samples/my_voice.wav --engine qwen
 uv run voiceme clone "Text"                    # uses active sample
-uv run voiceme clone "Text" --mp3              # also save as MP3
 uv run voiceme clone script.md --segment-gap 200      # with segment transitions
+uv run voiceme clone "Long text" --chunked     # chunked clone output
 ```
 
 ### Sample management
@@ -175,6 +176,18 @@ A section in Japanese with a different voice, crossfaded in.
 
 - **Faster Whisper** (`transcribe`): File-based transcription. 99 languages, auto-detection. Default model `large-v3-turbo` (fast, accurate, ~6GB VRAM). Models: tiny, base, small, medium, large-v3, large-v3-turbo.
 - **Kyutai STT** (`listen`): Real-time mic transcription. Model `1b` = EN+FR, model `2.6b` = EN-only (higher quality). Uses PulseAudio for mic input (record-then-transcribe loop).
+
+## Chunked Output
+
+Use `--chunked` for long texts to enable progressive sending via Telegram. Each chunk is saved as a separate numbered file (`prefix_001.wav`, `prefix_002.wav`...) and a `.done` sentinel is written when complete.
+
+- For plain text: splits at paragraph/sentence boundaries (~500 chars per chunk by default)
+- For .md scripts with segments: each segment becomes a chunk
+- `--chunk-size N` adjusts target chunk size in characters (~15 chars/sec of speech)
+
+**Always use `--chunked` when generating from Telegram** so the bot can send audio progressively.
+
+Output format is WAV by default. For MP3, configure it in `voiceme.toml` or use `--mp3` explicitly. Do NOT add `--mp3` unless the user asks for it.
 
 ## Handling the user's request
 
