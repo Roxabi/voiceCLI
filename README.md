@@ -165,10 +165,30 @@ Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
 |------|-------|-------------|---------|
 | `--model` | `-m` | Kyutai model (`1b` or `2.6b`) | `1b` |
 
+### `serve` — Daemon (warm model for fast generation)
+
+Keeps the Qwen model resident in VRAM so subsequent `generate`/`clone` calls skip the ~60s cold start.
+
+```bash
+voicecli serve                    # start daemon (loads model on first request)
+voicecli serve --engine qwen      # preload Qwen model at startup
+voicecli serve --engine qwen-fast # preload Qwen-Fast (CUDA-graph model)
+voicecli serve --fast             # use smaller 0.6B model
+```
+
+`generate` and `clone` automatically use the daemon when it's running — no flags needed. Falls back silently to standalone if the daemon isn't up.
+
+To keep the daemon running across sessions, use supervisord or systemd (see `voicecli serve --help` for a config snippet).
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--engine` | `-e` | Engine to preload at startup | none (lazy load) |
+| `--fast` | | Use smaller 0.6B Qwen model | off |
+
 ### `emotions` — Expressiveness cheat sheet
 
 ```bash
-voicecliemotions
+voicecli emotions
 ```
 
 ## Markdown File Input

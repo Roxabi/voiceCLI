@@ -124,8 +124,13 @@ Tag handling modes:
 ## All CLI Commands
 
 ```bash
+# Daemon (keep Qwen model warm — eliminates ~60s cold start)
+voicecli serve                              # start daemon (lazy-loads on first request)
+voicecli serve --engine qwen               # preload Qwen model at startup
+voicecli serve --engine qwen --fast        # preload smaller 0.6B model
+
 # Speech generation (built-in voices)
-voicecli generate "text"                    # Qwen default voice (Ryan)
+voicecli generate "text"                    # Qwen default voice; uses daemon if running
 voicecli generate "text" -e chatterbox      # Chatterbox Multilingual engine
 voicecli generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
 voicecli generate script.md                 # from markdown with frontmatter
@@ -269,6 +274,9 @@ Given the universal script above, the translator produces:
 
 - Engines are lazy-loaded (model loaded on first use, not import)
 - Engine registry in `engine.py:_get_registry()` — add new engines there
+- `QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})` in `engine.py` — single source for Qwen engine names
+- Daemon (`daemon.py`) keeps Qwen models in VRAM; `generate`/`clone` try daemon first for Qwen engines, fall back silently to standalone if socket absent or any error occurs
+- Daemon socket: `~/.local/share/voicecli/daemon.sock` (AF_UNIX, newline-delimited JSON)
 - `generate` and `clone` both accept raw text OR a `.md` file path (auto-detected)
 - `clone` falls back to active sample when `--ref` is omitted
 - Priority chain: CLI flag > markdown frontmatter > voicecli.toml > hardcoded default
