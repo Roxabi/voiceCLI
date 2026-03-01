@@ -200,7 +200,11 @@ def _split_segment_on_tags(
 
         _, ramp_down = transition_map[tag_name]
         tag_instruct = tag_map[tag_name]
-        instruct = f"{tag_instruct}, {ramp_down}"
+        instruct = (
+            f"{base_instruct}, {tag_instruct}, {ramp_down}"
+            if base_instruct
+            else f"{tag_instruct}, {ramp_down}"
+        )
         result.append(Segment(text=merged, instruct=instruct))
 
     return result

@@ -113,8 +113,6 @@ class QwenEngine(TTSEngine):
             kw = {**base_kwargs, "text": seg.text}
             if seg.instruct:
                 kw["instruct"] = seg.instruct
-            else:
-                kw.pop("instruct", None)
             if seg.language:
                 kw["language"] = seg.language
             if seg.voice:
@@ -150,6 +148,8 @@ class QwenEngine(TTSEngine):
         # Multi-segment mode
         if segments and len(segments) > 1:
             base_kwargs = dict(language=language, speaker=voice)
+            if instruct:
+                base_kwargs["instruct"] = instruct
             audio, sr = self._generate_segmented(
                 segments, base_kwargs, method="custom_voice",
                 default_gap=default_gap, default_crossfade=default_crossfade,

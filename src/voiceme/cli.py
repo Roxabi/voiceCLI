@@ -172,6 +172,48 @@ def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *
     _write_done(out)
 
 
+# ── Config → segments backfill ───────────────────────────────────────────────
+
+
+def _apply_config_defaults(doc, cfg: dict) -> None:
+    """Backfill structured instruct parts from voiceme.toml into doc/segments.
+
+    If frontmatter didn't set accent/personality/speed/emotion but voiceme.toml has them,
+    fill them in and recompose instruct (unless the segment has a raw instruct bypass).
+    """
+    from voiceme.markdown import compose_instruct
+
+    PARTS = ("accent", "personality", "speed", "emotion")
+    cfg_parts = {p: cfg.get(p) for p in PARTS if cfg.get(p)}
+    if not cfg_parts:
+        return
+
+    # Backfill doc-level parts
+    for part, val in cfg_parts.items():
+        if getattr(doc, part) is None:
+            setattr(doc, part, val)
+
+    # Recompose doc-level instruct if no raw instruct bypass
+    if not doc.instruct:
+        doc.instruct = compose_instruct(doc.accent, doc.personality, doc.speed, doc.emotion)
+
+    # Backfill each segment
+    for seg in doc.segments:
+        # Skip segments with raw instruct bypass (instruct set but no structured parts)
+        has_parts = any(getattr(seg, p) for p in PARTS)
+        if seg.instruct and not has_parts:
+            continue
+        changed = False
+        for part, val in cfg_parts.items():
+            if getattr(seg, part) is None:
+                setattr(seg, part, val)
+                changed = True
+        if changed:
+            composed = compose_instruct(seg.accent, seg.personality, seg.speed, seg.emotion)
+            if composed:
+                seg.instruct = composed
+
+
 # ── Core commands ────────────────────────────────────────────────────────────
 
 
@@ -244,6 +286,7 @@ def generate(
         # Frontmatter provides defaults; CLI flags override
         if doc.engine:
             engine = doc.engine
+        _apply_config_defaults(doc, cfg)
         doc = translate_for_engine(doc, engine)
         text = doc.text
         if doc.language:
@@ -363,6 +406,7 @@ def clone(
         doc = parse_md_file(text_path)
         if doc.engine:
             engine = doc.engine
+        _apply_config_defaults(doc, cfg)
         doc = translate_for_engine(doc, engine)
         text = doc.text
         if doc.language:
