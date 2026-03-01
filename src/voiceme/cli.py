@@ -102,17 +102,44 @@ def samples_remove(
 @app.command()
 def generate(
     text: Annotated[str, typer.Argument(help="Text to synthesize, or path to a .md file")],
-    engine: Annotated[str, typer.Option("--engine", "-e", help="TTS engine")] = "qwen",
+    engine: Annotated[
+        Optional[str], typer.Option("--engine", "-e", help="TTS engine", show_default="qwen")
+    ] = None,
     voice: Annotated[Optional[str], typer.Option("--voice", "-v", help="Voice name")] = None,
     output: Annotated[
         Optional[Path], typer.Option("--output", "-o", help="Output WAV path")
     ] = None,
-    language: Annotated[str, typer.Option("--lang", help="Language")] = "English",
+    language: Annotated[
+        Optional[str], typer.Option("--lang", help="Language", show_default="English")
+    ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
+    segment_gap: Annotated[
+        Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
+    ] = None,
+    crossfade: Annotated[
+        Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
+    ] = None,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
+    from voiceme.config import load_defaults
+
+    cfg = load_defaults()
     extra_kwargs: dict = {}
     script_stem: str | None = None
+
+    # Layer defaults: CLI flag > voiceme.toml > hardcoded
+    engine = engine or cfg.get("engine", "qwen")
+    language = language or cfg.get("language", "English")
+    voice = voice or cfg.get("voice")
+
+    # Numeric defaults from config
+    for field in ("exaggeration", "cfg_weight"):
+        if field in cfg:
+            extra_kwargs[field] = cfg[field]
+
+    # Segment gap / crossfade: CLI > config > 0
+    gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
+    xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
 
     # Detect .md file input
     text_path = Path(text)
@@ -139,6 +166,16 @@ def generate(
             extra_kwargs["cfg_weight"] = doc.cfg_weight
         if doc.segments and len(doc.segments) > 1:
             extra_kwargs["segments"] = doc.segments
+        # Frontmatter gap/crossfade (CLI flag still overrides)
+        if segment_gap is None and doc.segment_gap is not None:
+            gap_ms = doc.segment_gap
+        if crossfade is None and doc.crossfade is not None:
+            xfade_ms = doc.crossfade
+
+    if gap_ms > 0:
+        extra_kwargs["segment_gap"] = gap_ms
+    if xfade_ms > 0:
+        extra_kwargs["crossfade"] = xfade_ms
 
     eng = get_engine(engine)
     prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
@@ -158,19 +195,45 @@ def clone(
     ref: Annotated[
         Optional[Path], typer.Option("--ref", "-r", help="Reference audio for voice cloning")
     ] = None,
-    engine: Annotated[str, typer.Option("--engine", "-e", help="TTS engine")] = "qwen",
+    engine: Annotated[
+        Optional[str], typer.Option("--engine", "-e", help="TTS engine", show_default="qwen")
+    ] = None,
     ref_text: Annotated[
         Optional[str], typer.Option("--ref-text", help="Transcript of reference audio")
     ] = None,
     output: Annotated[
         Optional[Path], typer.Option("--output", "-o", help="Output WAV path")
     ] = None,
-    language: Annotated[str, typer.Option("--lang", help="Language")] = "English",
+    language: Annotated[
+        Optional[str], typer.Option("--lang", help="Language", show_default="English")
+    ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
+    segment_gap: Annotated[
+        Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
+    ] = None,
+    crossfade: Annotated[
+        Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
+    ] = None,
 ):
     """Clone a voice from reference audio and synthesize text."""
+    from voiceme.config import load_defaults
+
+    cfg = load_defaults()
     extra_kwargs: dict = {}
     script_stem: str | None = None
+
+    # Layer defaults: CLI flag > voiceme.toml > hardcoded
+    engine = engine or cfg.get("engine", "qwen")
+    language = language or cfg.get("language", "English")
+
+    # Numeric defaults from config
+    for field in ("exaggeration", "cfg_weight"):
+        if field in cfg:
+            extra_kwargs[field] = cfg[field]
+
+    # Segment gap / crossfade: CLI > config > 0
+    gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
+    xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
 
     # Detect .md file input
     text_path = Path(text)
@@ -194,6 +257,16 @@ def clone(
             extra_kwargs["cfg_weight"] = doc.cfg_weight
         if doc.segments and len(doc.segments) > 1:
             extra_kwargs["segments"] = doc.segments
+        # Frontmatter gap/crossfade (CLI flag still overrides)
+        if segment_gap is None and doc.segment_gap is not None:
+            gap_ms = doc.segment_gap
+        if crossfade is None and doc.crossfade is not None:
+            xfade_ms = doc.crossfade
+
+    if gap_ms > 0:
+        extra_kwargs["segment_gap"] = gap_ms
+    if xfade_ms > 0:
+        extra_kwargs["crossfade"] = xfade_ms
 
     # Fall back to active sample if --ref not provided
     if ref is None:

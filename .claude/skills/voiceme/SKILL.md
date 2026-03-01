@@ -22,6 +22,8 @@ You are helping the user with the VoiceMe voice generation CLI. Run commands via
 uv run voiceme generate "Text to speak" --engine qwen --voice Chelsie --lang English
 uv run voiceme generate script.md              # from markdown file with frontmatter
 uv run voiceme generate "Hello" --mp3          # also save as MP3
+uv run voiceme generate script.md --segment-gap 300   # 300ms silence between segments
+uv run voiceme generate script.md --crossfade 50      # 50ms fade between segments
 ```
 
 ### Clone a voice
@@ -29,6 +31,7 @@ uv run voiceme generate "Hello" --mp3          # also save as MP3
 uv run voiceme clone "Text" --ref TTS/samples/my_voice.wav --engine qwen
 uv run voiceme clone "Text"                    # uses active sample
 uv run voiceme clone "Text" --mp3              # also save as MP3
+uv run voiceme clone script.md --segment-gap 200      # with segment transitions
 ```
 
 ### Sample management
@@ -64,6 +67,22 @@ uv run voiceme engines                         # list available engines
 uv run voiceme emotions                        # show emotion controls cheat sheet
 ```
 
+## User Config (`voiceme.toml`)
+
+Optional file at project root for default settings:
+
+```toml
+[defaults]
+language = "French"
+engine = "chatterbox"
+exaggeration = 0.7
+cfg_weight = 0.3
+segment_gap = 200
+crossfade = 50
+```
+
+Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
+
 ## Markdown Frontmatter Format
 
 Create `.md` files in `TTS/texts_in/` with YAML frontmatter:
@@ -74,6 +93,8 @@ language: French
 engine: qwen
 voice: Chelsie
 instruct: "Speak with warmth and conviction"
+segment_gap: 200
+crossfade: 50
 ---
 
 Your text to synthesize goes here.
@@ -82,38 +103,61 @@ Your text to synthesize goes here.
 ### Frontmatter fields (all optional)
 | Field | Description | Engine |
 |-------|-------------|--------|
-| `language` | Language name | both |
-| `engine` | `qwen`, `chatterbox`, or `chatterbox-turbo` | both |
+| `language` | Language name | qwen + chatterbox |
+| `engine` | `qwen`, `chatterbox`, or `chatterbox-turbo` | all |
 | `voice` | Speaker name | qwen only |
 | `instruct` | Free-form tone/emotion instruction | qwen only |
 | `exaggeration` | Expressiveness 0.25-2.0 (default 0.5) | chatterbox only |
-| `cfg_weight` | Pacing control 0.0-1.0 (default 0.5) | chatterbox only |
+| `cfg_weight` | Speaker adherence 0.0-1.0 (default 0.5) | chatterbox only |
+| `segment_gap` | Silence between segments (ms, default 0) | all |
+| `crossfade` | Fade between segments (ms, default 0) | all |
 
-## Multi-Segment Emotion (Qwen generate only)
+## Per-Section Directives
 
-Use `<!-- instruct: ... -->` HTML comments for per-section emotion:
+All frontmatter fields can be overridden per-section using `<!-- key: value -->` HTML comments. Directives accumulate before a text block and apply to the text that follows. Each section inherits frontmatter defaults.
 
 ```markdown
 ---
 language: French
-engine: qwen
+instruct: "Parle chaleureusement"
+exaggeration: 0.5
+segment_gap: 200
 ---
 
-<!-- instruct: Speak with gravitas -->
-First paragraph.
+Bienvenue à tous.
 
-<!-- instruct: Laughing, amused -->
-Second paragraph.
+<!-- instruct: "Parle sérieusement" -->
+<!-- exaggeration: 0.8 -->
+<!-- segment_gap: 500 -->
+Maintenant parlons de choses importantes.
+
+<!-- language: Japanese -->
+<!-- voice: Ono_Anna -->
+<!-- crossfade: 100 -->
+<!-- segment_gap: 0 -->
+A section in Japanese with a different voice, crossfaded in.
 ```
+
+### Available inline directives
+`instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
+
+### Segment transition modes
+
+| gap | crossfade | Result |
+|-----|-----------|--------|
+| 0   | 0         | Direct concat (default) |
+| >0  | 0         | Hard cut, silence, hard cut |
+| 0   | >0        | Fade-out then fade-in (no silence) |
+| >0  | >0        | Fade-out, silence, fade-in |
 
 ## Engine Notes
 
-- **Qwen generate**: Supports built-in voices + `instruct` for emotion (including multi-segment). French works great.
+- **Qwen generate**: Supports built-in voices + `instruct` for emotion. Per-section language/voice changes. French works great.
 - **Qwen clone**: Voice cloning works but does NOT support `instruct` — emotion control unavailable.
-- **Chatterbox Multilingual** (`-e chatterbox`): 23 languages. No paralinguistic tags — use exaggeration/cfg_weight for expressiveness. For passionate speech: exaggeration 0.7-0.8, cfg_weight 0.3.
-- **Chatterbox Turbo** (`-e chatterbox-turbo`): English-only. Supports paralinguistic tags inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`.
+- **Chatterbox Multilingual** (`-e chatterbox`): 23 languages. No paralinguistic tags — use exaggeration/cfg_weight for expressiveness. Per-section exaggeration/cfg_weight/language. For passionate speech: exaggeration 0.7-0.8, cfg_weight 0.3.
+- **Chatterbox Turbo** (`-e chatterbox-turbo`): English-only. Supports paralinguistic tags inline: `[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[groan]`, `[sniff]`, `[shush]`, `[clear throat]`. Per-section exaggeration/cfg_weight.
 
-**Unified format**: Scripts can use ALL features (tags, instruct comments, exaggeration, language) simultaneously. The translator (`translate.py`) automatically adapts the document for the target engine — `[laugh]` tags become instruct segments on Qwen, are kept natively on Turbo, and stripped on Multilingual.
+**Unified format**: Scripts can use ALL features (tags, directives, exaggeration, language, segment transitions) simultaneously. The translator (`translate.py`) automatically adapts the document for the target engine — unsupported fields are nulled per-segment. All engines support per-section overrides and configurable segment transitions (gap, crossfade, or both).
 
 ## STT Notes
 

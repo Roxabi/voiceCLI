@@ -7,10 +7,16 @@ from pathlib import Path
 
 @dataclass
 class Segment:
-    """A text segment with its own instruct directive."""
+    """A text segment with per-section overrides."""
 
     text: str
     instruct: str | None = None
+    exaggeration: float | None = None
+    cfg_weight: float | None = None
+    segment_gap: int | None = None
+    crossfade: int | None = None
+    language: str | None = None
+    voice: str | None = None
 
 
 @dataclass
@@ -22,6 +28,8 @@ class TTSDocument:
     instruct: str | None = None
     exaggeration: float | None = None
     cfg_weight: float | None = None
+    segment_gap: int | None = None
+    crossfade: int | None = None
     extra: dict = field(default_factory=dict)
     segments: list[Segment] = field(default_factory=list)
 
@@ -80,35 +88,92 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
-_INSTRUCT_RE = re.compile(r"<!--\s*instruct:\s*(.+?)\s*-->")
+_DIRECTIVE_RE = re.compile(r"<!--\s*(\w+):\s*(.+?)\s*-->")
+
+# Fields that can appear as <!-- key: value --> inline directives
+_STR_DIRECTIVES = {"instruct", "language", "voice"}
+_FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight"}
+_INT_DIRECTIVES = {"segment_gap", "crossfade"}
+_ALL_DIRECTIVES = _STR_DIRECTIVES | _FLOAT_DIRECTIVES | _INT_DIRECTIVES
 
 
-def _parse_segments(body: str, default_instruct: str | None) -> list[Segment]:
-    """Split body on <!-- instruct: ... --> comments into per-section segments."""
-    parts = _INSTRUCT_RE.split(body)
+def _parse_directive_value(key: str, raw: str) -> object:
+    """Parse a directive value to its expected type."""
+    raw = raw.strip()
+    # Strip surrounding quotes for string values
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+        raw = raw[1:-1]
+    if key in _FLOAT_DIRECTIVES:
+        return float(raw)
+    if key in _INT_DIRECTIVES:
+        return int(raw)
+    return raw
 
-    # No instruct comments found → single segment
-    if len(parts) == 1:
-        text = strip_markdown(parts[0])
+
+def _parse_segments(body: str, defaults: dict) -> list[Segment]:
+    """Split body on <!-- key: value --> directives into per-section segments.
+
+    Each section inherits from frontmatter defaults, overridden by inline directives.
+    Consecutive directives accumulate and apply to the text that follows.
+    """
+    # Find all directives and their positions
+    matches = list(_DIRECTIVE_RE.finditer(body))
+
+    # No directives found → single segment with defaults
+    if not matches:
+        text = strip_markdown(body)
         if text:
-            return [Segment(text=text, instruct=default_instruct)]
+            return [Segment(text=text, **{k: v for k, v in defaults.items() if k != "text"})]
         return []
 
     segments: list[Segment] = []
+    pending_overrides: dict = {}
+    prev_end = 0
 
-    # parts[0] is text before the first <!-- instruct: --> (may be empty)
-    pre_text = strip_markdown(parts[0])
-    if pre_text:
-        segments.append(Segment(text=pre_text, instruct=default_instruct))
+    for match in matches:
+        # Text between previous position and this directive
+        text_before = body[prev_end:match.start()]
+        stripped = strip_markdown(text_before)
+        if stripped:
+            seg_kwargs = {**defaults, **pending_overrides, "text": stripped}
+            segments.append(Segment(**seg_kwargs))
+            pending_overrides = {}
 
-    # Remaining parts alternate: instruct_value, text, instruct_value, text, ...
-    for i in range(1, len(parts), 2):
-        instruct = parts[i].strip()
-        text = strip_markdown(parts[i + 1]) if i + 1 < len(parts) else ""
-        if text:
-            segments.append(Segment(text=text, instruct=instruct or default_instruct))
+        # Accumulate this directive
+        key, raw_value = match.group(1), match.group(2)
+        if key in _ALL_DIRECTIVES:
+            try:
+                pending_overrides[key] = _parse_directive_value(key, raw_value)
+            except (ValueError, TypeError):
+                pass
+
+        prev_end = match.end()
+
+    # Remaining text after last directive
+    remaining = strip_markdown(body[prev_end:])
+    if remaining:
+        seg_kwargs = {**defaults, **pending_overrides, "text": remaining}
+        segments.append(Segment(**seg_kwargs))
 
     return segments
+
+
+def _parse_optional_float(metadata: dict, key: str) -> float | None:
+    if key in metadata:
+        try:
+            return float(metadata[key])
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_optional_int(metadata: dict, key: str) -> int | None:
+    if key in metadata:
+        try:
+            return int(metadata[key])
+        except ValueError:
+            pass
+    return None
 
 
 def parse_md_file(path: Path) -> TTSDocument:
@@ -116,28 +181,35 @@ def parse_md_file(path: Path) -> TTSDocument:
     content = path.read_text(encoding="utf-8")
     metadata, body = parse_frontmatter(content)
 
-    known_keys = {"language", "voice", "engine", "instruct", "exaggeration", "cfg_weight"}
+    known_keys = {
+        "language", "voice", "engine", "instruct",
+        "exaggeration", "cfg_weight", "segment_gap", "crossfade",
+    }
     extra = {k: v for k, v in metadata.items() if k not in known_keys}
 
-    default_instruct = metadata.get("instruct")
+    exaggeration = _parse_optional_float(metadata, "exaggeration")
+    cfg_weight = _parse_optional_float(metadata, "cfg_weight")
+    segment_gap = _parse_optional_int(metadata, "segment_gap")
+    crossfade = _parse_optional_int(metadata, "crossfade")
 
-    # Parse numeric fields
-    exaggeration = None
-    if "exaggeration" in metadata:
-        try:
-            exaggeration = float(metadata["exaggeration"])
-        except ValueError:
-            pass
+    # Defaults that segments inherit from frontmatter
+    seg_defaults: dict = {}
+    if metadata.get("instruct"):
+        seg_defaults["instruct"] = metadata["instruct"]
+    if metadata.get("language"):
+        seg_defaults["language"] = metadata["language"]
+    if metadata.get("voice"):
+        seg_defaults["voice"] = metadata["voice"]
+    if exaggeration is not None:
+        seg_defaults["exaggeration"] = exaggeration
+    if cfg_weight is not None:
+        seg_defaults["cfg_weight"] = cfg_weight
+    if segment_gap is not None:
+        seg_defaults["segment_gap"] = segment_gap
+    if crossfade is not None:
+        seg_defaults["crossfade"] = crossfade
 
-    cfg_weight = None
-    if "cfg_weight" in metadata:
-        try:
-            cfg_weight = float(metadata["cfg_weight"])
-        except ValueError:
-            pass
-
-    segments = _parse_segments(body, default_instruct)
-    # Full text is the concatenation of all segments (for backward compat)
+    segments = _parse_segments(body, seg_defaults)
     text = " ".join(seg.text for seg in segments) if segments else strip_markdown(body)
 
     return TTSDocument(
@@ -145,9 +217,11 @@ def parse_md_file(path: Path) -> TTSDocument:
         language=metadata.get("language"),
         voice=metadata.get("voice"),
         engine=metadata.get("engine"),
-        instruct=default_instruct,
+        instruct=metadata.get("instruct"),
         exaggeration=exaggeration,
         cfg_weight=cfg_weight,
+        segment_gap=segment_gap,
+        crossfade=crossfade,
         extra=extra,
         segments=segments,
     )

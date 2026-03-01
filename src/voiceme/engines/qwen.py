@@ -60,9 +60,16 @@ class QwenEngine(TTSEngine):
         return self._clone_model
 
     def _generate_segmented(
-        self, segments: list[Segment], base_kwargs: dict, method: str = "custom_voice"
+        self,
+        segments: list[Segment],
+        base_kwargs: dict,
+        method: str = "custom_voice",
+        default_gap: int = 0,
+        default_crossfade: int = 0,
     ) -> tuple[np.ndarray, int]:
-        """Generate audio per-segment with individual instruct, then concatenate."""
+        """Generate audio per-segment with individual overrides, then concatenate."""
+        from voiceme.utils import concat_audio
+
         if method == "custom_voice":
             model = self._load_model()
             gen_fn = model.generate_custom_voice
@@ -83,11 +90,23 @@ class QwenEngine(TTSEngine):
                 kw["instruct"] = seg.instruct
             else:
                 kw.pop("instruct", None)
+            if seg.language:
+                kw["language"] = seg.language
+            if seg.voice:
+                kw["speaker"] = seg.voice
 
             wavs, sr = gen_fn(**kw)
             all_wavs.append(wavs[0])
 
-        return np.concatenate(all_wavs), sr
+        gaps = [
+            seg.segment_gap if seg.segment_gap is not None else default_gap
+            for seg in segments[1:]
+        ]
+        xfades = [
+            seg.crossfade if seg.crossfade is not None else default_crossfade
+            for seg in segments[1:]
+        ]
+        return concat_audio(all_wavs, sr, gaps, xfades), sr
 
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
         model = self._load_model()
@@ -98,13 +117,18 @@ class QwenEngine(TTSEngine):
         language = kwargs.get("language", "English")
         instruct = kwargs.get("instruct")
         segments: list[Segment] | None = kwargs.get("segments")
+        default_gap = kwargs.get("segment_gap", 0)
+        default_crossfade = kwargs.get("crossfade", 0)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Multi-segment mode
         if segments and len(segments) > 1:
             base_kwargs = dict(language=language, speaker=voice)
-            audio, sr = self._generate_segmented(segments, base_kwargs, method="custom_voice")
+            audio, sr = self._generate_segmented(
+                segments, base_kwargs, method="custom_voice",
+                default_gap=default_gap, default_crossfade=default_crossfade,
+            )
             sf.write(str(output_path), audio, sr)
             return output_path
 
@@ -122,6 +146,8 @@ class QwenEngine(TTSEngine):
     ) -> Path:
         language = kwargs.get("language", "English")
         segments: list[Segment] | None = kwargs.get("segments")
+        default_gap = kwargs.get("segment_gap", 0)
+        default_crossfade = kwargs.get("crossfade", 0)
 
         base_kwargs: dict = dict(language=language, ref_audio=str(ref_audio))
         if ref_text:
@@ -133,7 +159,10 @@ class QwenEngine(TTSEngine):
 
         # Multi-segment mode
         if segments and len(segments) > 1:
-            audio, sr = self._generate_segmented(segments, base_kwargs, method="clone")
+            audio, sr = self._generate_segmented(
+                segments, base_kwargs, method="clone",
+                default_gap=default_gap, default_crossfade=default_crossfade,
+            )
             sf.write(str(output_path), audio, sr)
             return output_path
 

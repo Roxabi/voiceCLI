@@ -48,27 +48,45 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
+voiceme.toml        — user config file for default settings (optional, see below)
 TTS/
-  texts_in/       — authored .md scripts (tracked in git)
-  voices_out/     — generated WAV/MP3 (gitignored)
-  samples/        — voice samples for cloning (gitignored)
+  texts_in/         — authored .md scripts (tracked in git)
+  voices_out/       — generated WAV/MP3 (gitignored)
+  samples/          — voice samples for cloning (gitignored)
 STT/
-  audio_in/       — audio files to transcribe (gitignored)
-  texts_out/      — transcription results (gitignored)
+  audio_in/         — audio files to transcribe (gitignored)
+  texts_out/        — transcription results (gitignored)
 src/voiceme/
-  cli.py          — Typer app: command definitions, .md detection, flag overrides
-  engine.py       — Abstract TTSEngine base class + engine registry
-  translate.py    — Engine capability matrix (ENGINE_CAPS) + translate_for_engine()
-  markdown.py     — YAML frontmatter parser + markdown-to-plaintext + segment splitter
-  utils.py        — Output path helper + WAV→MP3 conversion
-  samples.py      — Sample management + PulseAudio recording with chimes
-  transcribe.py   — Faster Whisper file transcription
-  listen.py       — Kyutai STT real-time mic transcription
+  cli.py            — Typer app: command definitions, .md detection, flag overrides
+  config.py         — TOML config loader (reads voiceme.toml)
+  engine.py         — Abstract TTSEngine base class + engine registry
+  translate.py      — Engine capability matrix (ENGINE_CAPS) + translate_for_engine()
+  markdown.py       — YAML frontmatter parser + markdown-to-plaintext + directive parser
+  utils.py          — Output path helper + concat_audio() + WAV→MP3 conversion
+  samples.py        — Sample management + PulseAudio recording with chimes
+  transcribe.py     — Faster Whisper file transcription
+  listen.py         — Kyutai STT real-time mic transcription
   engines/
-    qwen.py            — Qwen3-TTS engine (CustomVoice for generate, Base for clone)
-    chatterbox.py      — Chatterbox Multilingual engine (23 languages, sentence chunking)
-    chatterbox_turbo.py — Chatterbox Turbo engine (English-only, paralinguistic tags)
+    qwen.py              — Qwen3-TTS engine (CustomVoice for generate, Base for clone)
+    chatterbox.py        — Chatterbox Multilingual engine (23 languages, segment-aware)
+    chatterbox_turbo.py  — Chatterbox Turbo engine (English-only, paralinguistic tags)
 ```
+
+## User Config (`voiceme.toml`)
+
+Optional TOML file at project root. Sets default values so you don't pass flags every time.
+
+```toml
+[defaults]
+language = "French"
+engine = "chatterbox"
+exaggeration = 0.7
+cfg_weight = 0.3
+segment_gap = 200       # ms silence between segments
+crossfade = 50          # ms fade between segments
+```
+
+Priority: **CLI flag > markdown frontmatter > voiceme.toml > hardcoded default**
 
 ## Engine Capability Matrix
 
@@ -77,12 +95,12 @@ Defined in `translate.py:ENGINE_CAPS` — drives all translation decisions:
 | Capability     | Qwen            | Chatterbox Multilingual | Chatterbox Turbo |
 |----------------|-----------------|-------------------------|------------------|
 | `instruct`     | yes             | no (nulled)             | no (nulled)      |
-| `segments`     | yes             | no (collapsed)          | no (collapsed)   |
+| `segments`     | yes             | yes                     | yes              |
 | `tags`         | `to_instruct`   | `strip`                 | `native`         |
-| `exaggeration` | no (nulled)     | yes                     | yes              |
-| `cfg_weight`   | no (nulled)     | yes                     | yes              |
-| `language`     | yes             | yes                     | no (nulled)      |
-| `voice`        | yes             | no (nulled)             | no (nulled)      |
+| `exaggeration` | no (nulled)     | yes (per-segment)       | yes (per-segment)|
+| `cfg_weight`   | no (nulled)     | yes (per-segment)       | yes (per-segment)|
+| `language`     | yes (per-segment)| yes (per-segment)      | no (nulled)      |
+| `voice`        | yes (per-segment)| no (nulled)            | no (nulled)      |
 
 Tag handling modes:
 - `native` — keep `[laugh]` etc. in text as-is (engine processes them)
@@ -98,6 +116,8 @@ voiceme generate "text" -e chatterbox      # Chatterbox Multilingual engine
 voiceme generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
 voiceme generate script.md                 # from markdown with frontmatter
 voiceme generate script.md --mp3           # also save as MP3
+voiceme generate script.md --segment-gap 300  # 300ms silence between segments
+voiceme generate script.md --crossfade 50     # 50ms fade between segments
 
 # Voice cloning
 voiceme clone "text" --ref voice.wav       # clone from reference audio
@@ -139,12 +159,21 @@ language: French
 instruct: "Speak warmly"
 exaggeration: 0.7
 cfg_weight: 0.3
+segment_gap: 200
+crossfade: 50
 ---
 
 Welcome everyone. [laugh] This is going to be fun!
 
-<!-- instruct: Speak seriously -->
+<!-- instruct: "Speak seriously" -->
+<!-- segment_gap: 500 -->
 Now let me tell you something important. [sigh] It has been a long road.
+
+<!-- language: Japanese -->
+<!-- voice: Ono_Anna -->
+<!-- crossfade: 0 -->
+<!-- segment_gap: 300 -->
+A section in Japanese with a different voice.
 ```
 
 ### All frontmatter fields (all optional)
@@ -157,13 +186,35 @@ engine: qwen              # qwen | chatterbox | chatterbox-turbo
 instruct: "Speak angrily" # free-form emotion/tone instruction (Qwen only)
 exaggeration: 0.75        # expressiveness 0.25-2.0, default 0.5 (Chatterbox only)
 cfg_weight: 0.3           # speaker adherence 0.0-1.0, default 0.5 (Chatterbox only)
+segment_gap: 200          # ms silence between segments, default 0
+crossfade: 50             # ms fade between segments, default 0
 ---
 ```
 
-### In-body features
+### In-body directives
 
-- `<!-- instruct: ... -->` — per-section emotion (Qwen segments, ignored by Chatterbox)
+All frontmatter fields can also be set per-section using HTML comments:
+
+- `<!-- instruct: "..." -->` — per-section emotion (Qwen, ignored by Chatterbox)
+- `<!-- exaggeration: 0.8 -->` — per-section expressiveness (Chatterbox)
+- `<!-- cfg_weight: 0.3 -->` — per-section speaker adherence (Chatterbox)
+- `<!-- language: Japanese -->` — per-section language
+- `<!-- voice: Serena -->` — per-section voice (Qwen only)
+- `<!-- segment_gap: 500 -->` — silence before this section (ms)
+- `<!-- crossfade: 100 -->` — fade before this section (ms)
 - `[laugh]` `[chuckle]` `[sigh]` etc. — paralinguistic tags (native on Turbo, converted to instruct on Qwen, stripped on Multilingual)
+
+Directives accumulate before a text block and apply to the text that follows.
+Each section inherits frontmatter defaults, overridden by its inline directives.
+
+### Segment transitions
+
+| gap | crossfade | Result |
+|-----|-----------|--------|
+| 0   | 0         | Direct concat (default) |
+| >0  | 0         | Hard cut, silence, hard cut |
+| 0   | >0        | Fade-out then fade-in (no silence) |
+| >0  | >0        | Fade-out, silence, fade-in |
 
 ### Translation example
 
@@ -176,13 +227,15 @@ Given the universal script above, the translator produces:
 - Segment 4: "It has been a long road." — instruct: "Sighing"
 - exaggeration/cfg_weight: nulled
 
-**Chatterbox Multilingual** (`tags: strip`, `segments: False`):
-- Flat text: "Welcome everyone. This is going to be fun! Now let me tell you something important. It has been a long road."
-- instruct: nulled, exaggeration: 0.7, language: French
+**Chatterbox Multilingual** (`tags: strip`, `segments: True`):
+- Segment 1: "Welcome everyone. This is going to be fun!" — exaggeration: 0.7, language: French
+- Segment 2: "Now let me tell you something important. It has been a long road." — segment_gap: 500
+- instruct: nulled per-segment
 
-**Chatterbox Turbo** (`tags: native`, `segments: False`):
-- Flat text: "Welcome everyone. [laugh] This is going to be fun! Now let me tell you something important. [sigh] It has been a long road."
-- instruct: nulled, exaggeration: 0.7, language: nulled
+**Chatterbox Turbo** (`tags: native`, `segments: True`):
+- Segment 1: "Welcome everyone. [laugh] This is going to be fun!" — exaggeration: 0.7
+- Segment 2: "Now let me tell you something important. [sigh] It has been a long road." — segment_gap: 500
+- instruct: nulled per-segment, language: nulled
 
 ## Key Patterns
 
@@ -190,8 +243,9 @@ Given the universal script above, the translator produces:
 - Engine registry in `engine.py:_get_registry()` — add new engines there
 - `generate` and `clone` both accept raw text OR a `.md` file path (auto-detected)
 - `clone` falls back to active sample when `--ref` is omitted
-- CLI flags always override frontmatter values
+- Priority chain: CLI flag > markdown frontmatter > voiceme.toml > hardcoded default
 - Translation happens after engine resolution but before field extraction in cli.py
+- All engines support segment-aware generation with per-segment parameter overrides
 - Qwen clone uses `x_vector_only_mode=True` when no `--ref-text` is provided
 - Qwen clone does NOT support `instruct` — only `generate` (CustomVoice) does
 - Both Chatterbox engines split long text into sentence chunks (~250 chars) to avoid 40s cutoff

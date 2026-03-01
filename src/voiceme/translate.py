@@ -19,7 +19,7 @@ ENGINE_CAPS = {
     },
     "chatterbox": {
         "instruct": False,
-        "segments": False,
+        "segments": True,
         "tags": "strip",  # remove tags, can't translate
         "exaggeration": True,
         "cfg_weight": True,
@@ -28,7 +28,7 @@ ENGINE_CAPS = {
     },
     "chatterbox-turbo": {
         "instruct": False,
-        "segments": False,
+        "segments": True,
         "tags": "native",  # keep as-is, engine handles them
         "exaggeration": True,
         "cfg_weight": True,
@@ -145,6 +145,8 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
     # ── Instruct ──
     if not caps["instruct"]:
         doc.instruct = None
+        for seg in doc.segments:
+            seg.instruct = None
 
     # ── Segments ──
     if not caps["segments"]:
@@ -153,13 +155,21 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
     # ── Numeric controls ──
     if not caps["exaggeration"]:
         doc.exaggeration = None
+        for seg in doc.segments:
+            seg.exaggeration = None
     if not caps["cfg_weight"]:
         doc.cfg_weight = None
+        for seg in doc.segments:
+            seg.cfg_weight = None
 
     # ── Language / Voice ──
     if not caps["language"]:
         doc.language = None
+        for seg in doc.segments:
+            seg.language = None
     if not caps["voice"]:
         doc.voice = None
+        for seg in doc.segments:
+            seg.voice = None
 
     return doc
