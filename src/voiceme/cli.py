@@ -554,14 +554,19 @@ def engines():
 
 
 @app.command()
-def init():
-    """Create a starter voiceme.toml config file with commented-out defaults."""
+def init(
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Skip prompts, write default template")
+    ] = False,
+):
+    """Create a voiceme.toml config file (interactive wizard or -y for defaults)."""
     config_path = Path("voiceme.toml")
     if config_path.exists():
-        typer.echo(f"voiceme.toml already exists — not overwriting.")
+        typer.echo("voiceme.toml already exists — not overwriting.")
         raise typer.Exit(1)
 
-    template = """\
+    if yes:
+        template = """\
 [defaults]
 # language = "French"
 # engine = "qwen"                # qwen | chatterbox | chatterbox-turbo
@@ -583,8 +588,165 @@ def init():
 # segment_gap = 0                # ms silence between segments
 # crossfade = 0                  # ms fade between segments
 """
-    config_path.write_text(template)
-    typer.echo(f"Created voiceme.toml — edit it to set your defaults.")
+        config_path.write_text(template)
+        typer.echo("Created voiceme.toml — edit it to set your defaults.")
+        return
+
+    # ── Interactive wizard ──────────────────────────────────────────────────
+    typer.echo("VoiceMe config wizard — press Enter to accept defaults.\n")
+    values: dict[str, object] = {}
+    valid_engines = available_engines()
+
+    # 1. Engine
+    typer.echo(f"  Available engines: {', '.join(valid_engines)}")
+    while True:
+        engine = typer.prompt("Engine", default="qwen").strip()
+        if engine in valid_engines:
+            break
+        typer.echo(f"  Invalid engine. Choose from: {', '.join(valid_engines)}")
+    if engine != "qwen":
+        values["engine"] = engine
+
+    # 2. Language (skip for chatterbox-turbo — English only)
+    if engine != "chatterbox-turbo":
+        from voiceme.utils import LANG_MAP
+        lang_names = sorted({k.title() for k in LANG_MAP if k.isascii()})
+        typer.echo(f"  Supported languages: {', '.join(lang_names)}")
+        language = typer.prompt("Language", default="English").strip()
+        if language.lower() != "english":
+            values["language"] = language
+
+    # 3. Voice (skip if engine only has "default")
+    voices = _list_voices_for_engine(engine)
+    if voices != ["default"]:
+        typer.echo(f"  Available voices: {', '.join(voices)}")
+        while True:
+            voice = typer.prompt("Voice", default=voices[0]).strip()
+            if voice in voices:
+                break
+            typer.echo(f"  Invalid voice. Choose from: {', '.join(voices)}")
+        if voice != voices[0]:
+            values["voice"] = voice
+
+    # 4. Structured instruct parts (Qwen engines only)
+    if engine.startswith("qwen"):
+        typer.echo("\n  Structured instruct parts (compose into instruct string).")
+        typer.echo("  Write them in the target language. Leave blank to skip.\n")
+        for field, example in [
+            ("accent", "e.g. Light southern French accent"),
+            ("personality", "e.g. Calm, warm and articulate"),
+            ("speed", "e.g. Measured pace with natural pauses"),
+            ("emotion", "e.g. Warm and engaged"),
+        ]:
+            typer.echo(f"  {field} — {example}")
+            val = typer.prompt(f"  {field}", default="").strip()
+            if val:
+                values[field] = val
+
+    # 5. Chatterbox params
+    if engine.startswith("chatterbox"):
+        typer.echo("")
+        values["exaggeration"] = _prompt_float("Exaggeration", 0.5, 0.25, 2.0)
+        values["cfg_weight"] = _prompt_float("CFG weight", 0.5, 0.0, 1.0)
+        # Remove if user kept the default
+        if values["exaggeration"] == 0.5:
+            del values["exaggeration"]
+        if values["cfg_weight"] == 0.5:
+            del values["cfg_weight"]
+
+    # 6. Segment transitions
+    typer.echo("")
+    seg_gap = _prompt_int("Segment gap (ms)", 0, 0)
+    crossfade = _prompt_int("Crossfade (ms)", 0, 0)
+    if seg_gap != 0:
+        values["segment_gap"] = seg_gap
+    if crossfade != 0:
+        values["crossfade"] = crossfade
+
+    # ── Write toml ──────────────────────────────────────────────────────────
+    config_path.write_text(_build_toml(values, engine))
+    typer.echo(f"\nCreated voiceme.toml with {len(values)} setting(s).")
+
+
+def _list_voices_for_engine(engine_name: str) -> list[str]:
+    """Get voice list without loading heavy models."""
+    if engine_name in ("qwen", "qwen-fast"):
+        from voiceme.engines.qwen import SPEAKERS
+        return list(SPEAKERS)
+    return ["default"]
+
+
+def _prompt_float(label: str, default: float, lo: float, hi: float) -> float:
+    while True:
+        raw = typer.prompt(f"{label} ({lo}-{hi})", default=str(default)).strip()
+        try:
+            val = float(raw)
+            if lo <= val <= hi:
+                return val
+        except ValueError:
+            pass
+        typer.echo(f"  Must be a number between {lo} and {hi}.")
+
+
+def _prompt_int(label: str, default: int, minimum: int) -> int:
+    while True:
+        raw = typer.prompt(label, default=str(default)).strip()
+        try:
+            val = int(raw)
+            if val >= minimum:
+                return val
+        except ValueError:
+            pass
+        typer.echo(f"  Must be an integer >= {minimum}.")
+
+
+def _build_toml(values: dict[str, object], engine: str) -> str:
+    """Build voiceme.toml with set fields uncommented, others commented out."""
+    is_qwen = engine.startswith("qwen")
+    is_chatterbox = engine.startswith("chatterbox")
+
+    def line(key: str, default: object, comment: str = "") -> str:
+        suffix = f"  # {comment}" if comment else ""
+        if key in values:
+            v = values[key]
+            val_str = f'"{v}"' if isinstance(v, str) else str(v)
+            return f"{key} = {val_str}{suffix}"
+        else:
+            val_str = f'"{default}"' if isinstance(default, str) else str(default)
+            return f"# {key} = {val_str}{suffix}"
+
+    lines = ["[defaults]"]
+    lines.append(line("engine", "qwen", "qwen | chatterbox | chatterbox-turbo | qwen-fast"))
+    if engine != "chatterbox-turbo":
+        lines.append(line("language", "English"))
+    if is_qwen:
+        lines.append(line("voice", "Vivian"))
+
+    if is_qwen:
+        lines.append("")
+        lines.append("# ── Structured instruct parts (Qwen) ──")
+        lines.append("# Auto-compose into instruct: \"accent. personality. speed. emotion\"")
+        lines.append("# Write them in the target language.")
+        for field, example in [
+            ("accent", "Light southern French accent"),
+            ("personality", "Calm, warm and articulate"),
+            ("speed", "Measured pace with natural pauses"),
+            ("emotion", "Warm and engaged"),
+        ]:
+            lines.append(line(field, example))
+
+    if is_chatterbox:
+        lines.append("")
+        lines.append("# ── Chatterbox expressiveness ──")
+        lines.append(line("exaggeration", 0.5, "0.25-2.0 (default 0.5)"))
+        lines.append(line("cfg_weight", 0.5, "0.0-1.0 (default 0.5)"))
+
+    lines.append("")
+    lines.append("# ── Segment transitions ──")
+    lines.append(line("segment_gap", 0, "ms silence between segments"))
+    lines.append(line("crossfade", 0, "ms fade between segments"))
+    lines.append("")
+    return "\n".join(lines)
 
 
 @app.command()
