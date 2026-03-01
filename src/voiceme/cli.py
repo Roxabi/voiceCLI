@@ -113,6 +113,7 @@ def generate(
         Optional[str], typer.Option("--lang", help="Language", show_default="English")
     ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
+    fast: Annotated[bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")] = False,
     segment_gap: Annotated[
         Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
     ] = None,
@@ -191,6 +192,8 @@ def generate(
         extra_kwargs["crossfade"] = xfade_ms
 
     eng = get_engine(engine)
+    if fast and engine == "qwen":
+        eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
     out = output or default_output_path(prefix)
     result = eng.generate(text, voice, out, language=language, **extra_kwargs)
@@ -221,6 +224,7 @@ def clone(
         Optional[str], typer.Option("--lang", help="Language", show_default="English")
     ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
+    fast: Annotated[bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")] = False,
     segment_gap: Annotated[
         Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
     ] = None,
@@ -313,6 +317,8 @@ def clone(
         raise typer.Exit(1)
 
     eng = get_engine(engine)
+    if fast and engine == "qwen":
+        eng._small = True
     prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
     out = output or default_output_path(prefix)
     result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)

@@ -9,12 +9,16 @@ from huggingface_hub.constants import HF_HUB_CACHE
 # Named constants for model repo IDs (single source of truth)
 QWEN_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 QWEN_CLONE_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+QWEN_MODEL_SMALL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+QWEN_CLONE_MODEL_SMALL = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 CHATTERBOX_MODEL = "ResembleAI/chatterbox"
 
 # repo_id → (display_name, estimated_size_gb)
 MODEL_REGISTRY: dict[str, tuple[str, float]] = {
-    QWEN_MODEL: ("Qwen3 TTS CustomVoice", 3.5),
-    QWEN_CLONE_MODEL: ("Qwen3 TTS Base (clone)", 3.5),
+    QWEN_MODEL: ("Qwen3 TTS CustomVoice 1.7B", 3.5),
+    QWEN_CLONE_MODEL: ("Qwen3 TTS Base 1.7B (clone)", 3.5),
+    QWEN_MODEL_SMALL: ("Qwen3 TTS CustomVoice 0.6B", 1.3),
+    QWEN_CLONE_MODEL_SMALL: ("Qwen3 TTS Base 0.6B (clone)", 1.3),
     CHATTERBOX_MODEL: ("Chatterbox (turbo + multilingual)", 1.8),
 }
 

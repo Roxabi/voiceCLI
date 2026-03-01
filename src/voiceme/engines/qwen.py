@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from voiceme.engine import TTSEngine, cuda_guard
-from voiceme.models import QWEN_CLONE_MODEL, QWEN_MODEL, warn_if_first_download
+from voiceme.models import (
+    QWEN_CLONE_MODEL, QWEN_CLONE_MODEL_SMALL, QWEN_MODEL, QWEN_MODEL_SMALL,
+    warn_if_first_download,
+)
 
 if TYPE_CHECKING:
     from voiceme.markdown import Segment
@@ -24,21 +27,24 @@ class QwenEngine(TTSEngine):
     def __init__(self):
         self._model = None
         self._clone_model = None
+        self._small = False  # use 0.6B models
 
     def _load_model(self):
         if self._model is None:
             with cuda_guard("qwen"):
                 from qwen_tts import Qwen3TTSModel
 
-                warn_if_first_download(QWEN_MODEL)
-                print(f"[qwen] Loading {QWEN_MODEL}...")
+                torch.set_float32_matmul_precision("high")
+                repo = QWEN_MODEL_SMALL if self._small else QWEN_MODEL
+                warn_if_first_download(repo)
+                print(f"[qwen] Loading {repo}...")
                 kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
                 try:
                     kwargs["attn_implementation"] = "flash_attention_2"
-                    self._model = Qwen3TTSModel.from_pretrained(QWEN_MODEL, **kwargs)
+                    self._model = Qwen3TTSModel.from_pretrained(repo, **kwargs)
                 except Exception:
                     kwargs.pop("attn_implementation", None)
-                    self._model = Qwen3TTSModel.from_pretrained(QWEN_MODEL, **kwargs)
+                    self._model = Qwen3TTSModel.from_pretrained(repo, **kwargs)
                 print("[qwen] Model loaded.")
         return self._model
 
@@ -47,15 +53,17 @@ class QwenEngine(TTSEngine):
             with cuda_guard("qwen"):
                 from qwen_tts import Qwen3TTSModel
 
-                warn_if_first_download(QWEN_CLONE_MODEL)
-                print(f"[qwen] Loading {QWEN_CLONE_MODEL}...")
+                torch.set_float32_matmul_precision("high")
+                repo = QWEN_CLONE_MODEL_SMALL if self._small else QWEN_CLONE_MODEL
+                warn_if_first_download(repo)
+                print(f"[qwen] Loading {repo}...")
                 kwargs = {"device_map": "cuda:0", "dtype": torch.bfloat16}
                 try:
                     kwargs["attn_implementation"] = "flash_attention_2"
-                    self._clone_model = Qwen3TTSModel.from_pretrained(QWEN_CLONE_MODEL, **kwargs)
+                    self._clone_model = Qwen3TTSModel.from_pretrained(repo, **kwargs)
                 except Exception:
                     kwargs.pop("attn_implementation", None)
-                    self._clone_model = Qwen3TTSModel.from_pretrained(QWEN_CLONE_MODEL, **kwargs)
+                    self._clone_model = Qwen3TTSModel.from_pretrained(repo, **kwargs)
                 print("[qwen] Clone model loaded.")
         return self._clone_model
 
@@ -76,6 +84,19 @@ class QwenEngine(TTSEngine):
         else:
             model = self._load_clone_model()
             gen_fn = model.generate_voice_clone
+            # Extract voice clone prompt ONCE, reuse for all segments
+            if "ref_audio" in base_kwargs:
+                prompt = model.create_voice_clone_prompt(
+                    ref_audio=base_kwargs["ref_audio"],
+                    ref_text=base_kwargs.get("ref_text"),
+                    x_vector_only_mode=base_kwargs.get("x_vector_only_mode", False),
+                )
+                # Replace ref_audio/ref_text with pre-computed prompt
+                base_kwargs = {
+                    k: v for k, v in base_kwargs.items()
+                    if k not in ("ref_audio", "ref_text", "x_vector_only_mode")
+                }
+                base_kwargs["voice_clone_prompt"] = prompt
 
         all_wavs: list[np.ndarray] = []
         sr = None
