@@ -330,11 +330,12 @@ def generate(
     chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
     chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
     plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
+    config: Annotated[Optional[Path], typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)")] = None,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     from voicecli.config import load_defaults
 
-    cfg = load_defaults()
+    cfg = load_defaults(config)
     extra_kwargs: dict = {}
     script_stem: str | None = None
 
@@ -489,11 +490,12 @@ def clone(
     chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
     chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
     plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
+    config: Annotated[Optional[Path], typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)")] = None,
 ):
     """Clone a voice from reference audio and synthesize text."""
     from voicecli.config import load_defaults
 
-    cfg = load_defaults()
+    cfg = load_defaults(config)
     extra_kwargs: dict = {}
     script_stem: str | None = None
 

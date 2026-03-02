@@ -43,9 +43,13 @@ def _find_config() -> Path | None:
         current = current.parent
 
 
-def load_defaults() -> dict:
-    """Load [defaults] from voicecli.toml, walking up from CWD to $HOME. Returns empty dict if not found."""
-    path = _find_config()
+def load_defaults(config: "Path | None" = None) -> dict:
+    """Load [defaults] from voicecli.toml, walking up from CWD to $HOME. Returns empty dict if not found.
+
+    Args:
+        config: Explicit path to a toml file. If provided, skips the walk-up search.
+    """
+    path = config if config is not None else _find_config()
     if path is None:
         print(
             "voicecli: no voicecli.toml found (searched from CWD to $HOME); using built-in defaults",
