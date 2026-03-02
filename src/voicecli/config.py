@@ -3,7 +3,13 @@
 import tomllib
 from pathlib import Path
 
-_KNOWN_DEFAULTS: dict[str, type] = {
+def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in ("true", "1", "yes", "on")
+
+
+_KNOWN_DEFAULTS: dict[str, object] = {
     "engine": str,
     "language": str,
     "voice": str,
@@ -16,6 +22,9 @@ _KNOWN_DEFAULTS: dict[str, type] = {
     "cfg_weight": float,
     "segment_gap": int,
     "crossfade": int,
+    "plain": _parse_bool,
+    "chunked": _parse_bool,
+    "chunk_size": int,
 }
 
 

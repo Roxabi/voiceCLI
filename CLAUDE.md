@@ -90,6 +90,9 @@ exaggeration = 0.7
 cfg_weight = 0.3
 segment_gap = 200       # ms silence between segments
 crossfade = 50          # ms fade between segments
+# plain = false         # strip [tags] and ignore <!-- directives -->
+# chunked = false       # always output separate chunk files
+# chunk_size = 500      # target chunk size in chars (~15 chars/sec)
 ```
 
 Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into a single
@@ -134,14 +137,20 @@ voicecli generate "text"                    # Qwen default voice; uses daemon if
 voicecli generate "text" -e chatterbox      # Chatterbox Multilingual engine
 voicecli generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
 voicecli generate script.md                 # from markdown with frontmatter
+voicecli generate article.txt               # from plain text file
 voicecli generate script.md --mp3           # also save as MP3
 voicecli generate script.md --segment-gap 300  # 300ms silence between segments
 voicecli generate script.md --crossfade 50     # 50ms fade between segments
+voicecli generate script.md --plain         # strip [tags] and ignore <!-- directives -->
+voicecli generate article.txt --chunked     # split into separate chunk files
+voicecli generate article.txt --chunked --chunk-size 300  # ~20s chunks
 
 # Voice cloning
 voicecli clone "text" --ref voice.wav       # clone from reference audio
 voicecli clone "text"                       # uses active sample (no --ref needed)
 voicecli clone script.md --mp3              # from markdown + MP3 output
+voicecli clone script.md --plain            # strip [tags] and ignore <!-- directives -->
+voicecli clone article.txt --chunked        # split into separate chunk files
 
 # Sample management
 voicecli samples list                       # list all .wav in TTS/samples/

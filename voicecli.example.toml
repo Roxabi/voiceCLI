@@ -9,3 +9,6 @@ engine = "qwen"
 # cfg_weight = 0.5
 # segment_gap = 200
 # crossfade = 50
+# plain = false
+# chunked = false
+# chunk_size = 500

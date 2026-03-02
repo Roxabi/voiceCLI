@@ -55,6 +55,9 @@ exaggeration = 0.7
 cfg_weight = 0.3
 segment_gap = 200
 crossfade = 50
+# plain = false       # strip [tags] and ignore <!-- directives -->
+# chunked = false     # always output separate chunk files
+# chunk_size = 500    # target chunk size in chars (~15 chars/sec)
 ```
 
 Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into
@@ -73,8 +76,12 @@ Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default*
 voicecligenerate "Your text here"
 voicecligenerate "Your text" --engine chatterbox --output out.wav
 voicecligenerate script.md                      # read from markdown file
+voicecligenerate article.txt                    # read from plain text file
 voicecligenerate script.md --segment-gap 300    # 300ms silence between segments
 voicecligenerate script.md --crossfade 50       # 50ms fade between segments
+voicecligenerate script.md --plain              # ignore [tags] and <!-- directives -->
+voicecligenerate article.txt --chunked          # split into separate chunk files
+voicecligenerate article.txt --chunked --chunk-size 300  # ~20s chunks
 ```
 
 | Flag | Short | Description | Default |
@@ -86,6 +93,10 @@ voicecligenerate script.md --crossfade 50       # 50ms fade between segments
 | `--mp3` | | Also save as MP3 | off |
 | `--segment-gap` | | Silence between segments (ms) | `0` |
 | `--crossfade` | | Fade between segments (ms) | `0` |
+| `--plain` | | Strip `[tags]` and ignore `<!-- directives -->` | off |
+| `--chunked` | | Save each chunk as a separate file | off |
+| `--chunk-size` | | Target chunk size in chars (~15 chars/sec) | `500` |
+| `--fast` | | Use smaller 0.6B Qwen model | off |
 
 ### `clone` — Voice cloning
 
@@ -93,6 +104,8 @@ voicecligenerate script.md --crossfade 50       # 50ms fade between segments
 voicecliclone "Text to speak" --ref reference.wav
 voicecliclone "Text to speak"              # uses active sample (see below)
 voicecliclone script.md --segment-gap 200  # with segment transitions
+voicecliclone script.md --plain            # ignore [tags] and <!-- directives -->
+voicecliclone article.txt --chunked        # split into separate chunk files
 ```
 
 | Flag | Short | Description | Default |
@@ -105,6 +118,10 @@ voicecliclone script.md --segment-gap 200  # with segment transitions
 | `--mp3` | | Also save as MP3 | off |
 | `--segment-gap` | | Silence between segments (ms) | `0` |
 | `--crossfade` | | Fade between segments (ms) | `0` |
+| `--plain` | | Strip `[tags]` and ignore `<!-- directives -->` | off |
+| `--chunked` | | Save each chunk as a separate file | off |
+| `--chunk-size` | | Target chunk size in chars (~15 chars/sec) | `500` |
+| `--fast` | | Use smaller 0.6B Qwen model | off |
 
 ### `samples` — Manage voice samples
 
@@ -193,7 +210,7 @@ voicecli emotions
 
 ## Markdown File Input
 
-Instead of raw text, `generate` and `clone` accept a `.md` file with YAML frontmatter:
+Instead of raw text, `generate` and `clone` accept a `.md` file with YAML frontmatter or a plain `.txt` file:
 
 ```markdown
 ---

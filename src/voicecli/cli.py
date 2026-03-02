@@ -284,6 +284,25 @@ def _apply_config_defaults(doc, cfg: dict) -> None:
                 seg.instruct = composed
 
 
+# ── Plain mode helper ────────────────────────────────────────────────────────
+
+
+def _flatten_doc(doc) -> None:
+    """Strip [tags] and merge all segments into one, ignoring per-section directives.
+
+    Mutates doc in-place: clears segments, sets doc.text to stripped merged text.
+    Doc-level fields (language, voice, instruct, etc.) are preserved.
+    """
+    from voicecli.translate import _strip_tags
+
+    if doc.segments:
+        texts = [_strip_tags(seg.text) for seg in doc.segments]
+        doc.text = " ".join(t for t in texts if t)
+        doc.segments = []
+    else:
+        doc.text = _strip_tags(doc.text)
+
+
 # ── Core commands ────────────────────────────────────────────────────────────
 
 
@@ -309,7 +328,8 @@ def generate(
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
     chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
-    chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
+    chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
+    plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     from voicecli.config import load_defaults
@@ -322,6 +342,9 @@ def generate(
     engine = engine or cfg.get("engine", "qwen")
     language = language or cfg.get("language", "English")
     voice = voice or cfg.get("voice")
+    plain = plain or cfg.get("plain", False)
+    chunked = chunked or cfg.get("chunked", False)
+    chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
     for field in ("exaggeration", "cfg_weight"):
@@ -345,9 +368,12 @@ def generate(
     gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
     xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
 
-    # Detect .md file input
+    # Detect file input (.md or .txt)
     text_path = Path(text)
-    if text.endswith(".md") and text_path.exists():
+    if text_path.suffix == ".txt" and text_path.exists():
+        script_stem = text_path.stem
+        text = text_path.read_text(encoding="utf-8")
+    if text_path.suffix == ".md" and text_path.exists():
         from voicecli.markdown import parse_md_file
         from voicecli.translate import translate_for_engine
 
@@ -357,6 +383,8 @@ def generate(
         if doc.engine:
             engine = doc.engine
         _apply_config_defaults(doc, cfg)
+        if plain:
+            _flatten_doc(doc)
         doc = translate_for_engine(doc, engine)
         text = doc.text
         if doc.language:
@@ -376,6 +404,9 @@ def generate(
             gap_ms = doc.segment_gap
         if crossfade is None and doc.crossfade is not None:
             xfade_ms = doc.crossfade
+    elif plain:
+        from voicecli.translate import _strip_tags
+        text = _strip_tags(text)
 
     if gap_ms > 0:
         extra_kwargs["segment_gap"] = gap_ms
@@ -456,7 +487,8 @@ def clone(
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
     chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
-    chunk_size: Annotated[int, typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = 500,
+    chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
+    plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
 ):
     """Clone a voice from reference audio and synthesize text."""
     from voicecli.config import load_defaults
@@ -468,6 +500,9 @@ def clone(
     # Layer defaults: CLI flag > voicecli.toml > hardcoded
     engine = engine or cfg.get("engine", "qwen")
     language = language or cfg.get("language", "English")
+    plain = plain or cfg.get("plain", False)
+    chunked = chunked or cfg.get("chunked", False)
+    chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
     for field in ("exaggeration", "cfg_weight"):
@@ -491,9 +526,12 @@ def clone(
     gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
     xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
 
-    # Detect .md file input
+    # Detect file input (.md or .txt)
     text_path = Path(text)
-    if text.endswith(".md") and text_path.exists():
+    if text_path.suffix == ".txt" and text_path.exists():
+        script_stem = text_path.stem
+        text = text_path.read_text(encoding="utf-8")
+    if text_path.suffix == ".md" and text_path.exists():
         from voicecli.markdown import parse_md_file
         from voicecli.translate import translate_for_engine
 
@@ -502,6 +540,8 @@ def clone(
         if doc.engine:
             engine = doc.engine
         _apply_config_defaults(doc, cfg)
+        if plain:
+            _flatten_doc(doc)
         doc = translate_for_engine(doc, engine)
         text = doc.text
         if doc.language:
@@ -519,6 +559,9 @@ def clone(
             gap_ms = doc.segment_gap
         if crossfade is None and doc.crossfade is not None:
             xfade_ms = doc.crossfade
+    elif plain:
+        from voicecli.translate import _strip_tags
+        text = _strip_tags(text)
 
     if gap_ms > 0:
         extra_kwargs["segment_gap"] = gap_ms
