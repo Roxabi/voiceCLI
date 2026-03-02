@@ -1,7 +1,9 @@
 """Load user defaults from voicecli.toml."""
 
+import sys
 import tomllib
 from pathlib import Path
+
 
 def _parse_bool(value: object) -> bool:
     if isinstance(value, bool):
@@ -28,10 +30,27 @@ _KNOWN_DEFAULTS: dict[str, object] = {
 }
 
 
+def _find_config() -> Path | None:
+    """Walk up from CWD to $HOME looking for voicecli.toml."""
+    home = Path.home().resolve()
+    current = Path.cwd().resolve()
+    while True:
+        candidate = current / "voicecli.toml"
+        if candidate.is_file():
+            return candidate
+        if current == home or current.parent == current:
+            return None
+        current = current.parent
+
+
 def load_defaults() -> dict:
-    """Load [defaults] from voicecli.toml in CWD. Returns empty dict if not found."""
-    path = Path("voicecli.toml")
-    if not path.is_file():
+    """Load [defaults] from voicecli.toml, walking up from CWD to $HOME. Returns empty dict if not found."""
+    path = _find_config()
+    if path is None:
+        print(
+            "voicecli: no voicecli.toml found (searched from CWD to $HOME); using built-in defaults",
+            file=sys.stderr,
+        )
         return {}
     with open(path, "rb") as f:
         data = tomllib.load(f)
