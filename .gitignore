@@ -19,3 +19,5 @@ STT/texts_out/*
 .ruff_cache/
 .claude/skills/
 voicecli.toml
+
+.env

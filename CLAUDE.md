@@ -78,7 +78,9 @@ src/voicecli/
 
 ## User Config (`voicecli.toml`)
 
-Optional TOML file at project root (gitignored). Copy from `voicecli.example.toml` and customize.
+Optional TOML file (gitignored). Copy from `voicecli.example.toml` and customize.
+
+**Discovery**: voicecli searches for `voicecli.toml` by walking up from the CWD to `$HOME`. This means a config at `~/projects/voicecli.toml` is shared across all projects under `~/projects/`. If no file is found, a warning is printed to stderr and built-in defaults are used.
 
 ```toml
 [defaults]

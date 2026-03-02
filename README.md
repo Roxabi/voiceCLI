@@ -39,7 +39,9 @@ voiceclilisten
 
 ## User Config (`voicecli.toml`)
 
-Optional file at project root (gitignored). Sets default values so you don't pass flags every time.
+Optional file (gitignored). Sets default values so you don't pass flags every time.
+
+**Discovery**: voicecli walks up from the CWD to `$HOME` looking for `voicecli.toml`. Place it in a parent directory (e.g. `~/projects/voicecli.toml`) to share it across multiple projects. A warning is printed to stderr if no file is found anywhere.
 
 ```bash
 cp voicecli.example.toml voicecli.toml   # then edit to taste
