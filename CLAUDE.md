@@ -1,3 +1,5 @@
+@.claude/stack.yml
+
 # VoiceCLI
 
 Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual and Chatterbox Turbo backends.

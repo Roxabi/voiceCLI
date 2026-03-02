@@ -21,3 +21,4 @@ STT/texts_out/*
 voicecli.toml
 
 .env
+.claude/stack.yml
