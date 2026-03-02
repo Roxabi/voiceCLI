@@ -22,4 +22,4 @@ voicecli.toml
 
 .env
 .claude/stack.yml
-.claude/settings.json
+.claude/settings.local.json
