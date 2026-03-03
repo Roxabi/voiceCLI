@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING
 
 from voicecli.engine import TTSEngine, cuda_guard
 from voicecli.models import (
-    QWEN_CLONE_MODEL, QWEN_CLONE_MODEL_SMALL, QWEN_MODEL, QWEN_MODEL_SMALL,
+    QWEN_CLONE_MODEL,
+    QWEN_CLONE_MODEL_SMALL,
+    QWEN_MODEL,
+    QWEN_MODEL_SMALL,
     warn_if_first_download,
 )
 
@@ -16,8 +19,15 @@ if TYPE_CHECKING:
     from voicecli.markdown import Segment
 
 SPEAKERS = [
-    "Vivian", "Serena", "Uncle_Fu", "Dylan",
-    "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee",
+    "Vivian",
+    "Serena",
+    "Uncle_Fu",
+    "Dylan",
+    "Eric",
+    "Ryan",
+    "Aiden",
+    "Ono_Anna",
+    "Sohee",
 ]
 
 
@@ -33,6 +43,7 @@ class QwenEngine(TTSEngine):
         if self._model is None:
             with cuda_guard("qwen"):
                 import transformers
+
                 transformers.logging.set_verbosity_error()
                 from qwen_tts import Qwen3TTSModel
 
@@ -54,6 +65,7 @@ class QwenEngine(TTSEngine):
         if self._clone_model is None:
             with cuda_guard("qwen"):
                 import transformers
+
                 transformers.logging.set_verbosity_error()
                 from qwen_tts import Qwen3TTSModel
 
@@ -97,7 +109,8 @@ class QwenEngine(TTSEngine):
                 )
                 # Replace ref_audio/ref_text with pre-computed prompt
                 base_kwargs = {
-                    k: v for k, v in base_kwargs.items()
+                    k: v
+                    for k, v in base_kwargs.items()
                     if k not in ("ref_audio", "ref_text", "x_vector_only_mode")
                 }
                 base_kwargs["voice_clone_prompt"] = prompt
@@ -122,8 +135,7 @@ class QwenEngine(TTSEngine):
             all_wavs.append(wavs[0])
 
         gaps = [
-            seg.segment_gap if seg.segment_gap is not None else default_gap
-            for seg in segments[1:]
+            seg.segment_gap if seg.segment_gap is not None else default_gap for seg in segments[1:]
         ]
         xfades = [
             seg.crossfade if seg.crossfade is not None else default_crossfade
@@ -151,8 +163,11 @@ class QwenEngine(TTSEngine):
             if instruct:
                 base_kwargs["instruct"] = instruct
             audio, sr = self._generate_segmented(
-                segments, base_kwargs, method="custom_voice",
-                default_gap=default_gap, default_crossfade=default_crossfade,
+                segments,
+                base_kwargs,
+                method="custom_voice",
+                default_gap=default_gap,
+                default_crossfade=default_crossfade,
             )
             sf.write(str(output_path), audio, sr)
             return output_path
@@ -185,8 +200,11 @@ class QwenEngine(TTSEngine):
         # Multi-segment mode
         if segments and len(segments) > 1:
             audio, sr = self._generate_segmented(
-                segments, base_kwargs, method="clone",
-                default_gap=default_gap, default_crossfade=default_crossfade,
+                segments,
+                base_kwargs,
+                method="clone",
+                default_gap=default_gap,
+                default_crossfade=default_crossfade,
             )
             sf.write(str(output_path), audio, sr)
             return output_path

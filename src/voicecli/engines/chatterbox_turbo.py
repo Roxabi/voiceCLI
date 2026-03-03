@@ -64,8 +64,7 @@ class ChatterboxTurboEngine(TTSEngine):
             all_wavs.append(audio)
 
         gaps = [
-            seg.segment_gap if seg.segment_gap is not None else default_gap
-            for seg in segments[1:]
+            seg.segment_gap if seg.segment_gap is not None else default_gap for seg in segments[1:]
         ]
         xfades = [
             seg.crossfade if seg.crossfade is not None else default_crossfade
@@ -85,8 +84,10 @@ class ChatterboxTurboEngine(TTSEngine):
         if segments and len(segments) > 1:
             base_kwargs = dict(exaggeration=exaggeration, cfg_weight=cfg_weight)
             audio = self._generate_segmented(
-                segments, base_kwargs,
-                default_gap=default_gap, default_crossfade=default_crossfade,
+                segments,
+                base_kwargs,
+                default_gap=default_gap,
+                default_crossfade=default_crossfade,
             )
             sf.write(str(output_path), audio, self._load_model().sr)
             return output_path
@@ -110,18 +111,22 @@ class ChatterboxTurboEngine(TTSEngine):
         if segments and len(segments) > 1:
             base_kwargs = dict(
                 audio_prompt_path=str(ref_audio),
-                exaggeration=exaggeration, cfg_weight=cfg_weight,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
             )
             audio = self._generate_segmented(
-                segments, base_kwargs,
-                default_gap=default_gap, default_crossfade=default_crossfade,
+                segments,
+                base_kwargs,
+                default_gap=default_gap,
+                default_crossfade=default_crossfade,
             )
             sf.write(str(output_path), audio, self._load_model().sr)
             return output_path
 
         gen_kwargs = dict(
             audio_prompt_path=str(ref_audio),
-            exaggeration=exaggeration, cfg_weight=cfg_weight,
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
         )
         audio = self._generate_chunked(text, **gen_kwargs)
         sf.write(str(output_path), audio, self._load_model().sr)

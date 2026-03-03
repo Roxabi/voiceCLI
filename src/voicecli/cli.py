@@ -15,17 +15,26 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-app = typer.Typer(help="VoiceCLI — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)")
+app = typer.Typer(
+    help="VoiceCLI — unified voice generation CLI (Qwen3-TTS, Chatterbox & Chatterbox Turbo)"
+)
 
 
 @app.callback()
 def _main(
     version: Annotated[
         bool,
-        typer.Option("--version", "-V", help="Show version and exit", callback=_version_callback, is_eager=True),
+        typer.Option(
+            "--version",
+            "-V",
+            help="Show version and exit",
+            callback=_version_callback,
+            is_eager=True,
+        ),
     ] = False,
 ) -> None:
     """VoiceCLI — unified voice generation CLI."""
+
 
 # ── Samples sub-app ──────────────────────────────────────────────────────────
 
@@ -64,7 +73,9 @@ def samples_add(
 @samples_app.command("record")
 def samples_record(
     name: Annotated[str, typer.Argument(help="Name for the recording (without .wav)")],
-    duration: Annotated[float, typer.Option("--duration", "-d", help="Recording duration in seconds")] = 10.0,
+    duration: Annotated[
+        float, typer.Option("--duration", "-d", help="Recording duration in seconds")
+    ] = 10.0,
 ):
     """Record audio from microphone and save as a sample."""
     from voicecli.samples import record_sample
@@ -118,7 +129,19 @@ def samples_remove(
 # ── Chunked output helpers ───────────────────────────────────────────────────
 
 
-def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: bool, total: int, *, daemon_fn=None, **kwargs):
+def _emit_chunk(
+    eng,
+    method: str,
+    text: str,
+    voice,
+    out: Path,
+    index: int,
+    mp3: bool,
+    total: int,
+    *,
+    daemon_fn=None,
+    **kwargs,
+):
     """Generate and save a single numbered chunk."""
     from voicecli.utils import wav_to_mp3 as _wav_to_mp3
 
@@ -128,7 +151,13 @@ def _emit_chunk(eng, method: str, text: str, voice, out: Path, index: int, mp3: 
         if method == "generate":
             eng.generate(text, voice, chunk_path, **kwargs)
         else:
-            eng.clone(text, kwargs.pop("ref_audio"), chunk_path, ref_text=kwargs.pop("ref_text", None), **kwargs)
+            eng.clone(
+                text,
+                kwargs.pop("ref_audio"),
+                chunk_path,
+                ref_text=kwargs.pop("ref_text", None),
+                **kwargs,
+            )
     typer.echo(f"  [{index}/{total}] {chunk_path.name}")
     if mp3:
         mp3_path = _wav_to_mp3(chunk_path)
@@ -141,7 +170,9 @@ def _write_done(out: Path):
     typer.echo(f"Done sentinel: {done_path}")
 
 
-def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None):
+def _generate_chunked(
+    eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None
+):
     """Generate speech in chunks, saving each as a separate file."""
     from voicecli.utils import smart_chunk
 
@@ -158,17 +189,44 @@ def _generate_chunked(eng, text, voice, out, language, extra_kwargs, mp3, *, chu
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
             seg_voice = seg.voice or voice
-            _emit_chunk(eng, "generate", seg.text, seg_voice, out, i, mp3, total, daemon_fn=daemon_fn, **kw)
+            _emit_chunk(
+                eng, "generate", seg.text, seg_voice, out, i, mp3, total, daemon_fn=daemon_fn, **kw
+            )
     else:
         chunks = smart_chunk(text, chunk_size)
         total = len(chunks)
         for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(eng, "generate", chunk_text, voice, out, i, mp3, total, daemon_fn=daemon_fn, language=language, **extra_kwargs)
+            _emit_chunk(
+                eng,
+                "generate",
+                chunk_text,
+                voice,
+                out,
+                i,
+                mp3,
+                total,
+                daemon_fn=daemon_fn,
+                language=language,
+                **extra_kwargs,
+            )
 
     _write_done(out)
 
 
-def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None):
+def _clone_chunked(
+    eng,
+    text,
+    ref,
+    ref_text,
+    out,
+    language,
+    extra_kwargs,
+    mp3,
+    *,
+    chunk_size,
+    segments,
+    daemon_fn=None,
+):
     """Clone voice in chunks, saving each as a separate file."""
     from voicecli.utils import smart_chunk
 
@@ -177,7 +235,12 @@ def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *
     if segments and len(segments) > 1:
         total = len(segments)
         for i, seg in enumerate(segments, 1):
-            kw = {**extra_kwargs, "language": seg.language or language, "ref_audio": ref, "ref_text": ref_text}
+            kw = {
+                **extra_kwargs,
+                "language": seg.language or language,
+                "ref_audio": ref,
+                "ref_text": ref_text,
+            }
             if seg.exaggeration is not None:
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
@@ -187,7 +250,21 @@ def _clone_chunked(eng, text, ref, ref_text, out, language, extra_kwargs, mp3, *
         chunks = smart_chunk(text, chunk_size)
         total = len(chunks)
         for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(eng, "clone", chunk_text, None, out, i, mp3, total, daemon_fn=daemon_fn, language=language, ref_audio=ref, ref_text=ref_text, **extra_kwargs)
+            _emit_chunk(
+                eng,
+                "clone",
+                chunk_text,
+                None,
+                out,
+                i,
+                mp3,
+                total,
+                daemon_fn=daemon_fn,
+                language=language,
+                ref_audio=ref,
+                ref_text=ref_text,
+                **extra_kwargs,
+            )
 
     _write_done(out)
 
@@ -320,17 +397,37 @@ def generate(
         Optional[str], typer.Option("--lang", help="Language", show_default="English")
     ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
-    fast: Annotated[bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")] = False,
+    fast: Annotated[
+        bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")
+    ] = False,
     segment_gap: Annotated[
         Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
     ] = None,
     crossfade: Annotated[
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
-    chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
-    chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
-    plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
-    config: Annotated[Optional[Path], typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)")] = None,
+    chunked: Annotated[
+        bool,
+        typer.Option(
+            "--chunked", help="Output each chunk as a separate file for progressive sending"
+        ),
+    ] = False,
+    chunk_size: Annotated[
+        Optional[int],
+        typer.Option(
+            "--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)"
+        ),
+    ] = None,
+    plain: Annotated[
+        bool,
+        typer.Option(
+            "--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only"
+        ),
+    ] = False,
+    config: Annotated[
+        Optional[Path],
+        typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)"),
+    ] = None,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     from voicecli.config import load_defaults
@@ -359,8 +456,10 @@ def generate(
         from voicecli.markdown import compose_instruct
 
         composed = compose_instruct(
-            cfg.get("accent"), cfg.get("personality"),
-            cfg.get("speed"), cfg.get("emotion"),
+            cfg.get("accent"),
+            cfg.get("personality"),
+            cfg.get("speed"),
+            cfg.get("emotion"),
         )
         if composed:
             extra_kwargs["instruct"] = composed
@@ -407,6 +506,7 @@ def generate(
             xfade_ms = doc.crossfade
     elif plain:
         from voicecli.translate import _strip_tags
+
         text = _strip_tags(text)
 
     if gap_ms > 0:
@@ -423,27 +523,37 @@ def generate(
     if chunked:
         _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
         _generate_chunked(
-            eng, text, voice, out, language, extra_kwargs, mp3,
+            eng,
+            text,
+            voice,
+            out,
+            language,
+            extra_kwargs,
+            mp3,
             chunk_size=chunk_size,
             segments=extra_kwargs.pop("segments", None),
             daemon_fn=_daemon_chunk_fn,
         )
     else:
         if engine in QWEN_ENGINES:
-            daemon_result = _try_daemon({
-                "action": "generate",
-                "engine": engine,
-                "text": text,
-                "voice": voice,
-                "output_path": str(out.resolve()),
-                "language": language,
-                "instruct": extra_kwargs.get("instruct"),
-                "exaggeration": extra_kwargs.get("exaggeration"),
-                "cfg_weight": extra_kwargs.get("cfg_weight"),
-                "segment_gap": extra_kwargs.get("segment_gap"),
-                "crossfade": extra_kwargs.get("crossfade"),
-                "segments": [dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])],
-            })
+            daemon_result = _try_daemon(
+                {
+                    "action": "generate",
+                    "engine": engine,
+                    "text": text,
+                    "voice": voice,
+                    "output_path": str(out.resolve()),
+                    "language": language,
+                    "instruct": extra_kwargs.get("instruct"),
+                    "exaggeration": extra_kwargs.get("exaggeration"),
+                    "cfg_weight": extra_kwargs.get("cfg_weight"),
+                    "segment_gap": extra_kwargs.get("segment_gap"),
+                    "crossfade": extra_kwargs.get("crossfade"),
+                    "segments": [
+                        dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])
+                    ],
+                }
+            )
             if daemon_result:
                 typer.echo(f"Saved to {daemon_result}")
                 if mp3:
@@ -480,17 +590,37 @@ def clone(
         Optional[str], typer.Option("--lang", help="Language", show_default="English")
     ] = None,
     mp3: Annotated[bool, typer.Option("--mp3", help="Also save as MP3")] = False,
-    fast: Annotated[bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")] = False,
+    fast: Annotated[
+        bool, typer.Option("--fast", help="Use smaller 0.6B model (faster, lower quality)")
+    ] = False,
     segment_gap: Annotated[
         Optional[int], typer.Option("--segment-gap", help="Silence between segments (ms)")
     ] = None,
     crossfade: Annotated[
         Optional[int], typer.Option("--crossfade", help="Fade between segments (ms)")
     ] = None,
-    chunked: Annotated[bool, typer.Option("--chunked", help="Output each chunk as a separate file for progressive sending")] = False,
-    chunk_size: Annotated[Optional[int], typer.Option("--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)")] = None,
-    plain: Annotated[bool, typer.Option("--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only")] = False,
-    config: Annotated[Optional[Path], typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)")] = None,
+    chunked: Annotated[
+        bool,
+        typer.Option(
+            "--chunked", help="Output each chunk as a separate file for progressive sending"
+        ),
+    ] = False,
+    chunk_size: Annotated[
+        Optional[int],
+        typer.Option(
+            "--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)"
+        ),
+    ] = None,
+    plain: Annotated[
+        bool,
+        typer.Option(
+            "--plain", help="Ignore [tags] and <!-- directives -->, generate flat text only"
+        ),
+    ] = False,
+    config: Annotated[
+        Optional[Path],
+        typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)"),
+    ] = None,
 ):
     """Clone a voice from reference audio and synthesize text."""
     from voicecli.config import load_defaults
@@ -518,8 +648,10 @@ def clone(
         from voicecli.markdown import compose_instruct
 
         composed = compose_instruct(
-            cfg.get("accent"), cfg.get("personality"),
-            cfg.get("speed"), cfg.get("emotion"),
+            cfg.get("accent"),
+            cfg.get("personality"),
+            cfg.get("speed"),
+            cfg.get("emotion"),
         )
         if composed:
             extra_kwargs["instruct"] = composed
@@ -563,6 +695,7 @@ def clone(
             xfade_ms = doc.crossfade
     elif plain:
         from voicecli.translate import _strip_tags
+
         text = _strip_tags(text)
 
     if gap_ms > 0:
@@ -597,29 +730,40 @@ def clone(
     if chunked:
         _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
         _clone_chunked(
-            eng, text, ref, ref_text, out, language, extra_kwargs, mp3,
+            eng,
+            text,
+            ref,
+            ref_text,
+            out,
+            language,
+            extra_kwargs,
+            mp3,
             chunk_size=chunk_size,
             segments=extra_kwargs.pop("segments", None),
             daemon_fn=_daemon_chunk_fn,
         )
     else:
         if engine in QWEN_ENGINES:
-            daemon_result = _try_daemon({
-                "action": "clone",
-                "engine": engine,
-                "text": text,
-                "voice": None,
-                "ref_audio": str(ref.resolve()),
-                "ref_text": ref_text,
-                "output_path": str(out.resolve()),
-                "language": language,
-                "instruct": extra_kwargs.get("instruct"),
-                "exaggeration": extra_kwargs.get("exaggeration"),
-                "cfg_weight": extra_kwargs.get("cfg_weight"),
-                "segment_gap": extra_kwargs.get("segment_gap"),
-                "crossfade": extra_kwargs.get("crossfade"),
-                "segments": [dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])],
-            })
+            daemon_result = _try_daemon(
+                {
+                    "action": "clone",
+                    "engine": engine,
+                    "text": text,
+                    "voice": None,
+                    "ref_audio": str(ref.resolve()),
+                    "ref_text": ref_text,
+                    "output_path": str(out.resolve()),
+                    "language": language,
+                    "instruct": extra_kwargs.get("instruct"),
+                    "exaggeration": extra_kwargs.get("exaggeration"),
+                    "cfg_weight": extra_kwargs.get("cfg_weight"),
+                    "segment_gap": extra_kwargs.get("segment_gap"),
+                    "crossfade": extra_kwargs.get("crossfade"),
+                    "segments": [
+                        dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])
+                    ],
+                }
+            )
             if daemon_result:
                 typer.echo(f"Saved to {daemon_result}")
                 if mp3:
@@ -640,10 +784,18 @@ def clone(
 @app.command()
 def transcribe(
     audio: Annotated[Path, typer.Argument(help="Audio file to transcribe")],
-    model: Annotated[str, typer.Option("--model", "-m", help="Whisper model name")] = "large-v3-turbo",
-    language: Annotated[Optional[str], typer.Option("--lang", "-l", help="Force language code")] = None,
-    output: Annotated[Optional[Path], typer.Option("--output", "-o", help="Save text to file")] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="JSON output with timestamps")] = False,
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Whisper model name")
+    ] = "large-v3-turbo",
+    language: Annotated[
+        Optional[str], typer.Option("--lang", "-l", help="Force language code")
+    ] = None,
+    output: Annotated[
+        Optional[Path], typer.Option("--output", "-o", help="Save text to file")
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="JSON output with timestamps")
+    ] = False,
 ):
     """Transcribe speech from an audio file to text."""
     from voicecli.transcribe import transcribe as do_transcribe
@@ -668,6 +820,7 @@ def transcribe(
 
     if output is None:
         from voicecli.utils import default_output_path
+
         ext = "json" if json_output else "txt"
         output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=Path("STT/texts_out"))
 
@@ -778,6 +931,7 @@ def init(
     # 2. Language (skip for chatterbox-turbo — English only)
     if engine != "chatterbox-turbo":
         from voicecli.utils import LANG_MAP
+
         lang_names = sorted({k.title() for k in LANG_MAP if k.isascii()})
         typer.echo(f"  Supported languages: {', '.join(lang_names)}")
         language = typer.prompt("Language", default="English").strip()
@@ -843,6 +997,7 @@ def _list_voices_for_engine(engine_name: str) -> list[str]:
     """Get voice list without loading heavy models."""
     if engine_name in QWEN_ENGINES:
         from voicecli.engines.qwen import SPEAKERS
+
         return list(SPEAKERS)
     return ["default"]
 
@@ -871,10 +1026,7 @@ def _offer_path_install() -> None:
         return
 
     bin_dir.mkdir(parents=True, exist_ok=True)
-    script = (
-        "#!/usr/bin/env bash\n"
-        f'cd "{project_dir}" && exec uv run voicecli "$@"\n'
-    )
+    script = f'#!/usr/bin/env bash\ncd "{project_dir}" && exec uv run voicecli "$@"\n'
 
     if wrapper.exists():
         overwrite = typer.confirm(f"  {wrapper} already exists. Overwrite?", default=False)
@@ -893,7 +1045,7 @@ def _offer_path_install() -> None:
     typer.echo(f"  Installed wrapper to {wrapper}")
     if not in_path:
         typer.echo(
-            f'  Note: {bin_dir} is not in your PATH. Add this to your shell rc:\n'
+            f"  Note: {bin_dir} is not in your PATH. Add this to your shell rc:\n"
             f'    export PATH="$HOME/.local/bin:$PATH"'
         )
 
@@ -947,7 +1099,7 @@ def _build_toml(values: dict[str, object], engine: str) -> str:
     if is_qwen:
         lines.append("")
         lines.append("# ── Structured instruct parts (Qwen) ──")
-        lines.append("# Auto-compose into instruct: \"accent. personality. speed. emotion\"")
+        lines.append('# Auto-compose into instruct: "accent. personality. speed. emotion"')
         lines.append("# Write them in the target language.")
         for field, example in [
             ("accent", "Light southern French accent"),
@@ -1103,7 +1255,8 @@ def doctor():
 @app.command()
 def serve(
     engine: Annotated[
-        Optional[str], typer.Option("--engine", "-e", help="Engine to preload on startup (e.g. qwen)")
+        Optional[str],
+        typer.Option("--engine", "-e", help="Engine to preload on startup (e.g. qwen)"),
     ] = None,
     fast: Annotated[bool, typer.Option("--fast", help="Use smaller Qwen model")] = False,
 ) -> None:

@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING
 from voicecli.engine import cuda_guard
 from voicecli.engines.qwen import QwenEngine
 from voicecli.models import (
-    QWEN_CLONE_MODEL, QWEN_CLONE_MODEL_SMALL, QWEN_MODEL, QWEN_MODEL_SMALL,
+    QWEN_CLONE_MODEL,
+    QWEN_CLONE_MODEL_SMALL,
+    QWEN_MODEL,
+    QWEN_MODEL_SMALL,
     warn_if_first_download,
 )
 
@@ -34,7 +37,9 @@ class QwenFastEngine(QwenEngine):
                 warn_if_first_download(repo)
                 print(f"[qwen-fast] Loading {repo}...")
                 self._model = FasterQwen3TTS.from_pretrained(
-                    repo, device="cuda", dtype=torch.bfloat16,
+                    repo,
+                    device="cuda",
+                    dtype=torch.bfloat16,
                 )
                 print("[qwen-fast] Model loaded (CUDA graphs will warm up on first call).")
         return self._model
@@ -49,7 +54,9 @@ class QwenFastEngine(QwenEngine):
                 warn_if_first_download(repo)
                 print(f"[qwen-fast] Loading {repo}...")
                 self._clone_model = FasterQwen3TTS.from_pretrained(
-                    repo, device="cuda", dtype=torch.bfloat16,
+                    repo,
+                    device="cuda",
+                    dtype=torch.bfloat16,
                 )
                 print("[qwen-fast] Clone model loaded (CUDA graphs will warm up on first call).")
         return self._clone_model
@@ -98,8 +105,7 @@ class QwenFastEngine(QwenEngine):
             all_wavs.append(wavs[0])
 
         gaps = [
-            seg.segment_gap if seg.segment_gap is not None else default_gap
-            for seg in segments[1:]
+            seg.segment_gap if seg.segment_gap is not None else default_gap for seg in segments[1:]
         ]
         xfades = [
             seg.crossfade if seg.crossfade is not None else default_crossfade
@@ -126,8 +132,11 @@ class QwenFastEngine(QwenEngine):
         # Multi-segment mode
         if segments and len(segments) > 1:
             audio, sr = self._generate_segmented(
-                segments, base_kwargs, method="clone",
-                default_gap=default_gap, default_crossfade=default_crossfade,
+                segments,
+                base_kwargs,
+                method="clone",
+                default_gap=default_gap,
+                default_crossfade=default_crossfade,
             )
             sf.write(str(output_path), audio, sr)
             return output_path

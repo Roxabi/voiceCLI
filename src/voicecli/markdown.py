@@ -239,7 +239,7 @@ def _parse_segments(body: str, defaults: dict) -> list[Segment]:
 
     for match in matches:
         # Text between previous position and this comment
-        text_before = body[prev_end:match.start()]
+        text_before = body[prev_end : match.start()]
         stripped = strip_markdown(text_before)
         if stripped:
             seg_kwargs = {**defaults, **pending_overrides, "text": stripped}
@@ -294,9 +294,18 @@ def parse_md_file(path: Path) -> TTSDocument:
     metadata, body = parse_frontmatter(content)
 
     known_keys = {
-        "language", "voice", "engine", "instruct",
-        "accent", "personality", "speed", "emotion",
-        "exaggeration", "cfg_weight", "segment_gap", "crossfade",
+        "language",
+        "voice",
+        "engine",
+        "instruct",
+        "accent",
+        "personality",
+        "speed",
+        "emotion",
+        "exaggeration",
+        "cfg_weight",
+        "segment_gap",
+        "crossfade",
     }
     extra = {k: v for k, v in metadata.items() if k not in known_keys}
 
@@ -332,8 +341,10 @@ def parse_md_file(path: Path) -> TTSDocument:
     doc_instruct = metadata.get("instruct")
     if doc_instruct is None:
         doc_instruct = compose_instruct(
-            metadata.get("accent"), metadata.get("personality"),
-            metadata.get("speed"), metadata.get("emotion"),
+            metadata.get("accent"),
+            metadata.get("personality"),
+            metadata.get("speed"),
+            metadata.get("emotion"),
         )
 
     return TTSDocument(

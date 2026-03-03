@@ -82,7 +82,10 @@ TAG_TRANSITION_EN = {
 }
 
 TAG_TRANSITION_FR = {
-    "laugh": ("de plus en plus amusé, prêt à éclater de rire", "puis retrouve progressivement son calme"),
+    "laugh": (
+        "de plus en plus amusé, prêt à éclater de rire",
+        "puis retrouve progressivement son calme",
+    ),
     "chuckle": ("avec une pointe d'amusement grandissante", "puis reprend un ton normal"),
     "cough": ("avec une légère gêne dans la gorge", "puis retrouve sa voix"),
     "sigh": ("avec une lassitude croissante", "puis reprend doucement contenance"),
@@ -139,16 +142,19 @@ _TAG_DATA_BY_LANG = {
 # Validate all locales have the same tag keys as English
 for _lang, _pools in _TAG_DATA_BY_LANG.items():
     for _pool_name, _pool in _pools.items():
-        assert _pool.keys() == _TAG_DATA_EN[_pool_name].keys(), \
+        assert _pool.keys() == _TAG_DATA_EN[_pool_name].keys(), (
             f"Tag {_pool_name} keys mismatch for {_lang}"
+        )
 
 
 def _resolve_tag_pool(pool_name: str, language: str | None) -> dict:
     """Resolve a tag data pool by name and language, falling back to English."""
     from voicecli.utils import resolve_language
+
     lang_code = resolve_language(language) if language else "en"
     lang_data = _TAG_DATA_BY_LANG.get(lang_code, _TAG_DATA_EN)
     return lang_data[pool_name]
+
 
 _TAG_RE = re.compile(r"\[(" + "|".join(re.escape(t) for t in TAG_TO_INSTRUCT_EN) + r")\]")
 
@@ -162,7 +168,9 @@ def _strip_tags(text: str) -> str:
 
 
 def _split_segment_on_tags(
-    seg: Segment, tag_map: dict[str, str], language: str | None = None,
+    seg: Segment,
+    tag_map: dict[str, str],
+    language: str | None = None,
 ) -> list[Segment]:
     """Split a segment at each [tag] with smooth transitions.
 

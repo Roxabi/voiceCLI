@@ -10,7 +10,6 @@ from voicecli.markdown import (
     strip_markdown,
     parse_md_file,
     _parse_segments,
-    Segment,
 )
 
 
@@ -84,7 +83,7 @@ class TestParseFrontmatter:
         assert body == "Hello world"
 
     def test_quoted_values(self):
-        content = '---\nemotion: "Passionnée"\nspeed: \'Rapide\'\n---\nText'
+        content = "---\nemotion: \"Passionnée\"\nspeed: 'Rapide'\n---\nText"
         meta, body = parse_frontmatter(content)
         assert meta["emotion"] == "Passionnée"
         assert meta["speed"] == "Rapide"
@@ -158,9 +157,7 @@ class TestParseSegmentsMerge:
         """Two consecutive single-key comments accumulate (old format)."""
         defaults = {}
         body = (
-            '<!-- emotion: "Passionnée" -->\n'
-            '<!-- speed: "Rapide" -->\n'
-            "Texte après deux directives."
+            '<!-- emotion: "Passionnée" -->\n<!-- speed: "Rapide" -->\nTexte après deux directives.'
         )
         segments = _parse_segments(body, defaults)
         assert len(segments) == 1
@@ -176,7 +173,7 @@ class TestParseSegmentsMerge:
 
     def test_float_directive(self):
         defaults = {}
-        body = '<!-- exaggeration: 0.8 -->\nTexte.'
+        body = "<!-- exaggeration: 0.8 -->\nTexte."
         segments = _parse_segments(body, defaults)
         assert segments[0].exaggeration == 0.8
 
@@ -251,9 +248,7 @@ class TestParseMdFile:
     def test_backward_compat_single_key(self, tmp_path: Path):
         md = tmp_path / "old.md"
         md.write_text(
-            '---\nlanguage: fr\n---\n\n'
-            '<!-- emotion: "Triste" -->\n'
-            "Texte triste.\n",
+            '---\nlanguage: fr\n---\n\n<!-- emotion: "Triste" -->\nTexte triste.\n',
             encoding="utf-8",
         )
         doc = parse_md_file(md)

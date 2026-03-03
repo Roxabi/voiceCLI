@@ -5,13 +5,30 @@ OUTPUT_DIR = Path("TTS/voices_out")
 
 # Map full language names to ISO 639-1 codes (shared across engines and utils)
 LANG_MAP = {
-    "arabic": "ar", "danish": "da", "german": "de", "greek": "el",
-    "english": "en", "spanish": "es", "finnish": "fi",
-    "french": "fr", "français": "fr",
-    "hebrew": "he", "hindi": "hi", "italian": "it", "japanese": "ja",
-    "korean": "ko", "malay": "ms", "dutch": "nl", "norwegian": "no",
-    "polish": "pl", "portuguese": "pt", "russian": "ru", "swedish": "sv",
-    "swahili": "sw", "turkish": "tr", "chinese": "zh",
+    "arabic": "ar",
+    "danish": "da",
+    "german": "de",
+    "greek": "el",
+    "english": "en",
+    "spanish": "es",
+    "finnish": "fi",
+    "french": "fr",
+    "français": "fr",
+    "hebrew": "he",
+    "hindi": "hi",
+    "italian": "it",
+    "japanese": "ja",
+    "korean": "ko",
+    "malay": "ms",
+    "dutch": "nl",
+    "norwegian": "no",
+    "polish": "pl",
+    "portuguese": "pt",
+    "russian": "ru",
+    "swedish": "sv",
+    "swahili": "sw",
+    "turkish": "tr",
+    "chinese": "zh",
 }
 
 
@@ -26,7 +43,9 @@ def resolve_language(language: str) -> str:
 
 
 def default_output_path(
-    prefix: str = "voicecli", fmt: str = "wav", base_dir: Path | None = None,
+    prefix: str = "voicecli",
+    fmt: str = "wav",
+    base_dir: Path | None = None,
 ) -> Path:
     now = datetime.now()
     day_dir = (base_dir or OUTPUT_DIR) / now.strftime("%Y%m%d")

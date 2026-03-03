@@ -58,7 +58,7 @@ def get_active_path() -> Path | None:
     return None
 
 
-def _play_wav(samples: "np.ndarray", samplerate: int = 44100) -> None:
+def _play_wav(samples, samplerate: int = 44100) -> None:
     """Play a numpy int16 array via paplay."""
     import struct
     import subprocess
@@ -113,7 +113,7 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
         duration = 1.8
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 262, onset=0.0, sustain=0.4, release=0.8, volume=0.15)    # C4
+            _note(t, 262, onset=0.0, sustain=0.4, release=0.8, volume=0.15)  # C4
             + _note(t, 330, onset=0.25, sustain=0.4, release=0.7, volume=0.18)  # E4
             + _note(t, 392, onset=0.50, sustain=0.4, release=0.6, volume=0.20)  # G4
             + _note(t, 523, onset=0.75, sustain=0.5, release=0.5, volume=0.22)  # C5
@@ -125,7 +125,7 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
         duration = 1.0
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 392, onset=0.0, sustain=0.3, release=0.5, volume=0.18)   # G4
+            _note(t, 392, onset=0.0, sustain=0.3, release=0.5, volume=0.18)  # G4
             + _note(t, 262, onset=0.25, sustain=0.4, release=0.4, volume=0.15)  # C4
         )
         signal *= np.clip((duration - t) / 0.3, 0, 1)

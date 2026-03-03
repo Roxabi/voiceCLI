@@ -8,6 +8,7 @@ Actions:
   generate — synthesise text using a built-in voice
   clone    — synthesise text cloning a reference voice
 """
+
 from __future__ import annotations
 
 import json
@@ -127,9 +128,7 @@ def _handle(conn: socket.socket, engines: dict, fast: bool = False) -> None:
                 _send_json(conn, {"status": "error", "message": "clone requires ref_audio"})
                 return
             ref_text = req.get("ref_text")
-            result = eng.clone(
-                text, Path(ref_audio), output_path, ref_text=ref_text, **kwargs
-            )
+            result = eng.clone(text, Path(ref_audio), output_path, ref_text=ref_text, **kwargs)
         else:
             _send_json(conn, {"status": "error", "message": f"Unknown action: {action!r}"})
             return
