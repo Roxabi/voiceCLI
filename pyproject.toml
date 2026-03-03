@@ -49,6 +49,7 @@ override-dependencies = [
 ]
 
 [tool.pytest.ini_options]
+# src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
 
 [dependency-groups]
