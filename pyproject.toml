@@ -48,6 +48,10 @@ override-dependencies = [
     "onnx>=1.20",
 ]
 
+[tool.pytest.ini_options]
+# src layout: expose src/ to pytest without relying on editable install
+pythonpath = ["src"]
+
 [dependency-groups]
 dev = [
     "ruff",
