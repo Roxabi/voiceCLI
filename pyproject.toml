@@ -48,6 +48,9 @@ override-dependencies = [
     "onnx>=1.20",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
 [dependency-groups]
 dev = [
     "ruff",
