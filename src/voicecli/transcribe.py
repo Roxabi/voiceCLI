@@ -6,6 +6,27 @@ from pathlib import Path
 MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
 DEFAULT_MODEL = "large-v3-turbo"
 
+VALID_MODELS = frozenset(
+    {
+        "tiny",
+        "tiny.en",
+        "base",
+        "base.en",
+        "small",
+        "small.en",
+        "medium",
+        "medium.en",
+        "large",
+        "large-v2",
+        "large-v3",
+        "large-v3-turbo",
+        "distil-large-v2",
+        "distil-large-v3",
+        "distil-medium.en",
+        "distil-small.en",
+    }
+)
+
 _model_cache: dict[str, object] = {}
 
 
@@ -31,7 +52,16 @@ def transcribe(
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 
 
+def warmup(model: str = DEFAULT_MODEL) -> None:
+    """Pre-load model into VRAM (eager load at daemon startup)."""
+    _load_model(model)
+
+
 def _load_model(model: str):
+    if model not in VALID_MODELS:
+        raise ValueError(
+            f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"
+        )
     if model not in _model_cache:
         from faster_whisper import WhisperModel
 
