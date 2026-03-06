@@ -1278,6 +1278,36 @@ def serve(
     daemon_main(preload=engine, fast=fast)
 
 
+@app.command("stt-serve")
+def stt_serve(
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="Whisper model to load (default: large-v3-turbo)"),
+    ] = "",
+) -> None:
+    """Start the STT daemon to keep faster-whisper loaded for fast dictation.
+
+    Run in the background and trigger with 'voicecli dictate'.
+
+    Example supervisord config:
+
+    \\b
+    [program:voicecli_stt]
+    command=uv run --directory /path/to/voiceCLI voicecli stt-serve
+    autostart=true
+    autorestart=true
+    stdout_logfile=/var/log/voicecli_stt.log
+    """
+    from voicecli.config import load_config
+    from voicecli.stt_daemon import SttDaemon
+
+    cfg = load_config()
+    resolved_model = (
+        model or (cfg.get("stt", {}).get("model", "") if cfg else "") or "large-v3-turbo"
+    )
+    SttDaemon(model=resolved_model).serve()
+
+
 @app.command()
 def emotions():
     """Show available emotion/expressiveness controls for each engine."""

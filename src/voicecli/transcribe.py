@@ -31,6 +31,11 @@ def transcribe(
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 
 
+def warmup(model: str = DEFAULT_MODEL) -> None:
+    """Pre-load model into VRAM (eager load at daemon startup)."""
+    _load_model(model)
+
+
 def _load_model(model: str):
     if model not in _model_cache:
         from faster_whisper import WhisperModel
