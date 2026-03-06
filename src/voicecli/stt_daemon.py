@@ -12,13 +12,17 @@ Actions:
 from __future__ import annotations
 
 import json
+import os
 import socket
+import struct
 import sys
 import threading
 from enum import Enum
 from pathlib import Path
 
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-daemon.sock"
+
+MAX_MSG = 65536
 
 
 # ── State machine ─────────────────────────────────────────────────────────────
@@ -65,12 +69,15 @@ def _frames_to_wav(frames: list[bytes], samplerate: int) -> bytes:
 
 
 def _write_tempfile(wav_bytes: bytes) -> Path:
+    import os
     import tempfile
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    tmp.write(wav_bytes)
-    tmp.close()
-    return Path(tmp.name)
+    fd, name = tempfile.mkstemp(suffix=".wav")
+    try:
+        os.write(fd, wav_bytes)
+    finally:
+        os.close(fd)
+    return Path(name)
 
 
 # ── Clipboard ─────────────────────────────────────────────────────────────────
@@ -153,6 +160,12 @@ class RecordingThread(threading.Thread):
     def stop(self) -> bytes:
         self._stop_event.set()
         self.join(timeout=2.0)
+        if self.is_alive():
+            print(
+                "[stt] WARNING: RecordingThread did not stop in 2s — audio may be truncated",
+                file=sys.stderr,
+                flush=True,
+            )
         return _frames_to_wav(self.frames, self.SAMPLERATE)
 
 
@@ -201,6 +214,9 @@ class SttDaemon:
         self._recording_thread: RecordingThread | None = None
         self._use_pyaudio: bool = True  # set by _probe_pyaudio() in serve()
         self._parecord_stop_event: threading.Event | None = None
+        self._parecord_thread: threading.Thread | None = None
+        self._parecord_wav_holder: list[bytes] = []
+        self._connection_sem = threading.BoundedSemaphore(16)
         # Used to shut down the accept loop from outside (tests / stop())
         self._server_socket: socket.socket | None = None
 
@@ -224,21 +240,62 @@ class SttDaemon:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
             self._server_socket = srv
             srv.bind(str(self._socket_path))
+            os.chmod(self._socket_path, 0o600)
             srv.listen(5)
             print(f"[voicecli stt] Ready on {self._socket_path}", flush=True)
             try:
                 while True:
                     conn, _ = srv.accept()
-                    threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+                    if self._connection_sem.acquire(blocking=False):
+
+                        def _handle_and_release(c=conn):
+                            try:
+                                self._handle(c)
+                            finally:
+                                self._connection_sem.release()
+
+                        threading.Thread(target=_handle_and_release, daemon=True).start()
+                    else:
+                        # Too many concurrent connections — reject
+                        try:
+                            _send_json(conn, {"status": "error", "message": "daemon busy"})
+                        except Exception:
+                            pass
+                        conn.close()
             except (KeyboardInterrupt, OSError):
                 # OSError is raised when _server_socket is closed by stop()
                 pass
             finally:
+                # Stop active recording if any
+                with self._lock:
+                    rt = self._recording_thread
+                    self._recording_thread = None
+                    stop_ev = self._parecord_stop_event
+                    self._parecord_stop_event = None
+                if rt is not None:
+                    rt._stop_event.set()
+                    rt.join(timeout=2.0)
+                if stop_ev is not None:
+                    stop_ev.set()
                 self._socket_path.unlink(missing_ok=True)
 
     # ── Request dispatch ──────────────────────────────────────────────────────
 
     def _handle(self, conn: socket.socket) -> None:
+        # Verify the connecting peer is the same user who owns the daemon
+        try:
+            creds = conn.getsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_PEERCRED,
+                struct.calcsize("3i"),
+            )
+            pid, uid, gid = struct.unpack("3i", creds)
+            if uid != os.getuid():
+                _send_json(conn, {"status": "error", "message": "permission denied"})
+                conn.close()
+                return
+        except Exception:
+            pass  # SO_PEERCRED unavailable (non-Linux) — skip check
         try:
             req = _recv_json(conn)
             action = req.get("action")
@@ -288,30 +345,33 @@ class SttDaemon:
 
     # ── State transitions ─────────────────────────────────────────────────────
 
+    def _start_parecord_recording(self) -> None:
+        """Start parecord subprocess recording. Must be called with self._lock held."""
+        stop_ev = threading.Event()
+        self._parecord_stop_event = stop_ev
+        wav_holder: list[bytes] = []
+        self._parecord_wav_holder = wav_holder
+
+        def _run_parecord() -> None:
+            wav_holder.append(_record_parecord(stop_ev))
+
+        t = threading.Thread(target=_run_parecord, daemon=True)
+        t.start()
+        self._parecord_thread = t
+
     def _start_recording(self, conn: socket.socket) -> None:
         with self._lock:
             self._state = State.RECORDING
             if self._use_pyaudio:
                 self._recording_thread = RecordingThread()
                 self._parecord_stop_event = None
+                self._parecord_thread = None
+                self._parecord_wav_holder = []
             else:
                 self._recording_thread = None
-                self._parecord_stop_event = threading.Event()
+                self._start_parecord_recording()
         if self._recording_thread:
             self._recording_thread.start()
-        elif self._parecord_stop_event is not None:
-            # Start parecord in a background thread; wav bytes collected on stop
-            stop_ev = self._parecord_stop_event
-            wav_holder: list[bytes] = []
-
-            def _run_parecord():
-                wav_holder.append(_record_parecord(stop_ev))
-
-            t = threading.Thread(target=_run_parecord, daemon=True)
-            t.start()
-            # Store thread ref so _stop_and_transcribe can join it
-            self._parecord_thread = t
-            self._parecord_wav_holder = wav_holder
         threading.Thread(target=_chime, args=("start",), daemon=True).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
 
@@ -328,8 +388,8 @@ class SttDaemon:
             wav_bytes = rt.stop()
         elif parecord_stop_ev is not None:
             parecord_stop_ev.set()
-            parecord_thread = getattr(self, "_parecord_thread", None)
-            wav_holder = getattr(self, "_parecord_wav_holder", [])
+            parecord_thread = self._parecord_thread
+            wav_holder = self._parecord_wav_holder
             if parecord_thread is not None:
                 parecord_thread.join(timeout=3.0)
             wav_bytes = wav_holder[0] if wav_holder else b""
@@ -350,7 +410,10 @@ class SttDaemon:
         finally:
             tmp_path.unlink(missing_ok=True)
 
-        _write_clipboard(text)
+        try:
+            _write_clipboard(text)
+        except Exception as e:
+            print(f"[stt] clipboard error: {e}", file=sys.stderr)
 
         with self._lock:
             queued = self._state == State.QUEUED
@@ -376,19 +439,11 @@ class SttDaemon:
             if self._use_pyaudio:
                 self._recording_thread = RecordingThread()
                 self._parecord_stop_event = None
+                self._parecord_thread = None
+                self._parecord_wav_holder = []
             else:
                 self._recording_thread = None
-                self._parecord_stop_event = threading.Event()
-                stop_ev = self._parecord_stop_event
-                wav_holder: list[bytes] = []
-
-                def _run_parecord():
-                    wav_holder.append(_record_parecord(stop_ev))
-
-                t = threading.Thread(target=_run_parecord, daemon=True)
-                t.start()
-                self._parecord_thread = t
-                self._parecord_wav_holder = wav_holder
+                self._start_parecord_recording()
 
         if self._recording_thread:
             self._recording_thread.start()
@@ -406,11 +461,11 @@ def _send_json(sock: socket.socket, data: dict) -> None:
 def _recv_json(sock: socket.socket) -> dict:
     buf = bytearray()
     while True:
-        chunk = sock.recv(65536)
+        chunk = sock.recv(4096)
         if not chunk:
             break
         buf.extend(chunk)
-        if b"\n" in buf:
+        if b"\n" in buf or len(buf) >= MAX_MSG:
             break
     line = buf.split(b"\n")[0]
     return json.loads(line)

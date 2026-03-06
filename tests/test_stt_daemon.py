@@ -66,6 +66,11 @@ def daemon_send(tmp_path):
         patch("voicecli.stt_daemon._chime", mock_chime),
         patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
         patch("voicecli.stt_daemon.warmup", mock_warmup),
+        # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
+        # `from voicecli.transcribe import transcribe` inside the function body.
+        # Patching voicecli.transcribe.transcribe intercepts this import at call
+        # time.  S4 tests use monkeypatch.setattr(transcribe_mod, "transcribe", …)
+        # which targets the same module attribute — both paths are consistent.
         patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
     ):
         from voicecli.stt_daemon import SttDaemon, SOCKET_PATH as _DEFAULT_SOCKET_PATH
@@ -80,6 +85,9 @@ def daemon_send(tmp_path):
             if time.monotonic() > deadline:
                 raise RuntimeError(f"Daemon socket never appeared at {sock_path}")
             time.sleep(0.02)
+
+        # Verify warmup was called during serve() startup
+        mock_warmup.assert_called_once()
 
         def send(action: str, **kwargs) -> dict:
             """Connect to the daemon socket, send one action, return parsed response."""
@@ -188,23 +196,32 @@ class TestRecordingAndChimes:
     def test_chime_start_called(self, daemon_send):
         """_chime("start") is called when N3 fires."""
         send, mock_chime, _ = daemon_send
-        # Arrange / Act
+        # Arrange: set up an Event so we don't rely on a fixed sleep
+        chime_called = threading.Event()
+        mock_chime.side_effect = lambda name: chime_called.set()
+        # Act
         send("toggle")  # N3
-        # Small wait for the chime thread to execute
-        time.sleep(0.1)
-        # Assert
+        # Assert — wait up to 2s for chime thread to fire
+        assert chime_called.wait(timeout=2.0), "_chime was not called within 2 seconds"
         mock_chime.assert_any_call("start")
 
     def test_chime_stop_called(self, daemon_send):
         """_chime("stop") is called after N4 completes."""
         send, mock_chime, _ = daemon_send
-        # Arrange
+        # Arrange: track when the "stop" chime fires specifically
+        stop_chime_called = threading.Event()
+
+        def track_chime(name):
+            if name == "stop":
+                stop_chime_called.set()
+
+        mock_chime.side_effect = track_chime
+        # Arrange: start recording
         send("toggle")  # N3
-        # Act
-        send("toggle")  # N4 — blocks until transcription done, chime fires inside
-        # Small wait for the chime thread to execute
-        time.sleep(0.1)
-        # Assert
+        # Act: stop recording (N4 blocks until transcription done, chime fires inside)
+        send("toggle")  # N4
+        # Assert — wait up to 2s for stop chime thread to fire
+        assert stop_chime_called.wait(timeout=2.0), "_chime('stop') was not called within 2 seconds"
         mock_chime.assert_any_call("stop")
 
 
@@ -297,6 +314,26 @@ class TestTranscriptionAndClipboard:
         )
         # The daemon should respond gracefully (not crash)
         assert "status" in resp
+
+    def test_clipboard_failure_does_not_crash_daemon(self, daemon_send, monkeypatch):
+        """Clipboard failure is logged but daemon continues; text still in response."""
+        send, _, mock_write_clipboard = daemon_send
+        # Arrange: make clipboard raise so the daemon must survive it.
+        # The fixture patches _write_clipboard as a MagicMock no-op; monkeypatch
+        # overlays that with a raising lambda for this test only.
+        monkeypatch.setattr(
+            "voicecli.stt_daemon._write_clipboard",
+            lambda text: (_ for _ in ()).throw(OSError("no display")),
+        )
+        send("toggle")  # N3: start recording
+        # Act
+        resp = send("toggle")  # N4: stop + transcribe (clipboard will fail)
+        # Assert: response still contains text from transcription
+        assert resp["status"] == "ok"
+        assert resp["text"] == "hello world"
+        # Assert: daemon still alive after the clipboard error
+        ping_resp = send("ping")
+        assert ping_resp == {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +452,18 @@ class TestQueueSupport:
         unblock.set()
         n4_thread.join(timeout=3.0)
 
-        # Give the daemon a moment to transition into recording
-        time.sleep(0.15)
+        # Poll status until state=recording or timeout (avoids fixed sleep)
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            resp = send("status")
+            if resp.get("state") == "recording":
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail(
+                f"Expected state=recording after queued auto-start, timed out. "
+                f"Last state: {resp.get('state')!r}"
+            )
 
         # Assert: state should now be recording (auto-started)
         resp = send("status")
