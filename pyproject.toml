@@ -60,4 +60,5 @@ dev = [
     "ruff",
     "pytest",
     "pre-commit>=4.5.1",
+    "pip-licenses>=5.5.1",
 ]

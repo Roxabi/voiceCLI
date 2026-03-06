@@ -1,6 +1,22 @@
 # VoiceCLI
 
+![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
+![CUDA](https://img.shields.io/badge/CUDA-enabled-76B900?logo=nvidia&logoColor=white)
+![version](https://img.shields.io/badge/version-0.1.0-22c55e)
+
 Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    INPUT["CLI / .md file"] --> PARSE["markdown.py\nfrontmatter + directives"]
+    PARSE --> CONFIG["config.py\nvoicecli.toml defaults"]
+    CONFIG --> TRANSLATE["translate.py\nengine adaptation"]
+    TRANSLATE --> ENGINE["engines/\nQwen · Chatterbox · Turbo"]
+    ENGINE --> AUDIO["WAV / MP3\nvoices_out/"]
+```
 
 ## Requirements
 
@@ -348,3 +364,13 @@ src/voicecli/
   transcribe.py     # Faster Whisper file transcription
   listen.py         # Kyutai STT real-time mic transcription
 ```
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+
+## License
+
+MIT
