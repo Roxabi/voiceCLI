@@ -439,6 +439,7 @@ def generate(
     # Layer defaults: CLI flag > voicecli.toml > hardcoded
     engine = engine or cfg.get("engine", "qwen")
     language = language or cfg.get("language", "English")
+    cli_voice = voice  # preserve CLI flag state before toml fallback
     voice = voice or cfg.get("voice")
     plain = plain or cfg.get("plain", False)
     chunked = chunked or cfg.get("chunked", False)
@@ -489,7 +490,7 @@ def generate(
         text = doc.text
         if doc.language:
             language = doc.language
-        if doc.voice and voice is None:
+        if doc.voice and cli_voice is None:
             voice = doc.voice
         if doc.instruct:
             extra_kwargs["instruct"] = doc.instruct
