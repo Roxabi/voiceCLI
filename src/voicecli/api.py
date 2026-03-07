@@ -14,6 +14,7 @@ class TTSResult:
 
     wav_path: Path
     mp3_path: Path | None = None
+    chunk_paths: list[Path] | None = None
 
 
 # ── Config resolution ────────────────────────────────────────────────────────
@@ -292,6 +293,7 @@ def _emit_chunk(
     index: int,
     total: int,
     *,
+    mp3: bool = False,
     daemon_fn=None,
     **kwargs,
 ) -> Path:
@@ -309,6 +311,10 @@ def _emit_chunk(
                 ref_text=kwargs.pop("ref_text", None),
                 **kwargs,
             )
+    if mp3:
+        from voicecli.utils import wav_to_mp3
+
+        wav_to_mp3(chunk_path)
     return chunk_path
 
 
@@ -319,7 +325,17 @@ def _write_done(out: Path) -> Path:
 
 
 def _generate_chunked(
-    eng, text, voice, out, language, extra_kwargs, *, chunk_size, segments, daemon_fn=None
+    eng,
+    text,
+    voice,
+    out,
+    language,
+    extra_kwargs,
+    *,
+    chunk_size,
+    segments,
+    mp3=False,
+    daemon_fn=None,
 ) -> list[Path]:
     """Generate speech in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
@@ -339,7 +355,16 @@ def _generate_chunked(
                 kw["cfg_weight"] = seg.cfg_weight
             seg_voice = seg.voice or voice
             p = _emit_chunk(
-                eng, "generate", seg.text, seg_voice, out, i, total, daemon_fn=daemon_fn, **kw
+                eng,
+                "generate",
+                seg.text,
+                seg_voice,
+                out,
+                i,
+                total,
+                mp3=mp3,
+                daemon_fn=daemon_fn,
+                **kw,
             )
             paths.append(p)
     else:
@@ -354,6 +379,7 @@ def _generate_chunked(
                 out,
                 i,
                 total,
+                mp3=mp3,
                 daemon_fn=daemon_fn,
                 language=language,
                 **extra_kwargs,
@@ -365,7 +391,18 @@ def _generate_chunked(
 
 
 def _clone_chunked(
-    eng, text, ref, ref_text, out, language, extra_kwargs, *, chunk_size, segments, daemon_fn=None
+    eng,
+    text,
+    ref,
+    ref_text,
+    out,
+    language,
+    extra_kwargs,
+    *,
+    chunk_size,
+    segments,
+    mp3=False,
+    daemon_fn=None,
 ) -> list[Path]:
     """Clone voice in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
@@ -386,7 +423,9 @@ def _clone_chunked(
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
-            p = _emit_chunk(eng, "clone", seg.text, None, out, i, total, daemon_fn=daemon_fn, **kw)
+            p = _emit_chunk(
+                eng, "clone", seg.text, None, out, i, total, mp3=mp3, daemon_fn=daemon_fn, **kw
+            )
             paths.append(p)
     else:
         chunks = smart_chunk(text, chunk_size)
@@ -400,6 +439,7 @@ def _clone_chunked(
                 out,
                 i,
                 total,
+                mp3=mp3,
                 daemon_fn=daemon_fn,
                 language=language,
                 ref_audio=ref,
@@ -503,7 +543,7 @@ def generate(
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
-        _generate_chunked(
+        chunk_paths = _generate_chunked(
             eng,
             r_text,
             r_voice,
@@ -512,36 +552,38 @@ def generate(
             extra,
             chunk_size=r_chunk_size,
             segments=extra.pop("segments", None),
+            mp3=r_mp3,
             daemon_fn=daemon_fn,
         )
-    else:
-        if r_engine in QWEN_ENGINES:
-            daemon_result = _try_daemon(
-                {
-                    "action": "generate",
-                    "engine": r_engine,
-                    "text": r_text,
-                    "voice": r_voice,
-                    "output_path": str(out.resolve()),
-                    "language": r_language,
-                    "instruct": extra.get("instruct"),
-                    "exaggeration": extra.get("exaggeration"),
-                    "cfg_weight": extra.get("cfg_weight"),
-                    "segment_gap": extra.get("segment_gap"),
-                    "crossfade": extra.get("crossfade"),
-                    "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
-                }
-            )
-            if daemon_result:
-                out = daemon_result
-                mp3_path = None
-                if r_mp3:
-                    from voicecli.utils import wav_to_mp3
+        return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-                    mp3_path = wav_to_mp3(out)
-                return TTSResult(wav_path=out, mp3_path=mp3_path)
+    if r_engine in QWEN_ENGINES:
+        daemon_result = _try_daemon(
+            {
+                "action": "generate",
+                "engine": r_engine,
+                "text": r_text,
+                "voice": r_voice,
+                "output_path": str(out.resolve()),
+                "language": r_language,
+                "instruct": extra.get("instruct"),
+                "exaggeration": extra.get("exaggeration"),
+                "cfg_weight": extra.get("cfg_weight"),
+                "segment_gap": extra.get("segment_gap"),
+                "crossfade": extra.get("crossfade"),
+                "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
+            }
+        )
+        if daemon_result:
+            out = daemon_result
+            mp3_path = None
+            if r_mp3:
+                from voicecli.utils import wav_to_mp3
 
-        out = eng.generate(r_text, r_voice, out, language=r_language, **extra)
+                mp3_path = wav_to_mp3(out)
+            return TTSResult(wav_path=out, mp3_path=mp3_path)
+
+    out = eng.generate(r_text, r_voice, out, language=r_language, **extra)
 
     mp3_path = None
     if r_mp3:
@@ -641,7 +683,7 @@ def clone(
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
-        _clone_chunked(
+        chunk_paths = _clone_chunked(
             eng,
             r_text,
             ref_path,
@@ -651,38 +693,40 @@ def clone(
             extra,
             chunk_size=r_chunk_size,
             segments=extra.pop("segments", None),
+            mp3=r_mp3,
             daemon_fn=daemon_fn,
         )
-    else:
-        if r_engine in QWEN_ENGINES:
-            daemon_result = _try_daemon(
-                {
-                    "action": "clone",
-                    "engine": r_engine,
-                    "text": r_text,
-                    "voice": None,
-                    "ref_audio": str(ref_path.resolve()),
-                    "ref_text": ref_text,
-                    "output_path": str(out.resolve()),
-                    "language": r_language,
-                    "instruct": extra.get("instruct"),
-                    "exaggeration": extra.get("exaggeration"),
-                    "cfg_weight": extra.get("cfg_weight"),
-                    "segment_gap": extra.get("segment_gap"),
-                    "crossfade": extra.get("crossfade"),
-                    "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
-                }
-            )
-            if daemon_result:
-                out = daemon_result
-                mp3_path = None
-                if r_mp3:
-                    from voicecli.utils import wav_to_mp3
+        return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-                    mp3_path = wav_to_mp3(out)
-                return TTSResult(wav_path=out, mp3_path=mp3_path)
+    if r_engine in QWEN_ENGINES:
+        daemon_result = _try_daemon(
+            {
+                "action": "clone",
+                "engine": r_engine,
+                "text": r_text,
+                "voice": None,
+                "ref_audio": str(ref_path.resolve()),
+                "ref_text": ref_text,
+                "output_path": str(out.resolve()),
+                "language": r_language,
+                "instruct": extra.get("instruct"),
+                "exaggeration": extra.get("exaggeration"),
+                "cfg_weight": extra.get("cfg_weight"),
+                "segment_gap": extra.get("segment_gap"),
+                "crossfade": extra.get("crossfade"),
+                "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
+            }
+        )
+        if daemon_result:
+            out = daemon_result
+            mp3_path = None
+            if r_mp3:
+                from voicecli.utils import wav_to_mp3
 
-        out = eng.clone(r_text, ref_path, out, ref_text=ref_text, language=r_language, **extra)
+                mp3_path = wav_to_mp3(out)
+            return TTSResult(wav_path=out, mp3_path=mp3_path)
+
+    out = eng.clone(r_text, ref_path, out, ref_text=ref_text, language=r_language, **extra)
 
     mp3_path = None
     if r_mp3:
