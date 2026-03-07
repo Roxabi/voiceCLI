@@ -45,8 +45,8 @@ def _mock_engine():
     engine = MagicMock()
     engine.generate.return_value = ([], 24000)
     with (
-        patch("voicecli.cli.get_engine", return_value=engine),
-        patch("voicecli.cli._try_daemon", return_value=None),
+        patch("voicecli.engine.get_engine", return_value=engine),
+        patch("voicecli.api._try_daemon", return_value=None),
     ):
         yield engine
 

@@ -286,7 +286,9 @@ class TestTranscriptionAndClipboard:
         send, _, _ = daemon_send
 
         import voicecli.stt_daemon as stt_mod
-        import voicecli.transcribe as transcribe_mod
+        import sys
+
+        transcribe_mod = sys.modules["voicecli.transcribe"]
 
         created_paths: list[Path] = []
         original_write_tempfile = stt_mod._write_tempfile
@@ -365,7 +367,9 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import voicecli.transcribe as transcribe_mod
+        import sys
+
+        transcribe_mod = sys.modules["voicecli.transcribe"]
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 
@@ -404,7 +408,9 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import voicecli.transcribe as transcribe_mod
+        import sys
+
+        transcribe_mod = sys.modules["voicecli.transcribe"]
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 
@@ -434,7 +440,9 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import voicecli.transcribe as transcribe_mod
+        import sys
+
+        transcribe_mod = sys.modules["voicecli.transcribe"]
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 
