@@ -1,0 +1,42 @@
+---
+title: "Expose voiceCLI as an importable Python library"
+issue: 13
+status: approved
+tier: F-lite
+date: 2026-03-07
+---
+
+## Problem
+
+voiceCLI is currently CLI-only — all functionality is accessed through `uv run voicecli` commands via Typer. Other Python projects (scripts, services, roxabi-plugins) that need voice generation must shell out to the CLI, which is fragile, hard to parameterize, and prevents proper error handling.
+
+The core logic (engine management, markdown parsing, translation, audio generation) is already well-separated from CLI concerns in `engine.py`, `translate.py`, `markdown.py`, and the engine modules. However, `__init__.py` exports nothing, and the orchestration logic (config resolution, markdown detection, engine dispatch) lives exclusively in `cli.py` command handlers.
+
+roxabi-memory already follows the library pattern. voiceCLI should match it so the ecosystem has a consistent integration model.
+
+## Who
+
+- **Primary:** Python developers integrating voice generation into scripts, services, or plugins (e.g., roxabi-plugins voice-me)
+- **Secondary:** voiceCLI maintainers — cleaner separation makes the codebase easier to extend
+
+## Constraints
+
+- Backwards-compatible CLI entry point — existing `voicecli` CLI must continue to work unchanged
+- Sync + async API variants — provide both for integration with async frameworks
+- No new dependencies — use existing stack only
+- Priority chain must be honored: caller kwargs > markdown frontmatter > voicecli.toml > defaults
+- Engine lazy-loading must be preserved (don't import torch at library import time)
+
+## Out of Scope
+
+- No explicit exclusions — scope kept open to implement what makes sense during design
+
+## Complexity
+
+**Tier: F-lite** — Clear scope, single domain. Core logic is already decoupled; main work is defining the public API surface, extracting orchestration from CLI handlers, and wiring exports.
+
+Signals observed:
+- Core modules (engine.py, translate.py, markdown.py) already CLI-independent
+- ~4-6 files touched: `__init__.py`, `cli.py` (extract logic), possibly a new `api.py` orchestration module
+- No new architecture patterns — just surfacing existing capabilities
+- Single domain (Python packaging / API design)
