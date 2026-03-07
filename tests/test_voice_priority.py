@@ -51,6 +51,11 @@ def _mock_engine():
         yield engine
 
 
+def _called_voice(mock_engine):
+    """Extract voice from engine.generate(text, voice, out, ...) call."""
+    return mock_engine.generate.call_args[0][1]
+
+
 class TestVoicePriority:
     """Voice priority: CLI flag > frontmatter > voicecli.toml > hardcoded default."""
 
@@ -66,7 +71,7 @@ class TestVoicePriority:
 
         assert result.exit_code == 0, result.output
         # voice is 2nd positional arg: generate(text, voice, output_path, ...)
-        assert _mock_engine.generate.call_args[0][1] == "Dylan"
+        assert _called_voice(_mock_engine) == "Dylan"
 
     def test_cli_flag_overrides_frontmatter(self, md_with_voice, _mock_engine):
         """CLI --voice Ryan should override frontmatter voice=Dylan."""
@@ -79,7 +84,7 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", "--voice", "Ryan", str(md_with_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _mock_engine.generate.call_args[0][1] == "Ryan"
+        assert _called_voice(_mock_engine) == "Ryan"
 
     def test_toml_used_when_no_frontmatter(self, md_without_voice, _mock_engine):
         """Toml voice=Ono_Anna should apply when frontmatter has no voice."""
@@ -92,7 +97,7 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _mock_engine.generate.call_args[0][1] == "Ono_Anna"
+        assert _called_voice(_mock_engine) == "Ono_Anna"
 
     def test_no_voice_when_nothing_set(self, md_without_voice, _mock_engine):
         """No voice passed to engine when neither CLI, frontmatter, nor toml set it."""
@@ -104,4 +109,4 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _mock_engine.generate.call_args[0][1] is None
+        assert _called_voice(_mock_engine) is None
