@@ -45,6 +45,7 @@ def _resolve_config(
     kw: dict = extra_kwargs.copy() if extra_kwargs else {}
 
     # Layer defaults: API kwarg > voicecli.toml > hardcoded
+    cli_engine = engine  # preserve caller state before fallback
     r_engine = engine or cfg.get("engine", "qwen")
     r_language = language or cfg.get("language", "English")
     cli_voice = voice  # preserve caller state before toml fallback
@@ -82,6 +83,7 @@ def _resolve_config(
         "engine": r_engine,
         "language": r_language,
         "voice": r_voice,
+        "cli_engine": cli_engine,
         "cli_voice": cli_voice,
         "mp3": mp3,
         "fast": fast,
@@ -150,6 +152,7 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
     script_stem: str | None = None
 
     engine = resolved["engine"]
+    cli_engine = resolved["cli_engine"]
     language = resolved["language"]
     voice = resolved["voice"]
     cli_voice = resolved["cli_voice"]
@@ -168,7 +171,7 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
 
         script_stem = text_path.stem
         doc = parse_md_file(text_path)
-        if doc.engine:
+        if doc.engine and cli_engine is None:
             engine = doc.engine
         _apply_config_defaults(doc, cfg)
         if plain:
