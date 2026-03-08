@@ -1,0 +1,167 @@
+---
+title: Architecture
+description: Project structure, layered architecture, and data flow in voiceCLI
+---
+
+## Project Structure
+
+```txt
+voiceCLI/
+├── voicecli.example.toml       # Template config — copy to voicecli.toml (gitignored)
+├── TTS/
+│   ├── texts_in/               # Authored .md scripts (tracked in git)
+│   ├── voices_out/             # Generated WAV/MP3 (gitignored)
+│   └── samples/                # Voice samples for cloning (gitignored)
+├── STT/
+│   ├── audio_in/               # Audio files to transcribe (gitignored)
+│   └── texts_out/              # Transcription results (gitignored)
+├── src/voicecli/
+│   ├── __init__.py             # Public exports (generate, clone, transcribe, etc.)
+│   ├── cli.py                  # Typer app — CLI entry point
+│   ├── api.py                  # Orchestration — public library API
+│   ├── markdown.py             # Domain models (TTSDocument, Segment) + parsing
+│   ├── translate.py            # Engine capability matrix + document translation
+│   ├── config.py               # TOML config loader (walk-up search)
+│   ├── engine.py               # Abstract TTSEngine base class + registry
+│   ├── utils.py                # Output paths, audio concat, WAV→MP3, language codes
+│   ├── models.py               # HuggingFace model metadata + cache utilities
+│   ├── samples.py              # Voice sample management (filesystem)
+│   ├── daemon.py               # Qwen model warm-keeping daemon (AF_UNIX socket)
+│   ├── transcribe.py           # Faster Whisper file transcription
+│   ├── listen.py               # Kyutai real-time mic transcription
+│   ├── stt_daemon.py           # STT daemon with PyAudio recording
+│   └── engines/
+│       ├── qwen.py             # Qwen3-TTS 1.7B engine
+│       ├── qwen_fast.py        # Qwen3-TTS 0.6B variant
+│       ├── chatterbox.py       # Chatterbox Multilingual (23 languages)
+│       └── chatterbox_turbo.py # Chatterbox Turbo (English, paralinguistic tags)
+├── tests/                      # Pytest test suite
+├── docs/                       # Architecture and standards documentation
+│   ├── architecture/           # Architecture docs and ADRs
+│   └── standards/              # Coding standards and review checklists
+├── artifacts/                  # Dev process artifacts (frames, specs, plans)
+└── .claude/                    # Claude Code configuration
+    ├── stack.yml               # Stack metadata (gitignored, .example committed)
+    └── skills/                 # Custom skills
+```
+
+## Layered Architecture
+
+voiceCLI follows a **four-layer architecture** with strict dependency direction — outer layers depend on inner layers, never the reverse.
+
+```mermaid
+graph BT
+  subgraph Presentation["Presentation Layer"]
+    CLI["cli.py (Typer commands)"]
+  end
+  subgraph Application["Application Layer"]
+    API["api.py (generate, clone, transcribe)"]
+  end
+  subgraph Domain["Domain Layer"]
+    MD["markdown.py (TTSDocument, Segment)"]
+    TR["translate.py (ENGINE_CAPS)"]
+    CFG["config.py (TOML loader)"]
+    UTL["utils.py (language, audio, paths)"]
+    MOD["models.py (HF metadata)"]
+    SAM["samples.py (voice samples)"]
+  end
+  subgraph Infrastructure["Infrastructure Layer"]
+    ENG["engine.py (TTSEngine ABC + registry)"]
+    ENGINES["engines/*.py (4 concrete engines)"]
+    DAE["daemon.py (AF_UNIX socket server)"]
+    STT["transcribe.py, listen.py (STT backends)"]
+  end
+
+  Presentation --> Application
+  Application --> Domain
+  Application --> Infrastructure
+  Infrastructure --> Domain
+```
+
+### Layer Responsibilities
+
+| Layer | Modules | Responsibility |
+|-------|---------|----------------|
+| **Presentation** | `cli.py` | Parse CLI flags, invoke API, format output, handle `typer.Exit` |
+| **Application** | `api.py` | Orchestration: config resolution, input parsing, translation, engine dispatch, chunking |
+| **Domain** | `markdown.py`, `translate.py`, `config.py`, `utils.py`, `models.py`, `samples.py` | Data models, parsing, capability matrix, configuration, utilities — pure Python, no heavy deps |
+| **Infrastructure** | `engine.py`, `engines/*.py`, `daemon.py`, `transcribe.py`, `listen.py` | Abstract engine base, concrete engine implementations, daemon, STT adapters |
+
+### Dependency Direction
+
+Dependencies flow **inward only**:
+
+- `cli.py` depends on `api.py` — never on engines directly
+- `api.py` depends on domain modules and `engine.py` — orchestrates the full pipeline
+- Domain modules depend only on stdlib and each other — no torch, no engine imports
+- Engine implementations depend on `engine.py` (ABC) and domain models — never on `api.py` or `cli.py`
+- **No circular dependencies** exist in the codebase
+
+## Data Flow — Generation Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Input
+        TEXT["Text / .md / .txt"]
+    end
+    subgraph Application["api.py"]
+        RC["_resolve_config()"]
+        RI["_resolve_input()"]
+    end
+    subgraph Domain
+        CFG["config.py\nload_defaults()"]
+        MD["markdown.py\nparse_md_file()"]
+        ACB["_apply_config_defaults()"]
+        TR["translate.py\ntranslate_for_engine()"]
+    end
+    subgraph Infra["Infrastructure"]
+        DAE["daemon.py\n(optional)"]
+        ENG["engines/*.py\ngenerate/clone"]
+    end
+    subgraph Output
+        WAV["WAV / MP3"]
+    end
+
+    TEXT --> RC
+    RC --> CFG
+    CFG --> RC
+    RC --> RI
+    RI --> MD
+    MD --> ACB
+    ACB --> TR
+    TR --> RI
+    RI --> DAE
+    DAE -.->|"fallback"| ENG
+    DAE --> WAV
+    ENG --> WAV
+```
+
+Each step is pure Python, deterministic, and reversible at each stage.
+
+### Priority Chain
+
+```
+CLI flag / API kwarg  >  markdown frontmatter  >  voicecli.toml  >  hardcoded default
+```
+
+This priority chain is enforced in `api.py:_resolve_config()` and `_resolve_input()`.
+
+## Key Architectural Patterns
+
+| Pattern | Where | Purpose |
+|---------|-------|---------|
+| [Strategy + Registry](./patterns#strategy--registry-pattern) | `engine.py` | Pluggable TTS engines via ABC + factory |
+| [Adapter / Translator](./patterns#adapter--translator-pattern) | `translate.py` | Adapt universal documents per engine capability |
+| [Data Transformation Pipeline](./patterns#data-transformation-pipeline) | `api.py` | Deterministic input → parse → backfill → translate → dispatch flow |
+| [Lazy Loading](./patterns#lazy-loading) | All engines | Defer heavy imports (torch, etc.) to function bodies |
+| [Library-First](./patterns#library-first-api) | `api.py`, `__init__.py` | CLI is a thin wrapper over a public Python API |
+
+See [Architectural Patterns](./patterns) for the full pattern catalog with code examples.
+
+See [Ubiquitous Language](./ubiquitous-language) for a glossary of domain terms and entity lifecycle diagrams.
+
+## ADRs
+
+Architecture Decision Records documenting key design choices.
+
+None yet. Use the `/adr` skill to create Architecture Decision Records when a significant design choice is made.
