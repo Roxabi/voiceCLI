@@ -1,0 +1,179 @@
+---
+title: "feat: stt-serve daemon — persistent STT with socket, pyaudio recording, transcription, clipboard"
+issue: 6
+status: approved
+tier: F-full
+promoted-from: artifacts/frames/6-stt-serve-daemon-frame.mdx
+date: 2026-03-06
+---
+
+## Context
+
+Promoted from approved frame `artifacts/frames/6-stt-serve-daemon-frame.mdx`.
+
+Problem: `voicecli transcribe` cold-loads faster-whisper on every call (15–30s). Real-time dictation is unusable without a persistent warm process. This daemon fixes that — same pattern as the existing TTS daemon (`daemon.py`), with one key architectural difference: the STT daemon uses a **thread-per-connection accept loop** (instead of sequential) to allow status/queue requests to arrive while a long transcription is in flight.
+
+## Goal
+
+A single persistent process (`voicecli stt-serve`) that keeps faster-whisper loaded in VRAM **at startup** (no lazy-loading — eliminates cold start), records audio via pyaudio, transcribes on demand, writes the result to the system clipboard, and returns the text over a Unix socket — so that any client (issue #7) can trigger dictation with sub-second latency after warmup.
+
+## Users
+
+- **Primary:** The solo developer on WSL2 who runs `voicecli stt-serve` once at login and then triggers dictation via keyboard shortcut without ever waiting for model load.
+- **Secondary (clients):** `voicecli dictate` (issue #7) sends toggle/status/ping. `voicecli dictate --mode` (issue #8) will extend toggle with an optional `mode` field.
+
+## Expected Behavior
+
+### Startup
+1. `voicecli stt-serve` starts → pyaudio probe runs (`PyAudio().get_device_count()`) → if it raises anything, daemon logs a warning to stderr and activates parecord fallback mode. Otherwise pyaudio is used.
+2. faster-whisper model loads eagerly into VRAM. Daemon prints ready message and begins accepting connections.
+
+### Normal dictation flow
+1. Client sends `{"action": "toggle"}` (state=idle) → daemon starts pyaudio recording, plays start chime, responds `{"status": "ok", "state": "recording"}` immediately.
+2. Client sends `{"action": "toggle"}` (state=recording) → daemon stops recording, writes audio to a tempfile, starts transcription (blocks this connection's handler thread, GPU). When transcription finishes: tempfile deleted, result written to clipboard, stop chime plays, responds `{"status": "ok", "state": "idle", "text": "Bonjour tout le monde", "language": "fr"}`.
+3. The text is now in the clipboard. Client reads it from the response to show a notification.
+
+### Queue flow (toggle during transcription)
+1. N4 is blocking its handler thread (transcription in progress).
+2. Client sends another `{"action": "toggle"}` (state=transcribing) — this arrives on a **new connection**, handled by a new handler thread immediately. Responds `{"status": "ok", "state": "queued"}`.
+3. When transcription completes: clipboard written, stop chime plays, then new recording starts automatically (pyaudio stream re-opened).
+4. Client sends toggle again to stop the queued recording → normal stop+transcribe flow.
+
+### Status and ping
+- `{"action": "status"}` → `{"status": "ok", "state": "<current>"}` — always instant (new connection, not blocked by transcription).
+- `{"action": "ping"}` → `{"status": "ok"}` — liveness check.
+
+### Clipboard write
+Result written via: `wl-copy` → `xclip -selection clipboard` → `xsel --clipboard --input`. First tool found in PATH wins. Failure is logged but does not crash the daemon — text is still returned in the socket response.
+
+### Forward compatibility
+The protocol is designed to accept unknown fields without error. A `mode` field on toggle (added by issue #8) is parsed but ignored in this issue. Unknown response fields from a future server revision must also be silently ignored by clients.
+
+### pyaudio fallback (parecord)
+If the startup probe fails, `parecord` subprocess is used instead (same as `listen.py`). Real-time audio level callbacks are unavailable in fallback mode. All other behaviour is identical.
+
+### Shutdown
+Ctrl+C → recording stopped (if active), socket file removed, daemon exits cleanly.
+
+---
+
+## Breadboard
+
+### Socket protocol (affordance table)
+
+| ID | Action | When callable | Handler | Response |
+|----|--------|--------------|---------|----------|
+| N1 | `ping` | any state | `_handle_ping()` | `{"status": "ok"}` |
+| N2 | `status` | any state | `_handle_status()` | `{"status": "ok", "state": "<state>"}` |
+| N3 | `toggle` | state = `idle` | `_start_recording()` | `{"status": "ok", "state": "recording"}` |
+| N4 | `toggle` | state = `recording` | `_stop_and_transcribe()` ← **blocks handler thread until transcription done** | `{"status": "ok", "state": "idle", "text": "...", "language": "fr"}` |
+| N5 | `toggle` | state = `transcribing` | `_queue_recording()` | `{"status": "ok", "state": "queued"}` |
+| N6 | `toggle` | state = `queued` | noop | `{"status": "ok", "state": "queued"}` |
+| N7 | unknown action | any | error handler | `{"status": "error", "message": "unknown action: <action>"}` |
+
+> **Concurrency model:** the server accept loop runs in the main thread. Each accepted connection is handed off to a new handler thread (`threading.Thread`). A single `threading.Lock` protects all state reads and transitions. N4 blocks its own thread; N1/N2/N5/N6 run on their own threads and are never blocked by transcription.
+
+### State machine wiring
+
+```
+idle ──[N3: toggle]──▶ recording ──[N4: toggle, blocks]──▶ transcribing ──[done]──▶ idle
+                                                                 │
+                                                           [N5: toggle, instant]
+                                                                 ▼
+                                                              queued ──[done]──▶ recording
+```
+
+### Module wiring
+
+```
+cli.py
+  └── stt_daemon.py
+        ├── SttDaemon (server)
+        │     ├── serve()                   ← accept loop, thread-per-connection
+        │     ├── _handle(conn)             ← dispatch by action (runs in handler thread)
+        │     ├── _start_recording()        ← pyaudio → RecordingThread.start()
+        │     ├── _stop_and_transcribe()    ← blocks handler thread
+        │     │     ├── RecordingThread.stop() → wav_bytes (in-memory)
+        │     │     ├── write tempfile(wav_bytes) → tmp_path
+        │     │     ├── transcribe.transcribe(tmp_path) → TranscriptionResult
+        │     │     ├── tmp_path.unlink()
+        │     │     ├── _write_clipboard(text)
+        │     │     └── _chime("stop")       ← from samples.py, after transcription
+        │     └── _queue_recording()
+        ├── RecordingThread                  ← pyaudio loop, level callbacks
+        │     ├── start()
+        │     ├── stop() → bytes            ← in-memory WAV bytes (not a file)
+        │     └── level_callback(level, buffer)
+        └── _write_clipboard(text)           ← wl-copy → xclip → xsel
+```
+
+> **Note on chime timing:** `_chime("start")` plays at the start of recording (in `_start_recording()`). `_chime("stop")` plays *after* transcription completes (at the end of `_stop_and_transcribe()`), not when the stop toggle is received.
+
+---
+
+## Slices
+
+| # | Name | What it delivers | Demo |
+|---|------|-----------------|------|
+| S1 | Socket skeleton | `voicecli stt-serve` starts, socket created, ping + status work, no recording, no model yet | `echo '{"action":"ping"}' \| nc -U ~/.local/share/voicecli/stt-daemon.sock` → `{"status":"ok"}` |
+| S2 | pyaudio recording | Toggle starts/stops pyaudio recording (or parecord fallback); chimes play; audio captured to in-memory buffer; N3 responds `{state: recording}`, N4 responds `{state: idle}` with empty text (no transcription yet) | Start + stop toggle; state transitions correctly; start/stop chimes play |
+| S3 | Transcription + clipboard | N4 triggers faster-whisper (model loaded at startup), result in clipboard + response `{text, language}` | Dictate "hello world", clipboard contains "Hello world.", `language: en` in response |
+| S4 | Queue support | N5 returns `{state: queued}` during transcription; new recording auto-starts after; N4 on queued recording transcribes normally | Toggle during transcription → queued; third toggle → transcript of queued speech appears in clipboard |
+
+---
+
+## Success Criteria
+
+### Socket lifecycle
+- [ ] `voicecli stt-serve` creates socket at `~/.local/share/voicecli/stt-daemon.sock` (AF_UNIX)
+- [ ] If socket file already exists at startup, daemon removes it before binding (prevents EADDRINUSE)
+- [ ] Ctrl+C removes socket file cleanly
+
+### Startup
+- [ ] faster-whisper model loads eagerly at startup (before first toggle), not on first use
+- [ ] Startup probe: `PyAudio().get_device_count()` is called at init; any exception triggers fallback mode
+- [ ] Fallback mode activation prints to stderr: `"[stt] pyaudio unavailable (<error>), falling back to parecord"`
+- [ ] Daemon prints ready message after model load: `"[voicecli stt] Ready on <socket_path>"`
+
+### Protocol — ping / status
+- [ ] `{"action": "ping"}` → `{"status": "ok"}` in all states
+- [ ] `{"action": "status"}` → `{"status": "ok", "state": "idle"}` when not recording
+- [ ] `{"action": "status"}` reflects correct state (`recording`, `transcribing`, `queued`) during each phase
+- [ ] Status response arrives within 100ms even while N4 is blocking (concurrency model)
+- [ ] Unknown action → `{"status": "error", "message": "unknown action: <action>"}`
+
+### Model selection
+- [ ] Default model is `large-v3-turbo`
+- [ ] `voicecli stt-serve --model large-v3` loads the specified model
+- [ ] `[stt] model = "large-v3-turbo"` in `voicecli.toml` overrides hardcoded default
+- [ ] Priority: CLI flag > `voicecli.toml` > hardcoded default (`large-v3-turbo`)
+- [ ] If `voicecli.toml` absent, a warning is printed to stderr and the hardcoded default is used (matching existing config behaviour)
+
+### Recording (pyaudio path)
+- [ ] N3 (toggle from idle) responds `{"status": "ok", "state": "recording"}` within 100ms
+- [ ] Start chime plays on recording start (via `_chime("start")` from `samples.py`)
+- [ ] pyaudio records at 16kHz, mono, Int16
+- [ ] Audio level callback fires each chunk (value between 0.0 and 1.0)
+
+### Recording (parecord fallback)
+- [ ] If startup probe fails, daemon records via `parecord` subprocess
+- [ ] Fallback toggle start/stop works identically to pyaudio path
+- [ ] Level callbacks are not called in fallback mode (no crash — just no data)
+
+### Transcription + clipboard
+- [ ] N4 (toggle from recording) writes audio bytes to a tempfile before calling `transcribe.transcribe()`
+- [ ] Tempfile is deleted after transcription regardless of success or failure
+- [ ] N4 response includes `text` (non-empty for non-silent audio) and `language` (ISO 639-1 code)
+- [ ] Stop chime plays *after* transcription completes (not at toggle time)
+- [ ] Result written to clipboard: `wl-copy` tried first, then `xclip -selection clipboard`, then `xsel --clipboard --input`; at least one must succeed on WSL2/WSLg
+- [ ] Clipboard write failure is logged to stderr but does not crash the daemon; text still returned in response
+
+### Queue
+- [ ] N5 (toggle from transcribing) responds `{"status": "ok", "state": "queued"}` immediately (< 100ms)
+- [ ] N6 (toggle from queued) responds `{"status": "ok", "state": "queued"}` (idempotent)
+- [ ] After transcription completes while queued: clipboard written, chime plays, new recording starts automatically
+- [ ] Toggle to stop the queued recording follows normal N4 stop+transcribe flow
+
+### Forward compatibility
+- [ ] `{"action": "toggle", "mode": {"language": "fr"}}` — `mode` field is parsed and silently ignored (no error, no crash)
+- [ ] Clients must ignore unknown fields in responses (documented in code comment on response schema)

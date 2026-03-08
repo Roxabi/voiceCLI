@@ -1,0 +1,49 @@
+---
+title: "feat: stt-serve daemon — persistent STT with socket, pyaudio recording, transcription, clipboard"
+issue: 6
+status: approved
+tier: F-full
+date: 2026-03-06
+---
+
+## Problem
+
+Every call to `voicecli transcribe` cold-loads `faster-whisper` from disk into VRAM, taking 15–30 seconds before any audio is processed. This makes real-time dictation workflows unusable — the latency between "I want to dictate" and "ready to record" is too high.
+
+There is currently no persistent STT process. The existing `listen.py` (Kyutai STT) and `transcribe.py` (faster-whisper) are both stateless: model is loaded, used, and the process exits. For a global hotkey dictation feature, a daemon must stay alive between invocations so the model is always warm.
+
+Additionally, `listen.py` records via a `parecord` subprocess with a fixed timeout — it cannot provide real-time audio level data needed for a waveform/indicator in future issues. A proper in-process recording loop using `pyaudio` is needed.
+
+## Who
+
+- **Primary:** The user (solo developer on WSL2) who wants to trigger voice dictation via a keyboard shortcut and have the transcript appear in their clipboard instantly — without a cold-start delay.
+- **Secondary:** Issues #7 (dictate toggle) and #8 (dictation modes) depend on this daemon as their backend. They are the clients; this is the server.
+
+## Constraints
+
+- **WSL2 / WSLg:** PulseAudio is available via WSLg. `pyaudio` must work with the PulseAudio backend on WSL2 — this is an unknown and may require testing. Fallback to `parecord` subprocess if `pyaudio` fails to initialise is acceptable in v1.
+- **VRAM:** RTX 5070 Ti (Blackwell sm_120), PyTorch 2.7+ cu128. `faster-whisper` with `large-v3-turbo` fits comfortably.
+- **Socket convention:** Must match the TTS daemon pattern — `~/.local/share/voicecli/stt-daemon.sock`, AF_UNIX, newline-delimited JSON.
+- **Single-threaded GPU:** Transcription is synchronous (model inference blocks). Recording and transcription cannot overlap — the state machine enforces this.
+- **Forward-compatible protocol:** The `toggle` action must be designed to accept an optional `mode` field (added in #8) without breaking changes.
+- **Reuse existing code:** `_chime()` from `samples.py`, `_load_model()` from `transcribe.py`, socket convention from `daemon.py`.
+
+## Out of Scope
+
+- **Global hotkey capture** — `pynput` listener lives in issue #7. The daemon has no keyboard awareness.
+- **`notify-send` visual feedback** — desktop notifications are issued by the client in issue #7, not the daemon.
+- **Auto-paste / xdotool** — typing into the focused window is issue #7. The daemon only writes to clipboard and returns text in the socket response.
+- **Dictation modes (french, translate-en, code…)** — named mode configs are issue #8. The daemon accepts a plain `toggle` with no mode field in this issue.
+- **Waveform / OSD widget** — real-time level callbacks are implemented here (enabling future issues), but no UI is rendered.
+- **Real-time streaming transcription** — full audio recorded first, then transcribed. Streaming VAD approaches are a future iteration.
+
+## Complexity
+
+**Tier: F-full** — New audio subsystem with an unknown (pyaudio on WSL2), a new architectural pattern (persistent STT daemon parallel to TTS daemon), and cross-domain scope (audio I/O + ML inference + IPC + clipboard).
+
+Signals observed:
+- `pyaudio` not currently used anywhere in the project — integration risk on WSL2/PulseAudio
+- New file `stt_daemon.py` is substantial (~200 LOC: state machine + socket server + recording loop + transcription)
+- Touches 3 files but primary file is complex
+- Two unknowns: pyaudio on WSL2, forward-compatibility of socket protocol
+- Domains: audio recording, ML inference, Unix IPC, clipboard I/O

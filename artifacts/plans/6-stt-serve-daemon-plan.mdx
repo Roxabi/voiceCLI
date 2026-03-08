@@ -1,0 +1,706 @@
+---
+title: "Plan: feat: stt-serve daemon — persistent STT with socket, pyaudio recording, transcription, clipboard"
+issue: 6
+spec: artifacts/specs/6-stt-serve-daemon-spec.mdx
+complexity: 7/10
+tier: F-full
+generated: 2026-03-06
+---
+
+## Summary
+
+Implement `stt_daemon.py` (new), extend `cli.py` (add `stt-serve` command), and add `warmup()` to `transcribe.py`. The daemon uses a thread-per-connection accept loop, a threading.Lock-protected state machine (idle/recording/transcribing/queued), pyaudio recording with parecord fallback, and writes transcription results to the system clipboard.
+
+## Reference Patterns
+
+- `src/voicecli/daemon.py` — socket setup, wire protocol, `_send_json`/`_recv_json` (copy exactly)
+- `src/voicecli/transcribe.py` — `_load_model()`, `TranscriptionResult` (reuse directly)
+- `src/voicecli/samples.py` — `_chime()`, `record_sample()` → parecord subprocess pattern
+- `src/voicecli/cli.py:1256` — `serve()` command definition (mirror for `stt-serve`)
+
+## Agents
+
+| Agent | Tasks | Files |
+|-------|-------|-------|
+| backend-dev | T01–T05, T07–T12, T14–T18, T20–T21 (18 tasks) | `src/voicecli/stt_daemon.py` (new), `src/voicecli/cli.py`, `src/voicecli/transcribe.py` |
+| tester | T06, T13, T19, T22 (4 tasks) | `tests/test_stt_daemon.py` (new) |
+
+## Consistency Report
+
+- Spec criteria covered: 36/36
+- Breadboard nodes traced: N1–N7 (all)
+- Slices: S1–S4 (all)
+- Uncovered: none
+- Untraced tasks: none
+
+---
+
+## Micro-Tasks
+
+---
+
+### S1 — Socket Skeleton
+
+> RED-GATE S1: `echo '{"action":"ping"}' | nc -U ~/.local/share/voicecli/stt-daemon.sock` → `{"status":"ok"}`
+
+---
+
+**T01** — `State` enum + `SttDaemon.__init__` + socket path
+- **File:** `src/voicecli/stt_daemon.py` (create)
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** SC: socket-lifecycle-1, SC: startup-4
+- **Slice:** S1
+
+```python
+from __future__ import annotations
+import json, socket, threading
+from enum import Enum
+from pathlib import Path
+
+SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-daemon.sock"
+
+class State(Enum):
+    IDLE = "idle"
+    RECORDING = "recording"
+    TRANSCRIBING = "transcribing"
+    QUEUED = "queued"
+
+class SttDaemon:
+    def __init__(self, model: str = "large-v3-turbo"):
+        self.model = model
+        self._state = State.IDLE
+        self._lock = threading.Lock()
+        self._recording_thread: RecordingThread | None = None
+        self._use_pyaudio: bool = True  # set by _probe_pyaudio()
+```
+
+- **Verify:** `python3 -c "from voicecli.stt_daemon import SttDaemon, State; d = SttDaemon(); print(d._state)"`
+- **Expected:** `State.IDLE`
+
+---
+
+**T02** — `SttDaemon.serve()` — thread-per-connection accept loop
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T01)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: socket-lifecycle-1,2,3; concurrency model
+- **Slice:** S1
+
+```python
+def serve(self) -> None:
+    SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SOCKET_PATH.unlink(missing_ok=True)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
+        srv.bind(str(SOCKET_PATH))
+        srv.listen(5)
+        print(f"[voicecli stt] Ready on {SOCKET_PATH}", flush=True)
+        try:
+            while True:
+                conn, _ = srv.accept()
+                threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            SOCKET_PATH.unlink(missing_ok=True)
+```
+
+- **Verify:** Start daemon in background, check socket exists: `test -S ~/.local/share/voicecli/stt-daemon.sock && echo ok`
+- **Expected:** `ok`
+
+---
+
+**T03** — `_handle_ping`, `_handle_status`, `_handle_unknown` + wire protocol helpers
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T01)
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** N1, N2, N7; SC: protocol-ping-1,2,5
+- **Slice:** S1
+
+```python
+def _handle_ping(self, conn): _send_json(conn, {"status": "ok"})
+def _handle_status(self, conn):
+    with self._lock:
+        state = self._state.value
+    _send_json(conn, {"status": "ok", "state": state})
+def _handle_unknown(self, conn, action: str):
+    _send_json(conn, {"status": "error", "message": f"unknown action: {action}"})
+
+# Wire protocol (copy from daemon.py)
+def _send_json(sock, data): ...
+def _recv_json(sock) -> dict: ...
+```
+
+- **Verify:** `echo '{"action":"status"}' | nc -U ~/.local/share/voicecli/stt-daemon.sock`
+- **Expected:** `{"status": "ok", "state": "idle"}`
+
+---
+
+**T04** — `_handle(conn)` — dispatch by action + forward-compat mode-field ignoring
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T03)
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** N1–N7; SC: forward-compat-1
+- **Slice:** S1
+
+```python
+def _handle(self, conn: socket.socket) -> None:
+    try:
+        req = _recv_json(conn)
+        action = req.get("action")
+        # mode field: parsed, ignored for now (issue #8)
+        _ = req.get("mode")
+        if action == "ping": self._handle_ping(conn)
+        elif action == "status": self._handle_status(conn)
+        elif action == "toggle": self._handle_toggle(conn)
+        else: self._handle_unknown(conn, action)
+    except Exception as exc:
+        try: _send_json(conn, {"status": "error", "message": str(exc)})
+        except Exception: pass
+    finally:
+        conn.close()
+```
+
+- **Verify:** `echo '{"action":"toggle","mode":{"language":"fr"}}' | nc -U ...` → no crash
+- **Expected:** valid JSON response (state transition), no error about unknown field
+
+---
+
+**T05** — `voicecli stt-serve` command in `cli.py`
+- **File:** `src/voicecli/cli.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** Y (independent of T01–T04 internals, just imports)
+- **Difficulty:** 1
+- **Time:** 3 min
+- **Spec trace:** SC: model-selection-1,2,3,4,5
+- **Slice:** S1
+
+```python
+@app.command("stt-serve")
+def stt_serve(
+    model: Annotated[str, typer.Option("--model", "-m", help="Whisper model")] = "",
+) -> None:
+    """Start the STT daemon to keep faster-whisper loaded for fast dictation."""
+    from voicecli.stt_daemon import SttDaemon
+    from voicecli.config import load_config
+    cfg = load_config()
+    resolved_model = model or cfg.get("stt", {}).get("model", "large-v3-turbo")
+    SttDaemon(model=resolved_model).serve()
+```
+
+- **Verify:** `uv run voicecli stt-serve --help`
+- **Expected:** help text shown, `--model` option listed
+
+---
+
+**T06** — Tests: ping, status, unknown action (S1)
+- **File:** `tests/test_stt_daemon.py` (create)
+- **Agent:** tester
+- **Phase:** RED
+- **Parallel-safe:** Y (after T01–T05 green)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: protocol-ping-1,2,5; socket-lifecycle-1
+- **Slice:** S1
+
+```python
+# Use threading to start daemon in-process, connect via socket, assert responses
+# Mock _probe_pyaudio to skip audio device requirement
+# Test: ping → {"status":"ok"}
+# Test: status → {"status":"ok","state":"idle"}
+# Test: unknown → {"status":"error","message":"unknown action: foo"}
+# Test: mode field on toggle ignored (no crash)
+```
+
+- **Verify:** `uv run pytest tests/test_stt_daemon.py::test_ping tests/test_stt_daemon.py::test_status tests/test_stt_daemon.py::test_unknown -v`
+- **Expected:** 3 passed
+
+---
+
+> **RED-GATE S1 PASSED** → proceed to S2
+
+---
+
+### S2 — pyaudio Recording + Chimes
+
+> RED-GATE S2: toggle start → state=recording + start chime; toggle stop → state=idle + stop chime (no text yet)
+
+---
+
+**T07** — `RecordingThread` class (pyaudio loop, in-memory frames, level callbacks)
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N
+- **Difficulty:** 4
+- **Time:** 10 min
+- **Spec trace:** SC: recording-pyaudio-1,2,3,4; recording-parecord-fallback-1
+- **Slice:** S2
+
+```python
+class RecordingThread(threading.Thread):
+    SAMPLERATE = 16000; CHANNELS = 1; CHUNK = 1024
+    def __init__(self, level_callback=None):
+        super().__init__(daemon=True)
+        self.level_callback = level_callback
+        self.frames: list[bytes] = []
+        self._stop_event = threading.Event()
+
+    def run(self):
+        import pyaudio, numpy as np
+        pa = pyaudio.PyAudio()
+        stream = pa.open(format=pyaudio.paInt16, channels=self.CHANNELS,
+                         rate=self.SAMPLERATE, input=True, frames_per_buffer=self.CHUNK)
+        while not self._stop_event.is_set():
+            data = stream.read(self.CHUNK, exception_on_overflow=False)
+            self.frames.append(data)
+            if self.level_callback:
+                level = np.abs(np.frombuffer(data, dtype=np.int16)).mean() / 32768.0
+                self.level_callback(level)
+        stream.stop_stream(); stream.close(); pa.terminate()
+
+    def stop(self) -> bytes:
+        self._stop_event.set(); self.join(timeout=2.0)
+        return _frames_to_wav(self.frames, self.SAMPLERATE)
+```
+
+- **Verify:** `python3 -c "from voicecli.stt_daemon import RecordingThread; print('ok')"` (import only)
+- **Expected:** `ok`
+
+---
+
+**T08** — `_probe_pyaudio()` startup probe + fallback flag + parecord recording path
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** Y (independent function)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: startup-2,3; recording-parecord-1,2,3
+- **Slice:** S2
+
+```python
+def _probe_pyaudio() -> bool:
+    """Return True if pyaudio is usable; print warning and return False otherwise."""
+    try:
+        import pyaudio
+        pa = pyaudio.PyAudio(); pa.get_device_count(); pa.terminate()
+        return True
+    except Exception as e:
+        print(f"[stt] pyaudio unavailable ({e}), falling back to parecord", file=sys.stderr)
+        return False
+
+def _record_parecord(stop_event: threading.Event) -> bytes:
+    """Record via parecord subprocess until stop_event is set."""
+    # write to tempfile, kill process when stop_event fires, return bytes
+    ...
+```
+
+- **Verify:** `python3 -c "from voicecli.stt_daemon import _probe_pyaudio; print(_probe_pyaudio())"` (runs without crash)
+- **Expected:** `True` or `False` (no exception)
+
+---
+
+**T09** — `_start_recording()` — N3 handler (acquires lock, transitions idle→recording)
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T07, T08)
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** N3; SC: recording-pyaudio-1
+- **Slice:** S2
+
+```python
+def _handle_toggle(self, conn):
+    with self._lock:
+        state = self._state
+    if state == State.IDLE:
+        self._start_recording(conn)
+    elif state == State.RECORDING:
+        self._stop_and_transcribe(conn)  # partial: no transcription yet
+    elif state == State.TRANSCRIBING:
+        self._queue_recording(conn)
+    elif state == State.QUEUED:
+        _send_json(conn, {"status": "ok", "state": State.QUEUED.value})
+
+def _start_recording(self, conn):
+    with self._lock:
+        self._state = State.RECORDING
+        self._recording_thread = RecordingThread() if self._use_pyaudio else None
+    if self._recording_thread:
+        self._recording_thread.start()
+    threading.Thread(target=_chime, args=("start",), daemon=True).start()
+    _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
+```
+
+- **Verify:** Send toggle to idle daemon → response `{"status":"ok","state":"recording"}`
+- **Expected:** state=recording in response
+
+---
+
+**T10** — `_stop_recording()` → wav bytes (both pyaudio and parecord paths) + `_frames_to_wav()`
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T07, T08)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: transcription-1 (tempfile write comes next slice)
+- **Slice:** S2
+
+```python
+def _frames_to_wav(frames: list[bytes], samplerate: int) -> bytes:
+    import io, wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(samplerate)
+        wf.writeframes(b"".join(frames))
+    return buf.getvalue()
+```
+
+- **Verify:** Unit test: `_frames_to_wav([b'\x00'*1024], 16000)` → valid WAV header
+- **Expected:** bytes starting with `RIFF`
+
+---
+
+**T11** — N4 partial: `_stop_and_transcribe()` stop only (returns `{state:idle}`, no text yet)
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T09, T10)
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** N4 (partial); state machine recording→idle
+- **Slice:** S2
+
+```python
+def _stop_and_transcribe(self, conn):
+    with self._lock:
+        self._state = State.TRANSCRIBING
+        rt = self._recording_thread
+        self._recording_thread = None
+    wav_bytes = rt.stop() if rt else b""
+    # S3 will add: tempfile → transcribe → clipboard
+    with self._lock:
+        self._state = State.IDLE
+    threading.Thread(target=_chime, args=("stop",), daemon=True).start()
+    _send_json(conn, {"status": "ok", "state": State.IDLE.value, "text": None, "language": None})
+```
+
+- **Verify:** Start daemon, toggle×2 → second response `{"state":"idle","text":null}`
+- **Expected:** two successful state transitions
+
+---
+
+**T12** — `_chime()` import and integration (run in daemon thread to avoid blocking)
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** GREEN
+- **Parallel-safe:** Y
+- **Difficulty:** 1
+- **Time:** 3 min
+- **Spec trace:** SC: recording-pyaudio-2; transcription-4
+- **Slice:** S2
+
+```python
+def _chime(kind: str) -> None:
+    from voicecli.samples import _chime as samples_chime
+    samples_chime(kind)
+```
+
+- **Verify:** `python3 -c "from voicecli.stt_daemon import _chime"` — import ok
+- **Expected:** no error
+
+---
+
+**T13** — Tests: toggle start/stop, state transitions, chimes mocked (S2)
+- **File:** `tests/test_stt_daemon.py`
+- **Agent:** tester
+- **Phase:** GREEN
+- **Parallel-safe:** Y
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: recording-pyaudio-1,2; protocol-status-3
+- **Slice:** S2
+
+```python
+# Mock pyaudio.PyAudio, mock _chime
+# Test: N3 → state=recording; N4 (partial) → state=idle
+# Test: status during recording → {"state":"recording"}
+# Test: chime("start") called on N3; chime("stop") called on N4
+```
+
+- **Verify:** `uv run pytest tests/test_stt_daemon.py -k "recording" -v`
+- **Expected:** all recording tests pass
+
+---
+
+> **RED-GATE S2 PASSED** → proceed to S3
+
+---
+
+### S3 — Transcription + Clipboard
+
+> RED-GATE S3: dictate "hello", N4 response contains `text` + `language`; clipboard contains the text
+
+---
+
+**T14** — `transcribe.py`: add `warmup(model)` + call at `SttDaemon.serve()` startup
+- **File:** `src/voicecli/transcribe.py` (modify), `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** SC: startup-1; model-selection-1
+- **Slice:** S3
+
+```python
+# In transcribe.py:
+def warmup(model: str = DEFAULT_MODEL) -> None:
+    """Pre-load model into cache (eager load at daemon startup)."""
+    _load_model(model)
+
+# In SttDaemon.serve(), before the accept loop:
+from voicecli.transcribe import warmup
+warmup(self.model)
+```
+
+- **Verify:** `uv run voicecli stt-serve --model large-v3-turbo` → prints `[stt] Loading faster-whisper large-v3-turbo...` then `[voicecli stt] Ready`
+- **Expected:** model loaded before ready message
+
+---
+
+**T15** — `_write_tempfile(wav_bytes)` → `Path` [P]
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** Y
+- **Difficulty:** 1
+- **Time:** 3 min
+- **Spec trace:** SC: transcription-1,2
+- **Slice:** S3
+
+```python
+def _write_tempfile(wav_bytes: bytes) -> Path:
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.write(wav_bytes); tmp.close()
+    return Path(tmp.name)
+```
+
+- **Verify:** Unit test: `p = _write_tempfile(b'data'); assert p.exists(); p.unlink()`
+- **Expected:** file created and readable
+
+---
+
+**T16** — `_stop_and_transcribe()` full: tempfile → transcribe → delete → response
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T14, T15)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** N4 (full); SC: transcription-1,2,3,4
+- **Slice:** S3
+
+```python
+def _stop_and_transcribe(self, conn):
+    with self._lock:
+        self._state = State.TRANSCRIBING
+        rt = self._recording_thread; self._recording_thread = None
+    wav_bytes = rt.stop() if rt else b""
+    tmp_path = _write_tempfile(wav_bytes)
+    try:
+        from voicecli.transcribe import transcribe
+        result = transcribe(tmp_path, model=self.model)
+        text, language = result.text, result.language
+    except Exception as e:
+        text, language = "", None
+        print(f"[stt] transcription error: {e}", file=sys.stderr)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    _write_clipboard(text)
+    with self._lock:
+        queued = (self._state == State.QUEUED)
+        self._state = State.IDLE
+    threading.Thread(target=_chime, args=("stop",), daemon=True).start()
+    _send_json(conn, {"status": "ok", "state": State.IDLE.value,
+                      "text": text, "language": language})
+    if queued:
+        self._start_recording_async()  # S4
+```
+
+- **Verify:** Full dictation cycle: toggle×2, response has `text` field (may be empty for silence)
+- **Expected:** `{"status":"ok","state":"idle","text":"...","language":"..."}`
+
+---
+
+**T17** — `_write_clipboard(text)` wl-copy → xclip → xsel fallback [P]
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** Y
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** SC: transcription-5,6
+- **Slice:** S3
+
+```python
+def _write_clipboard(text: str) -> None:
+    import shutil, subprocess
+    for cmd in [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]:
+        if shutil.which(cmd[0]):
+            try:
+                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+                proc.communicate(input=text.encode())
+                if proc.returncode == 0:
+                    return
+            except Exception:
+                pass
+    print("[stt] clipboard write failed: no wl-copy/xclip/xsel found", file=sys.stderr)
+```
+
+- **Verify:** `python3 -c "from voicecli.stt_daemon import _write_clipboard; _write_clipboard('test')"` → no crash
+- **Expected:** no exception; `wl-paste` or `xclip -o` returns `test`
+
+---
+
+**T18** — Wire model into `SttDaemon` + `voicecli.toml` config priority chain
+- **File:** `src/voicecli/stt_daemon.py`, `src/voicecli/cli.py`
+- **Agent:** backend-dev
+- **Phase:** GREEN
+- **Parallel-safe:** N
+- **Difficulty:** 2
+- **Time:** 5 min
+- **Spec trace:** SC: model-selection-1,2,3,4,5
+- **Slice:** S3
+
+- Read `[stt] model` from `voicecli.toml` via existing `load_config()` with fallback to `"large-v3-turbo"`
+- CLI `--model` overrides toml value (already in T05 skeleton; verify end-to-end)
+- **Verify:** `voicecli stt-serve` without `--model` → logs `large-v3-turbo`
+- **Expected:** correct model loaded
+
+---
+
+**T19** — Tests: transcription in response, clipboard write, tempfile cleanup (S3)
+- **File:** `tests/test_stt_daemon.py`
+- **Agent:** tester
+- **Phase:** GREEN
+- **Parallel-safe:** Y
+- **Difficulty:** 4
+- **Time:** 10 min
+- **Spec trace:** SC: transcription-1,2,3,5,6
+- **Slice:** S3
+
+```python
+# Mock transcribe.transcribe to return TranscriptionResult("hello world", "en", [])
+# Mock _write_clipboard
+# Test: N4 response has text="hello world", language="en"
+# Test: _write_clipboard called with "hello world"
+# Test: tempfile deleted after transcription
+# Test: tempfile deleted even when transcribe raises exception
+```
+
+- **Verify:** `uv run pytest tests/test_stt_daemon.py -k "transcription" -v`
+- **Expected:** all transcription tests pass
+
+---
+
+> **RED-GATE S3 PASSED** → proceed to S4
+
+---
+
+### S4 — Queue Support
+
+> RED-GATE S4: toggle×3 (start, stop-during-transcription, stop-queued) → two clipboard writes, both correct
+
+---
+
+**T20** — `_queue_recording()` N5 handler + N6 noop + `queued` state checks
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T16)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** N5, N6; SC: queue-1,2; SC: protocol-status-3
+- **Slice:** S4
+
+```python
+def _queue_recording(self, conn):
+    with self._lock:
+        self._state = State.QUEUED
+    _send_json(conn, {"status": "ok", "state": State.QUEUED.value})
+```
+
+- **Verify:** Send toggle while transcribing → `{"state":"queued"}` immediately
+- **Expected:** sub-100ms response while N4 thread still running
+
+---
+
+**T21** — Post-transcription auto-start: if state=QUEUED after transcription, start new recording
+- **File:** `src/voicecli/stt_daemon.py`
+- **Agent:** backend-dev
+- **Phase:** RED
+- **Parallel-safe:** N (depends on T20, T16)
+- **Difficulty:** 3
+- **Time:** 8 min
+- **Spec trace:** SC: queue-3,4
+- **Slice:** S4
+
+```python
+# Already stubbed in T16: if queued: self._start_recording_async()
+def _start_recording_async(self):
+    """Start a new recording after queued transcription completes."""
+    with self._lock:
+        self._state = State.RECORDING
+        self._recording_thread = RecordingThread() if self._use_pyaudio else None
+    if self._recording_thread:
+        self._recording_thread.start()
+    threading.Thread(target=_chime, args=("start",), daemon=True).start()
+```
+
+- **Verify:** Full queue flow: toggle×3 (start, queue-during-transcribing, stop) → two separate transcriptions
+- **Expected:** state=recording auto-starts after first transcription when queued
+
+---
+
+**T22** — Tests: queue flow end-to-end (S4)
+- **File:** `tests/test_stt_daemon.py`
+- **Agent:** tester
+- **Phase:** GREEN
+- **Parallel-safe:** Y
+- **Difficulty:** 4
+- **Time:** 10 min
+- **Spec trace:** SC: queue-1,2,3,4
+- **Slice:** S4
+
+```python
+# Mock transcribe with controllable delay (threading.Event to unblock)
+# Test: N5 during transcribing → {state:queued} immediate
+# Test: N6 while queued → {state:queued} idempotent
+# Test: after transcription completes → state=recording (auto-start)
+# Test: status during queued → {state:queued}
+```
+
+- **Verify:** `uv run pytest tests/test_stt_daemon.py -k "queue" -v`
+- **Expected:** all queue tests pass
+
+---
+
+> **RED-GATE S4 PASSED** → `uv run pytest tests/test_stt_daemon.py -v` → all 22+ assertions pass

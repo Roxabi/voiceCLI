@@ -1,4 +1,3 @@
-import dataclasses
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -6,7 +5,6 @@ import typer
 
 from voicecli import __version__
 from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
-from voicecli.utils import build_output_prefix, default_output_path
 
 
 def _version_callback(value: bool) -> None:
@@ -126,258 +124,30 @@ def samples_remove(
         raise typer.Exit(1)
 
 
-# ── Chunked output helpers ───────────────────────────────────────────────────
+# ── CUDA error formatting (moved from engine.py cuda_guard) ──────────────────
 
 
-def _emit_chunk(
-    eng,
-    method: str,
-    text: str,
-    voice,
-    out: Path,
-    index: int,
-    mp3: bool,
-    total: int,
-    *,
-    daemon_fn=None,
-    **kwargs,
-):
-    """Generate and save a single numbered chunk."""
-    from voicecli.utils import wav_to_mp3 as _wav_to_mp3
-
-    stem = out.stem
-    chunk_path = out.parent / f"{stem}_{index:03d}.wav"
-    if daemon_fn is None or not daemon_fn(method, text, voice, chunk_path, **kwargs):
-        if method == "generate":
-            eng.generate(text, voice, chunk_path, **kwargs)
-        else:
-            eng.clone(
-                text,
-                kwargs.pop("ref_audio"),
-                chunk_path,
-                ref_text=kwargs.pop("ref_text", None),
-                **kwargs,
-            )
-    typer.echo(f"  [{index}/{total}] {chunk_path.name}")
-    if mp3:
-        mp3_path = _wav_to_mp3(chunk_path)
-        typer.echo(f"  [{index}/{total}] {mp3_path.name}")
-
-
-def _write_done(out: Path):
-    done_path = out.with_suffix(".done")
-    done_path.write_text("done\n")
-    typer.echo(f"Done sentinel: {done_path}")
-
-
-def _generate_chunked(
-    eng, text, voice, out, language, extra_kwargs, mp3, *, chunk_size, segments, daemon_fn=None
-):
-    """Generate speech in chunks, saving each as a separate file."""
-    from voicecli.utils import smart_chunk
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    if segments and len(segments) > 1:
-        total = len(segments)
-        for i, seg in enumerate(segments, 1):
-            kw = {**extra_kwargs, "language": seg.language or language}
-            if seg.instruct:
-                kw["instruct"] = seg.instruct
-            if seg.exaggeration is not None:
-                kw["exaggeration"] = seg.exaggeration
-            if seg.cfg_weight is not None:
-                kw["cfg_weight"] = seg.cfg_weight
-            seg_voice = seg.voice or voice
-            _emit_chunk(
-                eng, "generate", seg.text, seg_voice, out, i, mp3, total, daemon_fn=daemon_fn, **kw
-            )
+def _print_cuda_error(msg: str) -> None:
+    """Format a CUDA RuntimeError into a user-friendly diagnostic."""
+    print(f"\n{'=' * 60}")
+    print(f"  {msg.split(':')[0] if ':' in msg else 'CUDA error'}")
+    print(f"{'=' * 60}")
+    detail = msg.split(":", 1)[1].strip() if ":" in msg else msg
+    lower = detail.lower()
+    if "out of memory" in lower:
+        print("\n  Your GPU does not have enough VRAM for this model.")
+        print("  Try closing other GPU-intensive apps first.")
+    elif "no kernel image" in lower or "not compiled" in lower:
+        print("\n  PyTorch was not compiled for your GPU architecture.")
+        print("  Reinstall PyTorch matching your CUDA version:")
+        print("    https://pytorch.org/get-started/locally/")
     else:
-        chunks = smart_chunk(text, chunk_size)
-        total = len(chunks)
-        for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(
-                eng,
-                "generate",
-                chunk_text,
-                voice,
-                out,
-                i,
-                mp3,
-                total,
-                daemon_fn=daemon_fn,
-                language=language,
-                **extra_kwargs,
-            )
-
-    _write_done(out)
-
-
-def _clone_chunked(
-    eng,
-    text,
-    ref,
-    ref_text,
-    out,
-    language,
-    extra_kwargs,
-    mp3,
-    *,
-    chunk_size,
-    segments,
-    daemon_fn=None,
-):
-    """Clone voice in chunks, saving each as a separate file."""
-    from voicecli.utils import smart_chunk
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    if segments and len(segments) > 1:
-        total = len(segments)
-        for i, seg in enumerate(segments, 1):
-            kw = {
-                **extra_kwargs,
-                "language": seg.language or language,
-                "ref_audio": ref,
-                "ref_text": ref_text,
-            }
-            if seg.exaggeration is not None:
-                kw["exaggeration"] = seg.exaggeration
-            if seg.cfg_weight is not None:
-                kw["cfg_weight"] = seg.cfg_weight
-            _emit_chunk(eng, "clone", seg.text, None, out, i, mp3, total, daemon_fn=daemon_fn, **kw)
-    else:
-        chunks = smart_chunk(text, chunk_size)
-        total = len(chunks)
-        for i, chunk_text in enumerate(chunks, 1):
-            _emit_chunk(
-                eng,
-                "clone",
-                chunk_text,
-                None,
-                out,
-                i,
-                mp3,
-                total,
-                daemon_fn=daemon_fn,
-                language=language,
-                ref_audio=ref,
-                ref_text=ref_text,
-                **extra_kwargs,
-            )
-
-    _write_done(out)
-
-
-# ── Daemon client helpers ─────────────────────────────────────────────────────
-
-
-def _try_daemon(request: dict) -> Path | None:
-    """Send request to daemon. Returns WAV path on success, None to fall back."""
-    from voicecli.daemon import SOCKET_PATH, daemon_request
-
-    if not SOCKET_PATH.exists():
-        return None
-    try:
-        resp = daemon_request(request, timeout=300)
-        if resp.get("status") == "ok":
-            return Path(resp["path"])
-    except Exception:
-        pass
-    return None
-
-
-def _make_chunk_daemon_fn(engine_name: str):
-    """Return a daemon_fn for use in chunked generation/cloning.
-
-    The returned callable has signature:
-        (method, text, voice, chunk_path, **kwargs) -> bool
-    Returns True if the daemon handled the chunk, False to fall back locally.
-    """
-
-    def daemon_fn(method: str, text: str, voice, chunk_path: Path, **kwargs) -> bool:
-        req: dict = {
-            "action": method,
-            "engine": engine_name,
-            "text": text,
-            "voice": voice,
-            "output_path": str(chunk_path.resolve()),
-            "language": kwargs.get("language"),
-            "instruct": kwargs.get("instruct"),
-            "exaggeration": kwargs.get("exaggeration"),
-            "cfg_weight": kwargs.get("cfg_weight"),
-            "segment_gap": kwargs.get("segment_gap"),
-            "crossfade": kwargs.get("crossfade"),
-            "segments": [],
-        }
-        if method == "clone":
-            ref = kwargs.get("ref_audio")
-            req["ref_audio"] = str(ref.resolve()) if ref else None
-            req["ref_text"] = kwargs.get("ref_text")
-        return _try_daemon(req) is not None
-
-    return daemon_fn
-
-
-# ── Config → segments backfill ───────────────────────────────────────────────
-
-
-def _apply_config_defaults(doc, cfg: dict) -> None:
-    """Backfill structured instruct parts from voicecli.toml into doc/segments.
-
-    If frontmatter didn't set accent/personality/speed/emotion but voicecli.toml has them,
-    fill them in and recompose instruct (unless the segment has a raw instruct bypass).
-    """
-    from voicecli.markdown import compose_instruct
-
-    PARTS = ("accent", "personality", "speed", "emotion")
-    cfg_parts = {p: cfg.get(p) for p in PARTS if cfg.get(p)}
-    if not cfg_parts:
-        return
-
-    # Backfill doc-level parts
-    for part, val in cfg_parts.items():
-        if getattr(doc, part) is None:
-            setattr(doc, part, val)
-
-    # Recompose doc-level instruct if no raw instruct bypass
-    if not doc.instruct:
-        doc.instruct = compose_instruct(doc.accent, doc.personality, doc.speed, doc.emotion)
-
-    # Backfill each segment
-    for seg in doc.segments:
-        # Skip segments with raw instruct bypass (instruct set but no structured parts)
-        has_parts = any(getattr(seg, p) for p in PARTS)
-        if seg.instruct and not has_parts:
-            continue
-        changed = False
-        for part, val in cfg_parts.items():
-            if getattr(seg, part) is None:
-                setattr(seg, part, val)
-                changed = True
-        if changed:
-            composed = compose_instruct(seg.accent, seg.personality, seg.speed, seg.emotion)
-            if composed:
-                seg.instruct = composed
-
-
-# ── Plain mode helper ────────────────────────────────────────────────────────
-
-
-def _flatten_doc(doc) -> None:
-    """Strip [tags] and merge all segments into one, ignoring per-section directives.
-
-    Mutates doc in-place: clears segments, sets doc.text to stripped merged text.
-    Doc-level fields (language, voice, instruct, etc.) are preserved.
-    """
-    from voicecli.translate import _strip_tags
-
-    if doc.segments:
-        texts = [_strip_tags(seg.text) for seg in doc.segments]
-        doc.text = " ".join(t for t in texts if t)
-        doc.segments = []
-    else:
-        doc.text = _strip_tags(doc.text)
+        print(f"\n  {detail[:200]}")
+    print("\n  Troubleshooting:")
+    print("    1. Check drivers: nvidia-smi")
+    print("    2. Check CUDA toolkit: nvcc --version")
+    print("    3. Run: voicecli doctor")
+    print(f"{'=' * 60}\n")
 
 
 # ── Core commands ────────────────────────────────────────────────────────────
@@ -430,145 +200,33 @@ def generate(
     ] = None,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
-    from voicecli.config import load_defaults
+    from voicecli.api import generate as api_generate
 
-    cfg = load_defaults(config)
-    extra_kwargs: dict = {}
-    script_stem: str | None = None
-
-    # Layer defaults: CLI flag > voicecli.toml > hardcoded
-    engine = engine or cfg.get("engine", "qwen")
-    language = language or cfg.get("language", "English")
-    voice = voice or cfg.get("voice")
-    plain = plain or cfg.get("plain", False)
-    chunked = chunked or cfg.get("chunked", False)
-    chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
-
-    # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight"):
-        if field in cfg:
-            extra_kwargs[field] = cfg[field]
-
-    # Instruct default from config (raw bypass > composed from parts)
-    if "instruct" in cfg:
-        extra_kwargs["instruct"] = cfg["instruct"]
-    else:
-        from voicecli.markdown import compose_instruct
-
-        composed = compose_instruct(
-            cfg.get("accent"),
-            cfg.get("personality"),
-            cfg.get("speed"),
-            cfg.get("emotion"),
-        )
-        if composed:
-            extra_kwargs["instruct"] = composed
-
-    # Segment gap / crossfade: CLI > config > 0
-    gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
-    xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
-
-    # Detect file input (.md or .txt)
-    text_path = Path(text)
-    if text_path.suffix == ".txt" and text_path.exists():
-        script_stem = text_path.stem
-        text = text_path.read_text(encoding="utf-8")
-    if text_path.suffix == ".md" and text_path.exists():
-        from voicecli.markdown import parse_md_file
-        from voicecli.translate import translate_for_engine
-
-        script_stem = text_path.stem
-        doc = parse_md_file(text_path)
-        # Frontmatter provides defaults; CLI flags override
-        if doc.engine:
-            engine = doc.engine
-        _apply_config_defaults(doc, cfg)
-        if plain:
-            _flatten_doc(doc)
-        doc = translate_for_engine(doc, engine)
-        text = doc.text
-        if doc.language:
-            language = doc.language
-        if doc.voice and voice is None:
-            voice = doc.voice
-        if doc.instruct:
-            extra_kwargs["instruct"] = doc.instruct
-        if doc.exaggeration is not None:
-            extra_kwargs["exaggeration"] = doc.exaggeration
-        if doc.cfg_weight is not None:
-            extra_kwargs["cfg_weight"] = doc.cfg_weight
-        if doc.segments and len(doc.segments) > 1:
-            extra_kwargs["segments"] = doc.segments
-        # Frontmatter gap/crossfade (CLI flag still overrides)
-        if segment_gap is None and doc.segment_gap is not None:
-            gap_ms = doc.segment_gap
-        if crossfade is None and doc.crossfade is not None:
-            xfade_ms = doc.crossfade
-    elif plain:
-        from voicecli.translate import _strip_tags
-
-        text = _strip_tags(text)
-
-    if gap_ms > 0:
-        extra_kwargs["segment_gap"] = gap_ms
-    if xfade_ms > 0:
-        extra_kwargs["crossfade"] = xfade_ms
-
-    eng = get_engine(engine)
-    if fast and engine in QWEN_ENGINES:
-        eng._small = True
-    prefix = build_output_prefix(engine, script=script_stem, voice=voice, language=language)
-    out = output or default_output_path(prefix)
-
-    if chunked:
-        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
-        _generate_chunked(
-            eng,
+    try:
+        result = api_generate(
             text,
-            voice,
-            out,
-            language,
-            extra_kwargs,
-            mp3,
+            engine=engine,
+            voice=voice,
+            output=output,
+            language=language,
+            mp3=mp3,
+            fast=fast,
+            chunked=chunked,
             chunk_size=chunk_size,
-            segments=extra_kwargs.pop("segments", None),
-            daemon_fn=_daemon_chunk_fn,
+            config=config,
+            segment_gap=segment_gap,
+            crossfade=crossfade,
+            plain=plain,
         )
-    else:
-        if engine in QWEN_ENGINES:
-            daemon_result = _try_daemon(
-                {
-                    "action": "generate",
-                    "engine": engine,
-                    "text": text,
-                    "voice": voice,
-                    "output_path": str(out.resolve()),
-                    "language": language,
-                    "instruct": extra_kwargs.get("instruct"),
-                    "exaggeration": extra_kwargs.get("exaggeration"),
-                    "cfg_weight": extra_kwargs.get("cfg_weight"),
-                    "segment_gap": extra_kwargs.get("segment_gap"),
-                    "crossfade": extra_kwargs.get("crossfade"),
-                    "segments": [
-                        dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])
-                    ],
-                }
-            )
-            if daemon_result:
-                typer.echo(f"Saved to {daemon_result}")
-                if mp3:
-                    from voicecli.utils import wav_to_mp3
-
-                    mp3_path = wav_to_mp3(daemon_result)
-                    typer.echo(f"Saved to {mp3_path}")
-                return
-        result = eng.generate(text, voice, out, language=language, **extra_kwargs)
-        typer.echo(f"Saved to {result}")
-        if mp3:
-            from voicecli.utils import wav_to_mp3
-
-            mp3_path = wav_to_mp3(result)
-            typer.echo(f"Saved to {mp3_path}")
+        typer.echo(f"Saved to {result.wav_path}")
+        if result.mp3_path:
+            typer.echo(f"Saved to {result.mp3_path}")
+    except (ValueError, FileNotFoundError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        _print_cuda_error(str(e))
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -623,162 +281,34 @@ def clone(
     ] = None,
 ):
     """Clone a voice from reference audio and synthesize text."""
-    from voicecli.config import load_defaults
+    from voicecli.api import clone as api_clone
 
-    cfg = load_defaults(config)
-    extra_kwargs: dict = {}
-    script_stem: str | None = None
-
-    # Layer defaults: CLI flag > voicecli.toml > hardcoded
-    engine = engine or cfg.get("engine", "qwen")
-    language = language or cfg.get("language", "English")
-    plain = plain or cfg.get("plain", False)
-    chunked = chunked or cfg.get("chunked", False)
-    chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
-
-    # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight"):
-        if field in cfg:
-            extra_kwargs[field] = cfg[field]
-
-    # Instruct default from config (raw bypass > composed from parts)
-    if "instruct" in cfg:
-        extra_kwargs["instruct"] = cfg["instruct"]
-    else:
-        from voicecli.markdown import compose_instruct
-
-        composed = compose_instruct(
-            cfg.get("accent"),
-            cfg.get("personality"),
-            cfg.get("speed"),
-            cfg.get("emotion"),
-        )
-        if composed:
-            extra_kwargs["instruct"] = composed
-
-    # Segment gap / crossfade: CLI > config > 0
-    gap_ms = segment_gap if segment_gap is not None else cfg.get("segment_gap", 0)
-    xfade_ms = crossfade if crossfade is not None else cfg.get("crossfade", 0)
-
-    # Detect file input (.md or .txt)
-    text_path = Path(text)
-    if text_path.suffix == ".txt" and text_path.exists():
-        script_stem = text_path.stem
-        text = text_path.read_text(encoding="utf-8")
-    if text_path.suffix == ".md" and text_path.exists():
-        from voicecli.markdown import parse_md_file
-        from voicecli.translate import translate_for_engine
-
-        script_stem = text_path.stem
-        doc = parse_md_file(text_path)
-        if doc.engine:
-            engine = doc.engine
-        _apply_config_defaults(doc, cfg)
-        if plain:
-            _flatten_doc(doc)
-        doc = translate_for_engine(doc, engine)
-        text = doc.text
-        if doc.language:
-            language = doc.language
-        if doc.instruct:
-            extra_kwargs["instruct"] = doc.instruct
-        if doc.exaggeration is not None:
-            extra_kwargs["exaggeration"] = doc.exaggeration
-        if doc.cfg_weight is not None:
-            extra_kwargs["cfg_weight"] = doc.cfg_weight
-        if doc.segments and len(doc.segments) > 1:
-            extra_kwargs["segments"] = doc.segments
-        # Frontmatter gap/crossfade (CLI flag still overrides)
-        if segment_gap is None and doc.segment_gap is not None:
-            gap_ms = doc.segment_gap
-        if crossfade is None and doc.crossfade is not None:
-            xfade_ms = doc.crossfade
-    elif plain:
-        from voicecli.translate import _strip_tags
-
-        text = _strip_tags(text)
-
-    if gap_ms > 0:
-        extra_kwargs["segment_gap"] = gap_ms
-    if xfade_ms > 0:
-        extra_kwargs["crossfade"] = xfade_ms
-
-    # Fall back to active sample if --ref not provided
-    if ref is None:
-        from voicecli.samples import get_active_path
-
-        ref = get_active_path()
-        if ref is None:
-            typer.echo(
-                "Error: no --ref provided and no active sample set.\n"
-                "Use 'voicecli samples use <name>' to set an active sample.",
-                err=True,
-            )
-            raise typer.Exit(1)
-        typer.echo(f"Using active sample: {ref.name}")
-
-    if not ref.exists():
-        typer.echo(f"Error: reference audio not found: {ref}", err=True)
-        raise typer.Exit(1)
-
-    eng = get_engine(engine)
-    if fast and engine in QWEN_ENGINES:
-        eng._small = True
-    prefix = build_output_prefix(engine, script=script_stem, language=language, clone=True)
-    out = output or default_output_path(prefix)
-
-    if chunked:
-        _daemon_chunk_fn = _make_chunk_daemon_fn(engine) if engine in QWEN_ENGINES else None
-        _clone_chunked(
-            eng,
+    try:
+        result = api_clone(
             text,
-            ref,
-            ref_text,
-            out,
-            language,
-            extra_kwargs,
-            mp3,
+            ref=ref,
+            engine=engine,
+            ref_text=ref_text,
+            output=output,
+            language=language,
+            mp3=mp3,
+            fast=fast,
+            chunked=chunked,
             chunk_size=chunk_size,
-            segments=extra_kwargs.pop("segments", None),
-            daemon_fn=_daemon_chunk_fn,
+            config=config,
+            segment_gap=segment_gap,
+            crossfade=crossfade,
+            plain=plain,
         )
-    else:
-        if engine in QWEN_ENGINES:
-            daemon_result = _try_daemon(
-                {
-                    "action": "clone",
-                    "engine": engine,
-                    "text": text,
-                    "voice": None,
-                    "ref_audio": str(ref.resolve()),
-                    "ref_text": ref_text,
-                    "output_path": str(out.resolve()),
-                    "language": language,
-                    "instruct": extra_kwargs.get("instruct"),
-                    "exaggeration": extra_kwargs.get("exaggeration"),
-                    "cfg_weight": extra_kwargs.get("cfg_weight"),
-                    "segment_gap": extra_kwargs.get("segment_gap"),
-                    "crossfade": extra_kwargs.get("crossfade"),
-                    "segments": [
-                        dataclasses.asdict(s) for s in (extra_kwargs.get("segments") or [])
-                    ],
-                }
-            )
-            if daemon_result:
-                typer.echo(f"Saved to {daemon_result}")
-                if mp3:
-                    from voicecli.utils import wav_to_mp3
-
-                    mp3_path = wav_to_mp3(daemon_result)
-                    typer.echo(f"Saved to {mp3_path}")
-                return
-        result = eng.clone(text, ref, out, ref_text=ref_text, language=language, **extra_kwargs)
-        typer.echo(f"Saved to {result}")
-        if mp3:
-            from voicecli.utils import wav_to_mp3
-
-            mp3_path = wav_to_mp3(result)
-            typer.echo(f"Saved to {mp3_path}")
+        typer.echo(f"Saved to {result.wav_path}")
+        if result.mp3_path:
+            typer.echo(f"Saved to {result.mp3_path}")
+    except (ValueError, FileNotFoundError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        _print_cuda_error(str(e))
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -1276,6 +806,36 @@ def serve(
     from voicecli.daemon import daemon_main
 
     daemon_main(preload=engine, fast=fast)
+
+
+@app.command("stt-serve")
+def stt_serve(
+    model: Annotated[
+        str,
+        typer.Option("--model", "-m", help="Whisper model to load (default: large-v3-turbo)"),
+    ] = "",
+) -> None:
+    """Start the STT daemon to keep faster-whisper loaded for fast dictation.
+
+    Run in the background and trigger with 'voicecli dictate'.
+
+    Example supervisord config:
+
+    \\b
+    [program:voicecli_stt]
+    command=uv run --directory /path/to/voiceCLI voicecli stt-serve
+    autostart=true
+    autorestart=true
+    stdout_logfile=/var/log/voicecli_stt.log
+    """
+    from voicecli.config import load_config
+    from voicecli.stt_daemon import SttDaemon
+
+    cfg = load_config()
+    resolved_model = (
+        model or (cfg.get("stt", {}).get("model", "") if cfg else "") or "large-v3-turbo"
+    )
+    SttDaemon(model=resolved_model).serve()
 
 
 @app.command()
