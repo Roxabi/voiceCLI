@@ -1,6 +1,7 @@
-"""Sample management: list, add, record, use, active, remove."""
+"""Sample management: list, add, record, use, active, remove, from-url."""
 
 import shutil
+import subprocess
 from pathlib import Path
 
 SAMPLES_DIR = Path("TTS/samples")
@@ -133,6 +134,85 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
     signal = np.clip(signal, -1, 1)
     signal = (signal * 32767).astype(np.int16)
     _play_wav(signal, samplerate)
+
+
+def _check_tool(name: str) -> None:
+    """Raise RuntimeError if an external tool is not installed."""
+    if not shutil.which(name):
+        hints = {
+            "yt-dlp": "Install with: uv tool install yt-dlp",
+            "ffmpeg": "Install with: sudo apt install ffmpeg",
+        }
+        hint = hints.get(name, f"Please install {name}")
+        raise RuntimeError(f"'{name}' not found on PATH. {hint}")
+
+
+def from_url(
+    url: str,
+    name: str,
+    *,
+    start: float = 10.0,
+    duration: float = 30.0,
+) -> Path:
+    """Download audio from a URL (YouTube etc.) via yt-dlp, extract and normalize a segment."""
+    import tempfile
+
+    _check_tool("yt-dlp")
+    _check_tool("ffmpeg")
+
+    ensure_dir()
+    if not name.endswith(".wav"):
+        name = f"{name}.wav"
+    dest = SAMPLES_DIR / name
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        raw_audio = Path(tmpdir) / "raw.%(ext)s"
+        # Download best audio
+        print(f"Downloading audio from {url}...")
+        subprocess.run(
+            [
+                "yt-dlp",
+                "-x",
+                "--audio-format",
+                "wav",
+                "-o",
+                str(raw_audio),
+                url,
+            ],
+            check=True,
+        )
+
+        # Find the downloaded file (yt-dlp replaces %(ext)s)
+        downloaded = list(Path(tmpdir).glob("raw.*"))
+        if not downloaded:
+            raise RuntimeError("yt-dlp did not produce an output file")
+        raw_file = downloaded[0]
+
+        # Extract segment + normalize to mono 24kHz with loudnorm
+        print(f"Extracting {duration}s segment from {start}s, normalizing...")
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(start),
+                "-t",
+                str(duration),
+                "-i",
+                str(raw_file),
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
+                str(dest),
+            ],
+            check=True,
+        )
+
+    print(f"Saved sample to {dest}")
+    return dest
 
 
 def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) -> Path:
