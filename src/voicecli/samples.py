@@ -62,7 +62,6 @@ def get_active_path() -> Path | None:
 def _play_wav(samples, samplerate: int = 44100) -> None:
     """Play a numpy int16 array via paplay."""
     import struct
-    import subprocess
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -156,11 +155,23 @@ def from_url(
 ) -> Path:
     """Download audio from a URL (YouTube etc.) via yt-dlp, extract and normalize a segment."""
     import tempfile
+    from urllib.parse import urlparse
+
+    if start < 0:
+        raise ValueError(f"start must be non-negative, got {start}")
+    if duration <= 0:
+        raise ValueError(f"duration must be positive, got {duration}")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https URLs are supported, got '{parsed.scheme}://'")
 
     _check_tool("yt-dlp")
     _check_tool("ffmpeg")
 
     ensure_dir()
+    # Sanitize name to a bare filename (prevent path traversal)
+    name = Path(name).name
     if not name.endswith(".wav"):
         name = f"{name}.wav"
     dest = SAMPLES_DIR / name
@@ -169,47 +180,57 @@ def from_url(
         raw_audio = Path(tmpdir) / "raw.%(ext)s"
         # Download best audio
         print(f"Downloading audio from {url}...")
-        subprocess.run(
-            [
-                "yt-dlp",
-                "-x",
-                "--audio-format",
-                "wav",
-                "-o",
-                str(raw_audio),
-                url,
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "yt-dlp",
+                    "--no-config",
+                    "-x",
+                    "--audio-format",
+                    "wav",
+                    "-o",
+                    str(raw_audio),
+                    "--",
+                    url,
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"yt-dlp failed (exit {e.returncode}). Check the URL.") from e
 
-        # Find the downloaded file (yt-dlp replaces %(ext)s)
-        downloaded = list(Path(tmpdir).glob("raw.*"))
+        # Find the downloaded .wav file (yt-dlp replaces %(ext)s)
+        downloaded = [p for p in Path(tmpdir).glob("raw.*") if p.suffix == ".wav"]
         if not downloaded:
-            raise RuntimeError("yt-dlp did not produce an output file")
+            raise RuntimeError("yt-dlp did not produce a WAV output file")
         raw_file = downloaded[0]
 
         # Extract segment + normalize to mono 24kHz with loudnorm
         print(f"Extracting {duration}s segment from {start}s, normalizing...")
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(start),
-                "-t",
-                str(duration),
-                "-i",
-                str(raw_file),
-                "-ac",
-                "1",
-                "-ar",
-                "24000",
-                "-af",
-                "loudnorm=I=-16:TP=-1.5:LRA=11",
-                str(dest),
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(start),
+                    "-t",
+                    str(duration),
+                    "-i",
+                    str(raw_file),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "24000",
+                    "-af",
+                    "loudnorm=I=-16:TP=-1.5:LRA=11",
+                    str(dest),
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"ffmpeg failed (exit {e.returncode}). The audio may be corrupted."
+            ) from e
 
     print(f"Saved sample to {dest}")
     return dest

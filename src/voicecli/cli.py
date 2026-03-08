@@ -144,7 +144,7 @@ def samples_from_url(
             wav_name = dest.name
             set_active(wav_name)
             typer.echo(f"Active sample set to: {wav_name}")
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
