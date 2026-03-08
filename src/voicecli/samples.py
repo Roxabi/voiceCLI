@@ -1,6 +1,7 @@
-"""Sample management: list, add, record, use, active, remove."""
+"""Sample management: list, add, record, use, active, remove, from-url."""
 
 import shutil
+import subprocess
 from pathlib import Path
 
 SAMPLES_DIR = Path("TTS/samples")
@@ -61,7 +62,6 @@ def get_active_path() -> Path | None:
 def _play_wav(samples, samplerate: int = 44100) -> None:
     """Play a numpy int16 array via paplay."""
     import struct
-    import subprocess
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -133,6 +133,107 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
     signal = np.clip(signal, -1, 1)
     signal = (signal * 32767).astype(np.int16)
     _play_wav(signal, samplerate)
+
+
+def _check_tool(name: str) -> None:
+    """Raise RuntimeError if an external tool is not installed."""
+    if not shutil.which(name):
+        hints = {
+            "yt-dlp": "Install with: uv tool install yt-dlp",
+            "ffmpeg": "Install with: sudo apt install ffmpeg",
+        }
+        hint = hints.get(name, f"Please install {name}")
+        raise RuntimeError(f"'{name}' not found on PATH. {hint}")
+
+
+def from_url(
+    url: str,
+    name: str,
+    *,
+    start: float = 10.0,
+    duration: float = 30.0,
+) -> Path:
+    """Download audio from a URL (YouTube etc.) via yt-dlp, extract and normalize a segment."""
+    import tempfile
+    from urllib.parse import urlparse
+
+    if start < 0:
+        raise ValueError(f"start must be non-negative, got {start}")
+    if duration <= 0:
+        raise ValueError(f"duration must be positive, got {duration}")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https URLs are supported, got '{parsed.scheme}://'")
+
+    _check_tool("yt-dlp")
+    _check_tool("ffmpeg")
+
+    ensure_dir()
+    # Sanitize name to a bare filename (prevent path traversal)
+    name = Path(name).name
+    if not name.endswith(".wav"):
+        name = f"{name}.wav"
+    dest = SAMPLES_DIR / name
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        raw_audio = Path(tmpdir) / "raw.%(ext)s"
+        # Download best audio
+        print(f"Downloading audio from {url}...")
+        try:
+            subprocess.run(
+                [
+                    "yt-dlp",
+                    "--no-config",
+                    "-x",
+                    "--audio-format",
+                    "wav",
+                    "-o",
+                    str(raw_audio),
+                    "--",
+                    url,
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"yt-dlp failed (exit {e.returncode}). Check the URL.") from e
+
+        # Find the downloaded .wav file (yt-dlp replaces %(ext)s)
+        downloaded = [p for p in Path(tmpdir).glob("raw.*") if p.suffix == ".wav"]
+        if not downloaded:
+            raise RuntimeError("yt-dlp did not produce a WAV output file")
+        raw_file = downloaded[0]
+
+        # Extract segment + normalize to mono 24kHz with loudnorm
+        print(f"Extracting {duration}s segment from {start}s, normalizing...")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(start),
+                    "-t",
+                    str(duration),
+                    "-i",
+                    str(raw_file),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "24000",
+                    "-af",
+                    "loudnorm=I=-16:TP=-1.5:LRA=11",
+                    str(dest),
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"ffmpeg failed (exit {e.returncode}). The audio may be corrupted."
+            ) from e
+
+    print(f"Saved sample to {dest}")
+    return dest
 
 
 def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) -> Path:

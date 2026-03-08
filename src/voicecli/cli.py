@@ -124,6 +124,31 @@ def samples_remove(
         raise typer.Exit(1)
 
 
+@samples_app.command("from-url")
+def samples_from_url(
+    url: Annotated[str, typer.Argument(help="YouTube (or other yt-dlp supported) URL")],
+    name: Annotated[str, typer.Argument(help="Name for the sample (without .wav)")],
+    start: Annotated[
+        float, typer.Option("--start", "-s", help="Start time in seconds (skip intro)")
+    ] = 10.0,
+    duration: Annotated[float, typer.Option("--duration", "-d", help="Duration in seconds")] = 30.0,
+    use: Annotated[bool, typer.Option("--use", help="Set as active sample after download")] = False,
+):
+    """Download audio from a URL, extract and normalize a voice sample."""
+    from voicecli.samples import from_url, set_active
+
+    try:
+        dest = from_url(url, name, start=start, duration=duration)
+        typer.echo(f"Added {dest}")
+        if use:
+            wav_name = dest.name
+            set_active(wav_name)
+            typer.echo(f"Active sample set to: {wav_name}")
+    except (RuntimeError, ValueError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
 # ── CUDA error formatting (moved from engine.py cuda_guard) ──────────────────
 
 
