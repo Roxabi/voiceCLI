@@ -43,10 +43,10 @@ def md_without_voice(tmp_path):
 def _mock_engine():
     """Mock get_engine and daemon to avoid loading real models."""
     engine = MagicMock()
-    engine.generate.return_value = ([], 24000)
+    engine.generate.return_value = Path("/tmp/fake.wav")
     with (
-        patch("voicecli.cli.get_engine", return_value=engine),
-        patch("voicecli.cli._try_daemon", return_value=None),
+        patch("voicecli.engine.get_engine", return_value=engine),
+        patch("voicecli.api._try_daemon", return_value=None),
     ):
         yield engine
 
