@@ -485,3 +485,101 @@ class TestQueueSupport:
 
         monkeypatch.setattr(transcribe_mod, "transcribe", lambda *a, **kw: _MOCK_TRANSCRIPTION)
         send("toggle")  # N4 on the auto-started recording
+
+
+# ---------------------------------------------------------------------------
+# S5 — PaRecord fallback path
+# ---------------------------------------------------------------------------
+
+
+class TestPaRecordFallback:
+    """Tests for the parecord fallback path (_probe_pyaudio returns False).
+
+    Separate from the main tests to avoid doubling run time for tests that
+    don't touch recording (ping, status, etc.).
+    """
+
+    @pytest.fixture()
+    def parecord_send(self, tmp_path):
+        """Daemon fixture with parecord fallback: _probe_pyaudio=False."""
+        sock_path = tmp_path / "stt-test-parecord.sock"
+
+        def mock_record_parecord(stop_event: threading.Event) -> bytes:
+            stop_event.wait()
+            return b"RIFF\x00\x00\x00\x00WAVEfmt "
+
+        mock_chime = MagicMock()
+        mock_write_clipboard = MagicMock()
+        mock_warmup = MagicMock()
+
+        with (
+            patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.stt_daemon._record_parecord", mock_record_parecord),
+            patch("voicecli.stt_daemon._chime", mock_chime),
+            patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
+            patch("voicecli.stt_daemon.warmup", mock_warmup),
+            patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
+        ):
+            from voicecli.stt_daemon import SttDaemon
+
+            daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
+            t = threading.Thread(target=daemon.serve, daemon=True)
+            t.start()
+
+            deadline = time.monotonic() + 3.0
+            while not sock_path.exists():
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"Daemon socket never appeared at {sock_path}")
+                time.sleep(0.02)
+
+            def send(action: str, **kwargs) -> dict:
+                payload = {"action": action, **kwargs}
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(5.0)
+                sock.connect(str(sock_path))
+                try:
+                    sock.sendall((json.dumps(payload) + "\n").encode())
+                    buf = bytearray()
+                    while True:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            break
+                        buf.extend(chunk)
+                        if b"\n" in buf:
+                            break
+                    return json.loads(buf.split(b"\n")[0])
+                finally:
+                    sock.close()
+
+            yield send, mock_chime, mock_write_clipboard
+
+            daemon.stop()
+            t.join(timeout=2.0)
+
+    def test_toggle_starts_recording(self, parecord_send):
+        """Toggle from idle → state=recording (parecord path)."""
+        send, _, _ = parecord_send
+        resp = send("toggle")
+        assert resp["status"] == "ok"
+        assert resp["state"] == "recording"
+
+    def test_toggle_stops_and_transcribes(self, parecord_send):
+        """Toggle stop → state=idle, transcription proceeds via parecord WAV."""
+        send, _, mock_clipboard = parecord_send
+        send("toggle")  # idle → recording
+        resp = send("toggle")  # recording → transcribing → idle
+        assert resp["status"] == "ok"
+        assert resp["state"] == "idle"
+        assert resp["text"] == "hello world"
+        assert resp["language"] == "en"
+        mock_clipboard.assert_called_once_with("hello world")
+
+    def test_no_level_callback_crash(self, parecord_send):
+        """Parecord path has no level callback — full cycle completes without crash."""
+        send, _, _ = parecord_send
+        send("toggle")  # idle → recording
+        resp = send("status")
+        assert resp["state"] == "recording"
+        resp = send("toggle")  # recording → idle
+        assert resp["status"] == "ok"
+        assert resp["state"] == "idle"
