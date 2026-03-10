@@ -55,6 +55,9 @@ override-dependencies = [
 # src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
 
+[project.optional-dependencies]
+hotkey = ["pynput>=1.7"]
+
 [dependency-groups]
 dev = [
     "ruff",

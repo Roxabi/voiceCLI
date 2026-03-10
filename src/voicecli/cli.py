@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -147,6 +148,78 @@ def samples_from_url(
     except (RuntimeError, ValueError) as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
+
+
+# ── Dictate sub-app ───────────────────────────────────────────────────────────
+
+dictate_app = typer.Typer(help="Dictation client for STT daemon")
+app.add_typer(dictate_app, name="dictate", invoke_without_command=True)
+
+
+@dictate_app.callback(invoke_without_command=True)
+def dictate(
+    ctx: typer.Context,
+    listen: Annotated[
+        bool,
+        typer.Option("--listen", help="Start global hotkey listener (blocks until Ctrl+C)"),
+    ] = False,
+    paste: Annotated[
+        bool,
+        typer.Option("--paste", help="Auto-type transcribed text into the focused window"),
+    ] = False,
+) -> None:
+    """Toggle dictation recording or start the hotkey listener."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if listen:
+        from voicecli.config import load_stt_config
+        from voicecli.stt_client import hotkey_loop
+
+        stt_cfg = load_stt_config()
+        hotkey_loop(stt_cfg["hotkey"], paste=paste)
+        return
+
+    from voicecli.stt_client import auto_paste, notify, send_toggle
+
+    resp = send_toggle()
+
+    if resp.get("status") == "error":
+        print(resp.get("message", "unknown error"), file=sys.stderr)
+        notify(resp.get("message", "STT daemon not running"), timeout=3000)
+        raise typer.Exit(code=1)
+
+    state = resp.get("state", "")
+    text = resp.get("text", "")
+    language = resp.get("language") or ""
+
+    if state == "recording":
+        print(state)
+        notify("Recording...", timeout=0)
+    elif state == "idle" and text:
+        print(text)
+        preview = text[:50] + ("..." if len(text) > 50 else "")
+        lang_tag = f"[{language}] " if language else ""
+        notify(f"{lang_tag}{preview}", timeout=3000)
+        if paste:
+            auto_paste(text)
+    elif state == "queued":
+        print(state)
+        notify("Queued...", timeout=3000)
+    else:
+        print(state)
+
+
+@dictate_app.command("status")
+def dictate_status() -> None:
+    """Show current STT daemon state."""
+    from voicecli.stt_client import send_status
+
+    resp = send_status()
+    if resp.get("status") == "error":
+        print(resp.get("message", "unknown error"), file=sys.stderr)
+        raise typer.Exit(code=1)
+    print(resp.get("state", "unknown"))
 
 
 # ── CUDA error formatting (moved from engine.py cuda_guard) ──────────────────
