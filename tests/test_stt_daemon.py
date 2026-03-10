@@ -505,9 +505,10 @@ class TestPaRecordFallback:
         sock_path = tmp_path / "stt-test-parecord.sock"
 
         def mock_record_parecord(stop_event: threading.Event) -> bytes:
-            stop_event.wait()
+            stop_event.wait(timeout=5.0)
             return b"RIFF\x00\x00\x00\x00WAVEfmt "
 
+        mock_recording_thread_cls = MagicMock()
         mock_chime = MagicMock()
         mock_write_clipboard = MagicMock()
         mock_warmup = MagicMock()
@@ -515,6 +516,7 @@ class TestPaRecordFallback:
         with (
             patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
             patch("voicecli.stt_daemon._record_parecord", mock_record_parecord),
+            patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
             patch("voicecli.stt_daemon._chime", mock_chime),
             patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
             patch("voicecli.stt_daemon.warmup", mock_warmup),
@@ -551,21 +553,23 @@ class TestPaRecordFallback:
                 finally:
                     sock.close()
 
-            yield send, mock_chime, mock_write_clipboard
+            mock_warmup.assert_called_once()
+
+            yield send, mock_chime, mock_write_clipboard, mock_recording_thread_cls
 
             daemon.stop()
             t.join(timeout=2.0)
 
     def test_toggle_starts_recording(self, parecord_send):
         """Toggle from idle → state=recording (parecord path)."""
-        send, _, _ = parecord_send
+        send, _, _, _ = parecord_send
         resp = send("toggle")
         assert resp["status"] == "ok"
         assert resp["state"] == "recording"
 
     def test_toggle_stops_and_transcribes(self, parecord_send):
         """Toggle stop → state=idle, transcription proceeds via parecord WAV."""
-        send, _, mock_clipboard = parecord_send
+        send, _, mock_clipboard, _ = parecord_send
         send("toggle")  # idle → recording
         resp = send("toggle")  # recording → transcribing → idle
         assert resp["status"] == "ok"
@@ -576,10 +580,12 @@ class TestPaRecordFallback:
 
     def test_no_level_callback_crash(self, parecord_send):
         """Parecord path has no level callback — full cycle completes without crash."""
-        send, _, _ = parecord_send
+        send, _, _, mock_rt_cls = parecord_send
         send("toggle")  # idle → recording
         resp = send("status")
         assert resp["state"] == "recording"
         resp = send("toggle")  # recording → idle
         assert resp["status"] == "ok"
         assert resp["state"] == "idle"
+        # RecordingThread (which carries level_callback) was never instantiated
+        mock_rt_cls.assert_not_called()
