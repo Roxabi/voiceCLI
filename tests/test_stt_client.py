@@ -141,7 +141,7 @@ class TestSendToggleAndStatus:
         with patch("voicecli.stt_client._send_request", return_value=expected) as mock_req:
             result = send_toggle()
 
-        mock_req.assert_called_once_with("toggle")
+        mock_req.assert_called_once_with("toggle", timeout=60)
         assert result == expected
 
     def test_send_status_calls_send_request_with_status(self):
@@ -371,7 +371,7 @@ class TestHotkeyLoop:
             hotkey_loop(hotkey="ctrl+shift+d")
 
         hotkeys_dict = mock_global_hotkeys_cls.call_args[0][0]
-        assert "<ctrl>+<shift>+<d>" in hotkeys_dict
+        assert "<ctrl>+<shift>+d" in hotkeys_dict
 
     def test_hotkey_loop_callback_triggers_send_toggle(self):
         """The callback registered with GlobalHotKeys calls send_toggle()."""

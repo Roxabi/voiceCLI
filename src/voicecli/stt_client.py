@@ -30,13 +30,14 @@ def _send_request(action: str, timeout: int = _DEFAULT_TIMEOUT) -> dict:
         payload = json.dumps({"action": action}, ensure_ascii=False) + "\n"
         sock.sendall(payload.encode())
         buf = bytearray()
-        while b"\n" not in buf:
+        max_response = 65536
+        while b"\n" not in buf and len(buf) < max_response:
             chunk = sock.recv(4096)
             if not chunk:
                 break
             buf.extend(chunk)
         return json.loads(buf.split(b"\n")[0])
-    except (ConnectionRefusedError, FileNotFoundError, OSError):
+    except (ConnectionRefusedError, FileNotFoundError, OSError, ValueError):
         return {"status": "error", "message": "STT daemon not running"}
     finally:
         sock.close()
@@ -44,7 +45,7 @@ def _send_request(action: str, timeout: int = _DEFAULT_TIMEOUT) -> dict:
 
 def send_toggle() -> dict:
     """Send a toggle action to the STT daemon and return the response dict."""
-    return _send_request("toggle")
+    return _send_request("toggle", timeout=60)
 
 
 def send_status() -> dict:
@@ -132,14 +133,63 @@ def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
     import time
 
     last_trigger = 0.0
-    DEBOUNCE = 0.3
+    debounce_s = 0.3
 
-    # Convert "alt+space" → "<alt>+<space>" (pynput GlobalHotKeys format).
-    # Single-char keys like "space" stay as-is inside angle brackets;
-    # modifier shorthands like "alt" map to "<alt>".
+    # Convert "alt+space" → "<alt>+<space>", "ctrl+shift+d" → "<ctrl>+<shift>+d".
+    # Named keys (modifiers + special) get <...>; single printable chars stay bare.
+    _NAMED_KEYS = frozenset(
+        {
+            "alt",
+            "alt_l",
+            "alt_r",
+            "ctrl",
+            "ctrl_l",
+            "ctrl_r",
+            "shift",
+            "shift_l",
+            "shift_r",
+            "cmd",
+            "cmd_l",
+            "cmd_r",
+            "space",
+            "enter",
+            "return",
+            "tab",
+            "esc",
+            "escape",
+            "backspace",
+            "delete",
+            "insert",
+            "home",
+            "end",
+            "page_up",
+            "page_down",
+            "up",
+            "down",
+            "left",
+            "right",
+            "caps_lock",
+            "num_lock",
+            "scroll_lock",
+            "print_screen",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7",
+            "f8",
+            "f9",
+            "f10",
+            "f11",
+            "f12",
+        }
+    )
+
     def _to_pynput(combo: str) -> str:
         parts = combo.lower().split("+")
-        wrapped = [f"<{p}>" for p in parts]
+        wrapped = [f"<{p}>" if p in _NAMED_KEYS else p for p in parts]
         return "+".join(wrapped)
 
     hotkey_pynput = _to_pynput(hotkey)
@@ -147,7 +197,7 @@ def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
     def on_hotkey() -> None:
         nonlocal last_trigger
         now = time.monotonic()
-        if now - last_trigger < DEBOUNCE:
+        if now - last_trigger < debounce_s:
             return
         last_trigger = now
 
@@ -169,8 +219,12 @@ def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
             notify(f"{lang_tag}{preview}", timeout=3000)
             if paste:
                 auto_paste(text)
+        elif state == "idle":
+            notify("No speech detected", timeout=2000)
         elif state == "queued":
             notify("Queued...", timeout=3000)
+        else:
+            notify(state, timeout=2000)
 
     with keyboard.GlobalHotKeys({hotkey_pynput: on_hotkey}) as listener:
         print(f"Listening for {hotkey}... (Ctrl+C to stop)", flush=True)
