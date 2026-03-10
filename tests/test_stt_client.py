@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from typer.testing import CliRunner
 
 
 # ---------------------------------------------------------------------------
@@ -506,3 +508,511 @@ class TestLoadSttConfig:
 
         assert result["hotkey"] == "alt+space"
         assert result["model"] == "large-v3-turbo"
+
+
+# ---------------------------------------------------------------------------
+# T11 — dictate CLI command
+# ---------------------------------------------------------------------------
+
+
+class TestDictateCLI:
+    """Integration tests for the 'dictate' CLI command using CliRunner."""
+
+    @pytest.fixture(autouse=True)
+    def runner(self):
+        self._runner = CliRunner()
+
+    def _invoke(self, args=None):
+        from voicecli.cli import app
+
+        return self._runner.invoke(app, ["dictate"] + (args or []))
+
+    # -- toggle branch tests --------------------------------------------------
+
+    def test_error_response_exits_1_with_stderr_message(self):
+        """Error response from daemon → exit code 1, message printed to stderr."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "error", "message": "STT daemon not running"},
+            ),
+            patch("voicecli.stt_client.notify"),
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 1
+        assert "STT daemon not running" in result.output
+
+    def test_recording_state_exits_0_prints_recording_notifies(self):
+        """Recording state → exit code 0, 'recording' on stdout, notify called."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "recording"},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 0
+        assert "recording" in result.output
+        mock_notify.assert_called_once_with("Recording...", timeout=0)
+
+    def test_idle_with_text_exits_0_prints_text_notifies_preview(self):
+        """Idle + text → exit 0, text printed, notify called with preview."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": "Hello world"},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+            patch("voicecli.stt_client.auto_paste"),
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 0
+        assert "Hello world" in result.output
+        mock_notify.assert_called_once_with("Hello world", timeout=3000)
+
+    def test_idle_with_empty_text_exits_0_prints_idle(self):
+        """Idle + empty text → exit 0, 'idle' printed, no notify call."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": ""},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 0
+        assert "idle" in result.output
+        mock_notify.assert_not_called()
+
+    def test_queued_state_exits_0_prints_queued_notifies(self):
+        """Queued state → exit 0, 'queued' on stdout, notify called with 'Queued...'."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "queued"},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 0
+        assert "queued" in result.output
+        mock_notify.assert_called_once_with("Queued...", timeout=3000)
+
+    def test_idle_with_text_includes_language_tag_in_notify(self):
+        """Idle + text + language → notify preview includes '[fr] ' language tag."""
+        with (
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={
+                    "status": "ok",
+                    "state": "idle",
+                    "text": "Bonjour",
+                    "language": "fr",
+                },
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+            patch("voicecli.stt_client.auto_paste"),
+        ):
+            # Act
+            result = self._invoke()
+
+        # Assert
+        assert result.exit_code == 0
+        notify_body = mock_notify.call_args[0][0]
+        assert "[fr]" in notify_body
+        assert "Bonjour" in notify_body
+
+    # -- dictate status subcommand ------------------------------------------
+
+    def test_status_success_prints_state_exits_0(self):
+        """dictate status success → state printed, exit 0."""
+        with patch(
+            "voicecli.stt_client.send_status",
+            return_value={"status": "ok", "state": "idle"},
+        ):
+            # Act
+            result = self._invoke(["status"])
+
+        # Assert
+        assert result.exit_code == 0
+        assert "idle" in result.output
+
+    def test_status_error_exits_1(self):
+        """dictate status error → exit 1."""
+        with patch(
+            "voicecli.stt_client.send_status",
+            return_value={"status": "error", "message": "STT daemon not running"},
+        ):
+            # Act
+            result = self._invoke(["status"])
+
+        # Assert
+        assert result.exit_code == 1
+
+    # -- dictate --listen ----------------------------------------------------
+
+    def test_listen_calls_hotkey_loop_with_config_hotkey(self):
+        """dictate --listen → hotkey_loop called with hotkey from config and paste=False."""
+        with (
+            patch(
+                "voicecli.config.load_stt_config",
+                return_value={"hotkey": "alt+space"},
+            ),
+            patch("voicecli.stt_client.hotkey_loop") as mock_loop,
+        ):
+            # Act
+            result = self._invoke(["--listen"])
+
+        # Assert
+        assert result.exit_code == 0
+        mock_loop.assert_called_once_with("alt+space", paste=False)
+
+    def test_listen_paste_forwards_paste_true(self):
+        """dictate --listen --paste → hotkey_loop called with paste=True."""
+        with (
+            patch(
+                "voicecli.config.load_stt_config",
+                return_value={"hotkey": "ctrl+shift+d"},
+            ),
+            patch("voicecli.stt_client.hotkey_loop") as mock_loop,
+        ):
+            # Act
+            result = self._invoke(["--listen", "--paste"])
+
+        # Assert
+        assert result.exit_code == 0
+        mock_loop.assert_called_once_with("ctrl+shift+d", paste=True)
+
+
+# ---------------------------------------------------------------------------
+# T11 — hotkey_loop behavioral tests (added to TestHotkeyLoop)
+# ---------------------------------------------------------------------------
+
+
+def _fire_hotkey_once(mock_global_hotkeys_cls, on_hotkey_fn):
+    """Build a GlobalHotKeys mock that fires the callback once then exits via KeyboardInterrupt."""
+
+    def fake_ctor(hotkeys_dict):
+        cb = list(hotkeys_dict.values())[0]
+
+        def join_side():
+            on_hotkey_fn(cb)
+            raise KeyboardInterrupt
+
+        inst = MagicMock()
+        inst.__enter__ = MagicMock(return_value=inst)
+        inst.__exit__ = MagicMock(return_value=False)
+        inst.join.side_effect = join_side
+        return inst
+
+    return fake_ctor
+
+
+class TestHotkeyLoopBehavioral:
+    """Behavioral tests for hotkey_loop — debounce, notification branches, paste, truncation."""
+
+    def _build_pynput_env(self, fake_ctor):
+        """Return (pynput_mock, keyboard_mock) with GlobalHotKeys wired."""
+        mock_keyboard = MagicMock()
+        mock_keyboard.GlobalHotKeys = fake_ctor
+        pynput_mock = MagicMock()
+        pynput_mock.keyboard = mock_keyboard
+        return pynput_mock, mock_keyboard
+
+    def _evict_pynput(self):
+        for key in list(sys.modules):
+            if key == "pynput" or key.startswith("pynput."):
+                del sys.modules[key]
+
+    # -- debounce -----------------------------------------------------------
+
+    def test_debounce_rapid_fires_calls_send_toggle_once(self):
+        """Two rapid hotkey fires within debounce window → send_toggle called once.
+
+        hotkey_loop uses 'import time' locally and calls time.monotonic().
+        We patch time.monotonic at the stdlib level so the locally-imported
+        time module sees the controlled values.
+
+        Sequence of monotonic() return values:
+          call 1: 0.5 → first press, now=0.5, 0.5-0.0=0.5 >= 0.3 → fires, last_trigger=0.5
+          call 2: 0.6 → second press, now=0.6, 0.6-0.5=0.1 < 0.3 → debounced
+        """
+        from voicecli.stt_client import hotkey_loop
+
+        # Arrange
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()  # first press: fires
+                cb()  # second press: debounced (0.1s later)
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        monotonic_values = iter([0.5, 0.6])
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "recording"},
+            ) as mock_toggle,
+            patch("voicecli.stt_client.notify"),
+            patch("time.monotonic", side_effect=monotonic_values),
+        ):
+            # Act
+            hotkey_loop(hotkey="alt+space")
+
+        # Assert: only one call made it past the debounce
+        assert mock_toggle.call_count == 1
+
+    # -- notification branches ----------------------------------------------
+
+    @pytest.mark.parametrize(
+        "resp, expected_notify_body, expected_timeout",
+        [
+            (
+                {"status": "ok", "state": "recording"},
+                "Recording...",
+                0,
+            ),
+            (
+                {"status": "ok", "state": "idle", "text": "Hello world", "language": ""},
+                "Hello world",
+                3000,
+            ),
+            (
+                {"status": "ok", "state": "idle", "text": "", "language": ""},
+                "No speech detected",
+                2000,
+            ),
+            (
+                {"status": "ok", "state": "queued"},
+                "Queued...",
+                3000,
+            ),
+        ],
+        ids=["recording", "idle-with-text", "idle-no-text", "queued"],
+    )
+    def test_notification_branch(self, resp, expected_notify_body, expected_timeout):
+        """Each daemon state triggers the correct notify() call."""
+        from voicecli.stt_client import hotkey_loop
+
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch("voicecli.stt_client.send_toggle", return_value=resp),
+            patch("voicecli.stt_client.notify") as mock_notify,
+            patch("voicecli.stt_client.auto_paste"),
+        ):
+            hotkey_loop(hotkey="alt+space", paste=False)
+
+        mock_notify.assert_called_once_with(expected_notify_body, timeout=expected_timeout)
+
+    # -- paste conditional --------------------------------------------------
+
+    def test_paste_true_calls_auto_paste_on_idle_with_text(self):
+        """paste=True + idle + text → auto_paste called with full text."""
+        from voicecli.stt_client import hotkey_loop
+
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": "typed text"},
+            ),
+            patch("voicecli.stt_client.notify"),
+            patch("voicecli.stt_client.auto_paste") as mock_paste,
+        ):
+            # Act
+            hotkey_loop(hotkey="alt+space", paste=True)
+
+        # Assert
+        mock_paste.assert_called_once_with("typed text")
+
+    def test_paste_false_does_not_call_auto_paste(self):
+        """paste=False + idle + text → auto_paste NOT called."""
+        from voicecli.stt_client import hotkey_loop
+
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": "typed text"},
+            ),
+            patch("voicecli.stt_client.notify"),
+            patch("voicecli.stt_client.auto_paste") as mock_paste,
+        ):
+            # Act
+            hotkey_loop(hotkey="alt+space", paste=False)
+
+        # Assert
+        mock_paste.assert_not_called()
+
+    # -- text truncation ----------------------------------------------------
+
+    def test_text_truncation_51_chars_ends_with_ellipsis(self):
+        """Text of 51 chars → notify preview is first 50 chars + '...'."""
+        from voicecli.stt_client import hotkey_loop
+
+        long_text = "A" * 51  # 51 characters
+
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": long_text},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+            patch("voicecli.stt_client.auto_paste"),
+        ):
+            # Act
+            hotkey_loop(hotkey="alt+space", paste=False)
+
+        # Assert
+        notify_body = mock_notify.call_args[0][0]
+        assert notify_body.endswith("...")
+        assert len(notify_body) == 53  # 50 chars + "..."
+
+    def test_text_exactly_50_chars_no_ellipsis(self):
+        """Text of exactly 50 chars → notify preview has no trailing '...'."""
+        from voicecli.stt_client import hotkey_loop
+
+        text_50 = "B" * 50
+
+        def fake_ctor(hotkeys_dict):
+            cb = list(hotkeys_dict.values())[0]
+
+            def join_side():
+                cb()
+                raise KeyboardInterrupt
+
+            inst = MagicMock()
+            inst.__enter__ = MagicMock(return_value=inst)
+            inst.__exit__ = MagicMock(return_value=False)
+            inst.join.side_effect = join_side
+            return inst
+
+        pynput_mock, mock_keyboard = self._build_pynput_env(fake_ctor)
+        self._evict_pynput()
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
+            ),
+            patch(
+                "voicecli.stt_client.send_toggle",
+                return_value={"status": "ok", "state": "idle", "text": text_50},
+            ),
+            patch("voicecli.stt_client.notify") as mock_notify,
+            patch("voicecli.stt_client.auto_paste"),
+        ):
+            # Act
+            hotkey_loop(hotkey="alt+space", paste=False)
+
+        # Assert
+        notify_body = mock_notify.call_args[0][0]
+        assert not notify_body.endswith("...")

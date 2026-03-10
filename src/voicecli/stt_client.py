@@ -66,6 +66,7 @@ def notify(body: str, timeout: int = 3000) -> None:
     Silently skips if notify-send is not installed or any error occurs.
     Uses a fixed replace-ID so each call replaces the previous notification.
     """
+    import html
     import shutil
     import subprocess
 
@@ -78,7 +79,7 @@ def notify(body: str, timeout: int = 3000) -> None:
                 "-r",
                 _NOTIFY_REPLACE_ID,
                 "VoiceCLI",
-                body,
+                html.escape(body),
                 "-t",
                 str(timeout),
             ],
@@ -129,6 +130,13 @@ def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
                 (e.g. ``"alt+space"``, ``"ctrl+shift+d"``).
         paste:  If True, type transcribed text into the focused window.
     """
+    import re
+    import sys
+
+    if not re.fullmatch(r"[a-z0-9_]+(\+[a-z0-9_]+)*", hotkey.lower()):
+        print(f"Invalid hotkey format: {hotkey!r}", file=sys.stderr)
+        return
+
     from pynput import keyboard
     import time
 
