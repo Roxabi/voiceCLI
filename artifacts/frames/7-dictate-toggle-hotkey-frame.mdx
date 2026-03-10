@@ -1,0 +1,55 @@
+---
+title: "feat: dictate toggle command + global hotkey listener"
+issue: 7
+status: approved
+tier: F-lite
+date: 2026-03-10
+---
+
+## Problem
+
+Users need a way to trigger STT recording from anywhere on the desktop — not just from the terminal where the daemon runs. Currently, once `voicecli stt-serve` is running (issue #6), there is no client command to toggle recording on/off or check status.
+
+The dictate command bridges this gap: a thin socket client that can be triggered from anywhere — including native Windows apps via a Windows keyboard shortcut running `wsl voicecli dictate`. Visual feedback (notify-send) and clipboard sharing complete the hands-free dictation workflow.
+
+## WSL / Windows Interaction Model
+
+Everything runs inside WSL2. The interaction with the Windows host works through three layers:
+
+1. **Trigger:** A Windows keyboard shortcut (Settings > Keyboard, or AutoHotkey) runs `wsl voicecli dictate` — this works from any focused Windows app. Alternatively, `voicecli dictate --listen` (pynput) provides a built-in hotkey listener, but only captures keys when an X11/WSLg window has focus.
+2. **Clipboard:** WSL2 shares clipboard with Windows — transcribed text copied via `xclip`/`wl-copy` is instantly available for Ctrl+V in any Windows app. This is the default and most reliable path.
+3. **Notifications:** `notify-send` shows in the WSLg notification area, which appears in the Windows system tray.
+4. **Auto-paste (`xdotool type`):** Only works in X11/WSLg windows. For Windows apps, falls back to clipboard silently. This is why clipboard-only is the default.
+
+## Who
+
+- **Primary:** The developer/user who wants push-to-talk dictation from any app on the desktop (WSL2 via WSLg).
+- **Secondary:** Anyone scripting VoiceCLI into automation pipelines who needs programmatic toggle/status access.
+
+## Constraints
+
+- Blocked by #6 — STT daemon must exist and expose the Unix socket protocol first.
+- Primary trigger path: Windows keyboard shortcut → `wsl voicecli dictate` (works from any app).
+- Fallback trigger: `--listen` (pynput) requires X11/XWayland — only captures keys when WSLg window focused.
+- 300ms debounce on hotkey to prevent double-trigger.
+- Auto-paste (`xdotool type`) is opt-in (`--paste` flag), clipboard-only by default.
+- Hotkey configurable via `voicecli.toml` `[stt] hotkey` (default: `alt+space`).
+
+## Out of Scope
+
+- The STT daemon itself (that's #6).
+- Wayland-native hotkey listener (pynput + XWayland is sufficient for now).
+- GUI or tray icon — notifications via `notify-send` only.
+- Native Windows app for hotkey capture (Windows shortcut → `wsl` is sufficient).
+- macOS support.
+
+## Complexity
+
+**Tier: F-lite** — Clear scope, single domain (STT client), 3 files touched, well-defined protocol.
+
+Signals:
+- 3 files: `cli.py` (add command group), `stt_client.py` (new, thin socket client), `docs/dictation-setup.md` (new)
+- Single domain: STT client / hotkey input
+- No new architecture — follows existing socket pattern from daemon
+- One dependency (#6) but no unknowns
+- Complexity score: 5 (from issue)
