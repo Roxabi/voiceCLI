@@ -4,6 +4,25 @@
 
 Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual and Chatterbox Turbo backends.
 
+## TL;DR
+
+- **Project:** VoiceCLI
+- **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
+- **Always** `AskUserQuestion` for choices — never plain-text questions
+- **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
+- **Always** use appropriate skill even without slash command
+
+### AskUserQuestion
+
+Always `AskUserQuestion` for: decisions, choices (≥2 options), approach proposals.
+**Never** plain-text "Do you want..." / "Should I..." → use the tool.
+
+### Git
+
+Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
+Types: feat|fix|refactor|docs|style|test|chore|ci|perf
+Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
+
 ## Global Workflow — What Handles What
 
 ### Code pipeline (deterministic, at runtime)
@@ -312,3 +331,7 @@ Given the universal script above, the translator produces:
 - Scripts authored in `TTS/texts_in/`
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
+
+## Gotchas
+
+<!-- Add project-specific gotchas here -->
