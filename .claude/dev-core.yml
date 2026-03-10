@@ -1,0 +1,10 @@
+# dev-core plugin configuration
+# 3-tier fallback: this file → process.env → gh CLI (github_repo only)
+github_repo: Roxabi/voiceCLI
+gh_project_id: PVT_kwDOB8J6DM4BQrEv
+status_field_id: PVTSSF_lADOB8J6DM4BQrEvzg-uZCk
+size_field_id: PVTSSF_lADOB8J6DM4BQrEvzg-uZD0
+priority_field_id: PVTSSF_lADOB8J6DM4BQrEvzg-uZEg
+status_options_json: '{"Backlog":"37e1d30d","Analysis":"6de391dc","Specs":"bbbc3100","In Progress":"efbb70aa","Review":"bf874e46","Done":"5934ccf7"}'
+size_options_json: '{"XS":"5e51a1d8","S":"2ec2a4f6","M":"c5b33e12","L":"336e810f","XL":"b171ff89"}'
+priority_options_json: '{"P0 - Urgent":"a645bd98","P1 - High":"6fc25faa","P2 - Medium":"2d0afd2c","P3 - Low":"4709509e"}'
