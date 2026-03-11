@@ -753,6 +753,20 @@ class SttDaemon:
             except Exception as e:
                 print(f"[stt] mode resolve error: {e}", file=sys.stderr)
 
+        # Prepend personal vocab to the mode prompt (loaded fresh — no restart needed)
+        try:
+            from voicecli.config import load_vocab, vocab_to_prompt
+
+            vocab_fragment = vocab_to_prompt(load_vocab())
+            if vocab_fragment:
+                transcribe_prompt = (
+                    vocab_fragment + " " + transcribe_prompt
+                    if transcribe_prompt
+                    else vocab_fragment
+                )
+        except Exception as e:
+            print(f"[stt] vocab load error: {e}", file=sys.stderr)
+
         tmp_path = _write_tempfile(wav_bytes)
         text: str = ""
         language: str | None = None

@@ -1,0 +1,23 @@
+# voicecli.vocab — personal vocabulary for speech recognition
+# Copy this file to voicecli.vocab (gitignored) and add your own words.
+#
+# One word or phrase per line. Lines starting with # are comments.
+# These are injected into Whisper's initial_prompt to bias spelling.
+# Works in French and English — just list the words as you want them spelled.
+#
+# Discovery: voicecli searches for voicecli.vocab by walking up from CWD to $HOME,
+# same as voicecli.toml. A file at ~/projects/voicecli.vocab applies to all projects.
+
+# ── People & products ──────────────────────────────────────────────────────────
+# Claude
+# Lyra
+# VoiceCLI
+# Roxabi
+
+# ── Technical terms ────────────────────────────────────────────────────────────
+# PyTorch
+# Whisper
+# Chatterbox
+
+# ── French proper nouns ────────────────────────────────────────────────────────
+# (same list works for both languages — Whisper picks up spelling regardless)

@@ -689,7 +689,10 @@ def transcribe(
         typer.echo(f"Error: file not found: {audio}", err=True)
         raise typer.Exit(1)
 
-    result = do_transcribe(audio, model=model, language=language)
+    from voicecli.config import load_vocab, vocab_to_prompt
+
+    initial_prompt = vocab_to_prompt(load_vocab())
+    result = do_transcribe(audio, model=model, language=language, initial_prompt=initial_prompt)
 
     if json_output:
         import json

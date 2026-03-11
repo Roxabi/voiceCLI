@@ -100,6 +100,47 @@ _KNOWN_STT: dict[str, type] = {
 }
 
 
+def load_vocab(vocab: Path | None = None) -> list[str]:
+    """Load personal vocabulary from voicecli.vocab, walking up from CWD to $HOME.
+
+    Returns a list of words/phrases (comments and blank lines stripped).
+    Returns an empty list if no file is found.
+
+    Args:
+        vocab: Explicit path to a vocab file. If provided, skips the walk-up search.
+    """
+    if vocab is not None:
+        path: Path | None = vocab
+    else:
+        home = Path.home().resolve()
+        current = Path.cwd().resolve()
+        path = None
+        while True:
+            candidate = current / "voicecli.vocab"
+            if candidate.is_file():
+                path = candidate
+                break
+            if current == home or current.parent == current:
+                break
+            current = current.parent
+
+    if path is None:
+        return []
+    words = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            words.append(line)
+    return words
+
+
+def vocab_to_prompt(words: list[str]) -> str | None:
+    """Format a vocab list as an initial_prompt fragment, or None if empty."""
+    if not words:
+        return None
+    return ", ".join(words) + "."
+
+
 def load_stt_config(config: Path | None = None) -> dict:
     """Load the ``[stt]`` table from voicecli.toml.
 
