@@ -430,13 +430,17 @@ class TestLoadSttConfig:
     """Tests for config.load_stt_config."""
 
     def test_returns_default_hotkey_when_no_config_file(self):
-        """Returns {'hotkey': 'alt+space'} when no voicecli.toml is found."""
+        """Returns default hotkey dict when no voicecli.toml is found."""
         from voicecli.config import load_stt_config
 
         with patch("voicecli.config._find_config", return_value=None):
             result = load_stt_config()
 
-        assert result == {"hotkey": "alt+space"}
+        assert result == {
+            "hotkey": "ctrl+space",
+            "hotkey_cancel": "alt+shift+esc",
+            "hotkey_mode": "alt+shift+tab",
+        }
 
     def test_reads_stt_table_from_toml(self, tmp_path):
         """Reads [stt] table values from a real toml file via tmp_path."""
@@ -461,7 +465,7 @@ class TestLoadSttConfig:
         assert result["hotkey"] == "alt+h"
 
     def test_missing_stt_table_falls_back_to_defaults(self, tmp_path):
-        """When [stt] table is absent, returns default {'hotkey': 'alt+space'}."""
+        """When [stt] table is absent, returns default hotkey dict."""
         from voicecli.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
@@ -469,7 +473,11 @@ class TestLoadSttConfig:
 
         result = load_stt_config(config=toml_file)
 
-        assert result == {"hotkey": "alt+space"}
+        assert result == {
+            "hotkey": "ctrl+space",
+            "hotkey_cancel": "alt+shift+esc",
+            "hotkey_mode": "alt+shift+tab",
+        }
 
     def test_model_key_in_stt_table_is_parsed(self, tmp_path):
         """The 'model' key from [stt] is also parsed if present."""
@@ -506,7 +514,7 @@ class TestLoadSttConfig:
 
         result = load_stt_config(config=toml_file)
 
-        assert result["hotkey"] == "alt+space"
+        assert result["hotkey"] == "ctrl+space"
         assert result["model"] == "large-v3-turbo"
 
 

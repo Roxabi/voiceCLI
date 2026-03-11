@@ -89,6 +89,8 @@ def load_config(config: Path | None = None) -> dict:
 
 _KNOWN_STT: dict[str, type] = {
     "hotkey": str,
+    "hotkey_cancel": str,
+    "hotkey_mode": str,
     "model": str,
     "language": str,
     "language_detection_threshold": float,
@@ -108,7 +110,11 @@ def load_stt_config(config: Path | None = None) -> dict:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
     """
     path = config if config is not None else _find_config()
-    result: dict[str, object] = {"hotkey": "ctrl+space"}
+    result: dict[str, object] = {
+        "hotkey": "ctrl+space",
+        "hotkey_cancel": "alt+shift+esc",
+        "hotkey_mode": "alt+shift+tab",
+    }
     if path is None:
         return result
     with open(path, "rb") as f:

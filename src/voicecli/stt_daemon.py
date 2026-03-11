@@ -20,6 +20,8 @@ import threading
 from enum import Enum
 from pathlib import Path
 
+from voicecli.config import load_stt_config
+
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-daemon.sock"
 HISTORY_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-history.jsonl"
 HISTORY_MAX = 100
@@ -291,7 +293,12 @@ def _append_history(
 # ── Overlay launcher ──────────────────────────────────────────────────────────
 
 
-def _spawn_overlay(mode: str | None = None) -> None:
+def _spawn_overlay(
+    mode: str | None = None,
+    hotkey: str = "ctrl+space",
+    hotkey_cancel: str = "alt+shift+esc",
+    hotkey_mode: str = "alt+shift+tab",
+) -> None:
     """Launch the waveform overlay from the daemon process (survives WSL session exit)."""
     import subprocess
     import sys
@@ -300,6 +307,9 @@ def _spawn_overlay(mode: str | None = None) -> None:
     env.setdefault("DISPLAY", ":0")
     if mode:
         env["VOICECLI_OVERLAY_MODE"] = mode
+    env["VOICECLI_OVERLAY_HOTKEY_TOGGLE"] = hotkey
+    env["VOICECLI_OVERLAY_HOTKEY_CANCEL"] = hotkey_cancel
+    env["VOICECLI_OVERLAY_HOTKEY_MODE"] = hotkey_mode
     log = Path(os.environ.get("TMPDIR", "/tmp")) / "voicecli_overlay.log"
     try:
         subprocess.Popen(
@@ -689,7 +699,12 @@ class SttDaemon:
         if self._recording_thread:
             self._recording_thread.start()
         threading.Thread(target=_play_ui_sound, args=("start.wav",), daemon=True).start()
-        threading.Thread(target=_spawn_overlay, args=(effective_mode,), daemon=True).start()
+        _cfg = load_stt_config()
+        threading.Thread(
+            target=_spawn_overlay,
+            args=(effective_mode, _cfg["hotkey"], _cfg["hotkey_cancel"], _cfg["hotkey_mode"]),
+            daemon=True,
+        ).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
 
     def _stop_and_transcribe(self, conn: socket.socket) -> None:
