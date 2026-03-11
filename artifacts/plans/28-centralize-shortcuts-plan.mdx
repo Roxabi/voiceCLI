@@ -1,0 +1,302 @@
+---
+title: "Plan: refactor(overlay): centralize shortcuts"
+issue: 28
+spec: artifacts/specs/28-centralize-shortcuts-spec.mdx
+complexity: 4/10
+tier: F-lite
+generated: 2026-03-11
+---
+
+## Summary
+
+Extend `config.py` with two new hotkey defaults, thread them through `_spawn_overlay()` as env vars, and replace the hardcoded badge list in `overlay.py` with a pure `_hotkey_badge()` formatter that reads those env vars. Update `voicecli.example.toml` to document the new keys. Add unit tests for `_hotkey_badge()`.
+
+## Architecture
+
+```flowchart TD
+  subgraph config.py
+    KS["_KNOWN_STT\n+ hotkey_cancel: str\n+ hotkey_mode: str"]
+    RS["result seed dict\n+ hotkey_cancel default\n+ hotkey_mode default"]
+    LSC["load_stt_config() → dict"]
+    KS --> LSC
+    RS --> LSC
+  end
+
+  subgraph stt_daemon.py
+    SO["_spawn_overlay(\n  mode, hotkey,\n  hotkey_cancel, hotkey_mode\n)"]
+    CS690["call site line 690\nload_stt_config() → cfg\n_spawn_overlay(effective_mode, **hotkeys)"]
+    CS690 --> SO
+  end
+
+  subgraph overlay.py
+    HB["_hotkey_badge(s: str) → str\npure formatter"]
+    WO["WaveformOverlay.__init__()\nreads VOICECLI_OVERLAY_HOTKEY_*\ncalls _hotkey_badge()"]
+    BD["badge labels\nStop / Cancel / Mode"]
+    HB --> WO
+    WO --> BD
+  end
+
+  subgraph voicecli.example.toml
+    ET["# hotkey_cancel = ...\n# hotkey_mode = ..."]
+  end
+
+  LSC -->|hotkey, hotkey_cancel, hotkey_mode| CS690
+  SO -->|env vars VOICECLI_OVERLAY_HOTKEY_*| WO
+  LSC -.->|documents defaults| ET
+```
+
+```flowchart LR
+  subgraph config.py
+    LSC2["load_stt_config()"]
+  end
+  subgraph stt_daemon.py
+    SO2["_spawn_overlay()"]
+    CS2["line 690 call site"]
+    CS2 --> SO2
+  end
+  subgraph overlay.py
+    HB2["_hotkey_badge()"]
+    WO2["WaveformOverlay.__init__()"]
+    WO2 --> HB2
+  end
+  subgraph tests/
+    TC["test_stt_client.py\n_hotkey_badge tests"]
+    TC --> HB2
+    TD["test_stt_daemon.py\nexisting mocks unchanged"]
+    TD -.-> SO2
+  end
+
+  LSC2 --> CS2
+```
+
+## Agents
+
+| Agent | Tasks | Files |
+|-------|-------|-------|
+| backend-dev | T1–T8 | `config.py`, `stt_daemon.py`, `overlay.py`, `voicecli.example.toml` |
+| tester | T9–T10 | `tests/test_stt_client.py` (or new `test_overlay.py`) |
+
+## Consistency Report
+
+| Metric | Count |
+|--------|-------|
+| Success criteria covered | 9/9 |
+| Slices covered | 4/4 |
+| Uncovered criteria | 0 |
+| Untraced tasks | 0 |
+
+## Micro-Tasks
+
+### V1 — Extend config [backend-dev]
+
+---
+
+**T1** — Add `hotkey_cancel` and `hotkey_mode` to `_KNOWN_STT`
+- **File:** `src/voicecli/config.py`
+- **Snippet:**
+  ```python
+  _KNOWN_STT: dict[str, type] = {
+      "hotkey": str,
+      "hotkey_cancel": str,   # ← add
+      "hotkey_mode": str,     # ← add
+      "model": str,
+      ...
+  }
+  ```
+- **Verify:** `grep -n "hotkey_cancel\|hotkey_mode" src/voicecli/config.py`
+- **Expected:** both keys present in `_KNOWN_STT`
+- **Time:** 2 min | **Phase:** GREEN | **Parallel-safe:** N | **Spec trace:** SC-1, U1 | **Difficulty:** 1
+
+---
+
+**T2** — Seed `hotkey_cancel` and `hotkey_mode` defaults in `result`
+- **File:** `src/voicecli/config.py`
+- **Snippet:**
+  ```python
+  result: dict[str, object] = {
+      "hotkey": "ctrl+space",
+      "hotkey_cancel": "alt+shift+esc",   # ← add
+      "hotkey_mode": "alt+shift+tab",     # ← add
+  }
+  ```
+- **Verify:** `python -c "from voicecli.config import load_stt_config; c=load_stt_config(); assert c['hotkey_cancel']=='alt+shift+esc'; assert c['hotkey_mode']=='alt+shift+tab'; print('ok')"`
+- **Expected:** `ok`
+- **Time:** 2 min | **Phase:** GREEN | **Parallel-safe:** N (depends T1) | **Spec trace:** SC-1, S1 | **Difficulty:** 1
+
+**RED-GATE V1:** `uv run pytest tests/test_stt_client.py -x -q` — must pass before V2.
+
+---
+
+### V2 — Pass hotkeys to overlay [backend-dev]
+
+---
+
+**T3** — Extend `_spawn_overlay()` signature to accept hotkey strings
+- **File:** `src/voicecli/stt_daemon.py`
+- **Snippet:**
+  ```python
+  def _spawn_overlay(
+      mode: str | None = None,
+      hotkey: str = "ctrl+space",
+      hotkey_cancel: str = "alt+shift+esc",
+      hotkey_mode: str = "alt+shift+tab",
+  ) -> None:
+  ```
+- **Verify:** `grep -n "def _spawn_overlay" src/voicecli/stt_daemon.py`
+- **Expected:** signature shows 4 parameters
+- **Time:** 3 min | **Phase:** GREEN | **Parallel-safe:** N | **Spec trace:** N1 | **Difficulty:** 2
+
+---
+
+**T4** — Set `VOICECLI_OVERLAY_HOTKEY_*` env vars inside `_spawn_overlay()`
+- **File:** `src/voicecli/stt_daemon.py`
+- **Snippet:**
+  ```python
+  env = os.environ.copy()
+  env.setdefault("DISPLAY", ":0")
+  if mode:
+      env["VOICECLI_OVERLAY_MODE"] = mode
+  env["VOICECLI_OVERLAY_HOTKEY_TOGGLE"] = hotkey
+  env["VOICECLI_OVERLAY_HOTKEY_CANCEL"] = hotkey_cancel
+  env["VOICECLI_OVERLAY_HOTKEY_MODE"] = hotkey_mode
+  ```
+- **Verify:** `grep -n "VOICECLI_OVERLAY_HOTKEY" src/voicecli/stt_daemon.py`
+- **Expected:** 3 env var assignments
+- **Time:** 2 min | **Phase:** GREEN | **Parallel-safe:** N (depends T3) | **Spec trace:** N1 | **Difficulty:** 1
+
+---
+
+**T5** — Update call site (line 690) to pass hotkeys from config
+- **File:** `src/voicecli/stt_daemon.py`
+- **Snippet:**
+  ```python
+  cfg = load_stt_config()
+  threading.Thread(
+      target=_spawn_overlay,
+      args=(effective_mode, cfg["hotkey"], cfg["hotkey_cancel"], cfg["hotkey_mode"]),
+      daemon=True,
+  ).start()
+  ```
+  Note: `load_stt_config` is already imported at the top of `stt_daemon.py` (verify first).
+- **Verify:** `grep -n "load_stt_config\|_spawn_overlay" src/voicecli/stt_daemon.py`
+- **Expected:** `load_stt_config` called at line ~690, hotkeys passed to `_spawn_overlay`
+- **Time:** 4 min | **Phase:** GREEN | **Parallel-safe:** N (depends T4) | **Spec trace:** N1, U1→N1 | **Difficulty:** 2
+
+**RED-GATE V2:** `uv run pytest tests/test_stt_daemon.py -x -q` — existing `_spawn_overlay` mock (`MagicMock()`) accepts extra args without change; must still pass.
+
+---
+
+### V3 — Overlay reads labels [backend-dev + tester]
+
+---
+
+**T6** — Add `_hotkey_badge()` pure function to `overlay.py`
+- **File:** `src/voicecli/overlay.py`
+- **Snippet:**
+  ```python
+  _ABBREV = {
+      "alt": "A", "shift": "Sh", "space": "Sp",
+      "esc": "Esc", "tab": "Tab",
+  }
+
+  def _hotkey_badge(hotkey_str: str) -> str:
+      """Convert config hotkey string to short display badge text.
+
+      Rules:
+        - 'ctrl' → 'Ctrl' when sole modifier; 'C' when combined with others
+        - 'alt' → 'A', 'shift' → 'Sh', 'space' → 'Sp', 'esc' → 'Esc', 'tab' → 'Tab'
+        - other parts → capitalize first letter (graceful fallback, no crash)
+      """
+      parts = hotkey_str.lower().split("+")
+      has_other_modifier = any(p in ("alt", "shift") for p in parts)
+      result = []
+      for p in parts:
+          if p == "ctrl":
+              result.append("C" if has_other_modifier else "Ctrl")
+          elif p in _ABBREV:
+              result.append(_ABBREV[p])
+          else:
+              result.append(p.capitalize())
+      return "+".join(result)
+  ```
+- **Verify:** `python -c "from voicecli.overlay import _hotkey_badge; print(_hotkey_badge('ctrl+space'), _hotkey_badge('alt+shift+esc'), _hotkey_badge('ctrl+shift+r'))"`
+- **Expected:** `Ctrl+Sp A+Sh+Esc C+Sh+R`
+- **Time:** 5 min | **Phase:** GREEN | **Parallel-safe:** N | **Spec trace:** N2, SC-2/3/4/5/7/8 | **Difficulty:** 3
+
+---
+
+**T7** — Replace hardcoded badge list in `WaveformOverlay.__init__()` with env var reads
+- **File:** `src/voicecli/overlay.py`
+- **Snippet:** Replace line 259 hardcoded list:
+  ```python
+  # Before (line 259):
+  for label in reversed(["A+Sh+Tab", "Mode  ", "A+Sh+Esc", "Cancel  ", "A+Sh+Sp", "Stop  "]):
+
+  # After:
+  _hk_toggle = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE", "ctrl+space"))
+  _hk_cancel = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_CANCEL", "alt+shift+esc"))
+  _hk_mode = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE", "alt+shift+tab"))
+  for label in reversed([_hk_mode, "Mode  ", _hk_cancel, "Cancel  ", _hk_toggle, "Stop  "]):
+  ```
+- **Verify:** `grep -n "VOICECLI_OVERLAY_HOTKEY_TOGGLE\|_hotkey_badge" src/voicecli/overlay.py`
+- **Expected:** env var reads present at former line 259 site
+- **Time:** 4 min | **Phase:** GREEN | **Parallel-safe:** N (depends T6) | **Spec trace:** N3, SC-2/3/4/5 | **Difficulty:** 2
+
+**RED-GATE V3:** `uv run pytest tests/ -x -q` — all tests must pass.
+
+---
+
+### V4 — Example toml [backend-dev]
+
+---
+
+**T8** — Document `hotkey_cancel` and `hotkey_mode` in `voicecli.example.toml`
+- **File:** `voicecli.example.toml`
+- **Snippet:** Add after the existing `# hotkey` line:
+  ```toml
+  # hotkey = "ctrl+space"          # global hotkey for dictate toggle
+  # hotkey_cancel = "alt+shift+esc"  # cancel active recording
+  # hotkey_mode = "alt+shift+tab"    # cycle dictation mode
+  ```
+- **Verify:** `grep "hotkey_cancel\|hotkey_mode" voicecli.example.toml`
+- **Expected:** both lines present
+- **Time:** 2 min | **Phase:** GREEN | **[P]** parallel-safe (no deps on V3) | **Spec trace:** SC-6 | **Difficulty:** 1
+
+**RED-GATE V4:** `uv run pytest tests/ -q` — full suite green.
+
+---
+
+### Tests [tester]
+
+---
+
+**T9** — Add parameterized unit tests for `_hotkey_badge()`
+- **File:** `tests/test_stt_client.py` (or new `tests/test_overlay.py`)
+- **Snippet:**
+  ```python
+  import pytest
+  from voicecli.overlay import _hotkey_badge
+
+  @pytest.mark.parametrize("hotkey,expected", [
+      ("ctrl+space", "Ctrl+Sp"),
+      ("alt+shift+esc", "A+Sh+Esc"),
+      ("alt+shift+tab", "A+Sh+Tab"),
+      ("ctrl+shift+d", "C+Sh+D"),
+      ("alt+f4", "A+F4"),
+      ("super+space", "Super+Sp"),   # unknown modifier passes through gracefully
+  ])
+  def test_hotkey_badge(hotkey, expected):
+      assert _hotkey_badge(hotkey) == expected
+  ```
+- **Verify:** `uv run pytest tests/ -k "hotkey_badge" -v`
+- **Expected:** 6 tests pass
+- **Time:** 5 min | **Phase:** RED (write before T6 in TDD flow, or after) | **Parallel-safe:** N (depends T6) | **Spec trace:** SC-7, SC-8 | **Difficulty:** 2
+
+---
+
+**T10** — Verify existing `_spawn_overlay` mock compatibility
+- **File:** `tests/test_stt_daemon.py`
+- **Action:** Run existing tests to confirm `MagicMock()` accepts the new 3 extra args silently. No code change expected.
+- **Verify:** `uv run pytest tests/test_stt_daemon.py -x -q`
+- **Expected:** all tests pass without modification
+- **Time:** 2 min | **Phase:** GREEN | **[P]** (read-only check) | **Spec trace:** SC-9 | **Difficulty:** 1
