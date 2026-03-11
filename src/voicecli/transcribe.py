@@ -44,12 +44,16 @@ def transcribe(
     language_detection_threshold: float | None = None,
     language_detection_segments: int | None = None,
     language_fallback: str | None = None,
+    task: str = "transcribe",
+    initial_prompt: str | None = None,
 ) -> TranscriptionResult:
     whisper = _load_model(model)
 
     # If threshold + fallback are set, run a fast language detection pass first
+    # (only applies for transcribe task, not translate)
     if (
-        language is None
+        task == "transcribe"
+        and language is None
         and language_detection_threshold is not None
         and language_fallback is not None
     ):
@@ -75,10 +79,12 @@ def transcribe(
 
     kwargs: dict = dict(
         language=language,
-        task="transcribe",
+        task=task,
         beam_size=5,
         vad_filter=True,
     )
+    if initial_prompt is not None:
+        kwargs["initial_prompt"] = initial_prompt
     if language_detection_threshold is not None and language_fallback is None:
         kwargs["language_detection_threshold"] = language_detection_threshold
     if language_detection_segments is not None:

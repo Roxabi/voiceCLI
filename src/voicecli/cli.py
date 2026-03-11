@@ -179,6 +179,10 @@ def dictate(
         bool,
         typer.Option("--paste", help="Auto-type transcribed text into the focused window"),
     ] = False,
+    mode: Annotated[
+        Optional[str],
+        typer.Option("--mode", help="STT mode to use for this recording (e.g. french, code)"),
+    ] = None,
 ) -> None:
     """Toggle dictation recording or start the hotkey listener."""
     if ctx.invoked_subcommand is not None:
@@ -194,7 +198,7 @@ def dictate(
 
     from voicecli.stt_client import auto_paste, notify, send_toggle
 
-    resp = send_toggle()
+    resp = send_toggle(mode=mode)
 
     if resp.get("status") == "error":
         print(resp.get("message", "unknown error"), file=sys.stderr)
@@ -232,6 +236,88 @@ def dictate_status() -> None:
         print(resp.get("message", "unknown error"), file=sys.stderr)
         raise typer.Exit(code=1)
     print(resp.get("state", "unknown"))
+
+
+@dictate_app.command("modes")
+def dictate_modes() -> None:
+    """List all available STT modes with descriptions."""
+    from voicecli.config import load_config
+    from voicecli.stt_modes import load_modes
+
+    cfg = load_config()
+    modes = load_modes(cfg)
+    if not modes:
+        typer.echo("No modes available.")
+        return
+    col_w = max(len(n) for n in modes) + 2
+    for name, m in sorted(modes.items()):
+        desc = m.get("description", "")
+        parts = []
+        if m.get("language"):
+            parts.append(f"language={m['language']}")
+        if m.get("task") and m["task"] != "transcribe":
+            parts.append(f"task={m['task']}")
+        if parts:
+            desc = f"{desc}  [{', '.join(parts)}]" if desc else ", ".join(parts)
+        typer.echo(f"  {name:<{col_w}}{desc}")
+
+
+@dictate_app.command("history")
+def dictate_history(
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print raw JSONL instead of a table")
+    ] = False,
+    copy: Annotated[
+        Optional[int],
+        typer.Option("--copy", help="Copy entry N (1-based from most-recent) to clipboard"),
+    ] = None,
+) -> None:
+    """Show the last 20 dictation history entries."""
+    import json as _json
+
+    from voicecli.stt_daemon import HISTORY_PATH, _write_clipboard
+
+    if not HISTORY_PATH.exists():
+        typer.echo("No history yet.")
+        return
+
+    lines = [ln for ln in HISTORY_PATH.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    # Most recent last in file — show last 20, most recent at bottom
+    entries = []
+    for line in lines:
+        try:
+            entries.append(_json.loads(line))
+        except Exception:
+            pass
+
+    recent = entries[-20:]
+
+    if copy is not None:
+        # --copy 1 = most recent
+        idx = len(recent) - copy
+        if idx < 0 or idx >= len(recent):
+            typer.echo(f"Entry {copy} out of range (1–{len(recent)}).", err=True)
+            raise typer.Exit(1)
+        _write_clipboard(recent[idx]["text"])
+        typer.echo(f"Copied entry {copy} to clipboard.")
+        return
+
+    if json_output:
+        for e in recent:
+            typer.echo(_json.dumps(e, ensure_ascii=False))
+        return
+
+    # Table output
+    typer.echo(f"{'#':>3}  {'time':>8}  {'lang':>4}  {'mode':<14}  text")
+    typer.echo("-" * 72)
+    for i, e in enumerate(recent, 1):
+        ts = e.get("ts", "")[-8:] if e.get("ts") else ""  # HH:MM:SS
+        lang = (e.get("language") or "")[:4]
+        mode_str = (e.get("mode") or "")[:14]
+        text_preview = e.get("text", "")[:40]
+        if len(e.get("text", "")) > 40:
+            text_preview += "..."
+        typer.echo(f"{i:>3}  {ts:>8}  {lang:>4}  {mode_str:<14}  {text_preview}")
 
 
 # ── CUDA error formatting (moved from engine.py cuda_guard) ──────────────────
@@ -924,6 +1010,10 @@ def stt_serve(
         str,
         typer.Option("--model", "-m", help="Whisper model to load (default: large-v3-turbo)"),
     ] = "",
+    default_mode: Annotated[
+        Optional[str],
+        typer.Option("--default-mode", help="Default STT mode when toggle carries no mode"),
+    ] = None,
 ) -> None:
     """Start the STT daemon to keep faster-whisper loaded for fast dictation.
 
@@ -954,6 +1044,7 @@ def stt_serve(
         language_detection_threshold=resolved_threshold,
         language_detection_segments=resolved_segments,
         language_fallback=resolved_fallback,
+        default_mode=default_mode,
     ).serve()
 
 

@@ -12,3 +12,40 @@ engine = "qwen"
 # plain = false
 # chunked = false
 # chunk_size = 500
+
+# ── STT daemon settings ────────────────────────────────────────────────────────
+# [stt]
+# model = "large-v3-turbo"       # faster-whisper model
+# hotkey = "alt+space"           # global hotkey for dictate --listen
+# language = "fr"                # force language for all recordings
+# language_detection_threshold = 0.8
+# language_detection_segments = 3
+# language_fallback = "en"       # fallback if detection confidence is low
+
+# ── STT modes — override built-ins or add your own ────────────────────────────
+# Built-in modes: french, english, translate-en, code
+# All fields are optional; omit any to inherit the built-in default.
+
+# [stt.modes.french]
+# description = "Dictation in French"
+# language = "fr"
+# prompt = "Bonjour. Voici un texte en français avec une ponctuation correcte."
+
+# [stt.modes.english]
+# description = "Dictation in English"
+# language = "en"
+# prompt = "Hello. Here is a well-punctuated English sentence."
+
+# [stt.modes.translate-en]
+# description = "Speak anything, get English output"
+# task = "translate"
+
+# [stt.modes.code]
+# description = "Voice to code comment"
+# prompt = "Variable name, function name, code comment, no filler words."
+
+# Add a custom mode:
+# [stt.modes.meeting]
+# description = "Meeting notes in English"
+# language = "en"
+# prompt = "Meeting notes. Action items. Participants. Decisions made."

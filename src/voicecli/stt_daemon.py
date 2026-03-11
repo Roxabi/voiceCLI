@@ -21,6 +21,8 @@ from enum import Enum
 from pathlib import Path
 
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-daemon.sock"
+HISTORY_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-history.jsonl"
+HISTORY_MAX = 100
 
 MAX_MSG = 65536
 
@@ -135,6 +137,60 @@ def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
         text_path = text_dir / f"dictate{lang_tag}_{ts}.txt"
         text_path.write_text(text, encoding="utf-8")
         print(f"[stt] saved transcript: {text_path}", file=sys.stderr)
+
+
+# ── History ───────────────────────────────────────────────────────────────────
+
+
+def _wav_duration_s(wav_bytes: bytes) -> float | None:
+    """Parse WAV header to compute duration in seconds. Returns None on failure."""
+    try:
+        import io
+        import wave
+
+        with wave.open(io.BytesIO(wav_bytes)) as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            if rate > 0:
+                return frames / rate
+    except Exception:
+        pass
+    return None
+
+
+def _append_history(
+    text: str,
+    language: str | None,
+    mode: str | None,
+    duration_s: float | None,
+) -> None:
+    """Append one entry to the JSONL history file, capping at HISTORY_MAX entries."""
+    import json as _json
+    from datetime import datetime
+
+    if not text:
+        return
+
+    entry = {
+        "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "text": text,
+        "language": language,
+        "mode": mode,
+        "duration_s": round(duration_s, 2) if duration_s is not None else None,
+    }
+
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing: list[str] = []
+        if HISTORY_PATH.exists():
+            existing = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+        existing.append(_json.dumps(entry, ensure_ascii=False))
+        # Trim to cap
+        if len(existing) > HISTORY_MAX:
+            existing = existing[-HISTORY_MAX:]
+        HISTORY_PATH.write_text("\n".join(existing) + "\n", encoding="utf-8")
+    except Exception as e:
+        print(f"[stt] history write failed: {e}", file=sys.stderr)
 
 
 # ── Overlay launcher ──────────────────────────────────────────────────────────
@@ -271,12 +327,14 @@ class SttDaemon:
         language_detection_threshold: float | None = None,
         language_detection_segments: int | None = None,
         language_fallback: str | None = None,
+        default_mode: str | None = None,
     ):
         self.model = model
         self.language = language
         self.language_detection_threshold = language_detection_threshold
         self.language_detection_segments = language_detection_segments
         self.language_fallback = language_fallback
+        self.default_mode = default_mode
         self._socket_path = Path(socket_path) if socket_path is not None else SOCKET_PATH
         self._state = State.IDLE
         self._lock = threading.Lock()
@@ -288,6 +346,8 @@ class SttDaemon:
         self._connection_sem = threading.BoundedSemaphore(16)
         # Used to shut down the accept loop from outside (tests / stop())
         self._server_socket: socket.socket | None = None
+        # Active recording mode (set when recording starts, cleared after transcription)
+        self._current_mode: str | None = None
 
     # ── Public control ────────────────────────────────────────────────────────
 
@@ -368,14 +428,13 @@ class SttDaemon:
         try:
             req = _recv_json(conn)
             action = req.get("action")
-            # mode field: parsed but ignored (reserved for issue #8)
-            _ = req.get("mode")
+            mode = req.get("mode") or None
             if action == "ping":
                 self._handle_ping(conn)
             elif action == "status":
                 self._handle_status(conn)
             elif action == "toggle":
-                self._handle_toggle(conn)
+                self._handle_toggle(conn, mode=mode)
             elif action == "cancel":
                 self._handle_cancel(conn)
             else:
@@ -399,11 +458,11 @@ class SttDaemon:
     def _handle_unknown(self, conn: socket.socket, action: str) -> None:
         _send_json(conn, {"status": "error", "message": f"unknown action: {action}"})
 
-    def _handle_toggle(self, conn: socket.socket) -> None:
+    def _handle_toggle(self, conn: socket.socket, mode: str | None = None) -> None:
         with self._lock:
             state = self._state
         if state == State.IDLE:
-            self._start_recording(conn)
+            self._start_recording(conn, mode=mode)
         elif state == State.RECORDING:
             # _stop_and_transcribe blocks until transcription is done, then sends
             # the response via conn.  The caller (_handle) must NOT close conn
@@ -430,9 +489,12 @@ class SttDaemon:
         t.start()
         self._parecord_thread = t
 
-    def _start_recording(self, conn: socket.socket) -> None:
+    def _start_recording(self, conn: socket.socket, mode: str | None = None) -> None:
+        # Resolve effective mode: request mode > default_mode
+        effective_mode = mode if mode is not None else self.default_mode
         with self._lock:
             self._state = State.RECORDING
+            self._current_mode = effective_mode
             if self._use_pyaudio:
                 self._recording_thread = RecordingThread()
                 self._parecord_stop_event = None
@@ -454,6 +516,8 @@ class SttDaemon:
             self._recording_thread = None
             parecord_stop_ev = self._parecord_stop_event
             self._parecord_stop_event = None
+            current_mode = self._current_mode
+            self._current_mode = None
 
         # Collect WAV bytes from whichever recording path was active
         if rt is not None:
@@ -468,6 +532,25 @@ class SttDaemon:
         else:
             wav_bytes = b""
 
+        # Resolve mode params (mode overrides daemon-level settings)
+        transcribe_language = self.language
+        transcribe_task = "transcribe"
+        transcribe_prompt: str | None = None
+        if current_mode is not None:
+            try:
+                from voicecli.config import load_config
+                from voicecli.stt_modes import get_mode
+
+                mode_cfg = get_mode(current_mode, load_config())
+                if "language" in mode_cfg:
+                    transcribe_language = mode_cfg["language"]
+                if "task" in mode_cfg:
+                    transcribe_task = mode_cfg["task"]
+                if "prompt" in mode_cfg:
+                    transcribe_prompt = mode_cfg["prompt"]
+            except Exception as e:
+                print(f"[stt] mode resolve error: {e}", file=sys.stderr)
+
         tmp_path = _write_tempfile(wav_bytes)
         text: str = ""
         language: str | None = None
@@ -477,10 +560,12 @@ class SttDaemon:
             result = transcribe(
                 tmp_path,
                 model=self.model,
-                language=self.language,
+                language=transcribe_language,
                 language_detection_threshold=self.language_detection_threshold,
                 language_detection_segments=self.language_detection_segments,
                 language_fallback=self.language_fallback,
+                task=transcribe_task,
+                initial_prompt=transcribe_prompt,
             )
             text = result.text
             language = result.language
@@ -496,6 +581,9 @@ class SttDaemon:
             print(f"[stt] clipboard error: {e}", file=sys.stderr)
 
         _save_recording(wav_bytes, text, language)
+
+        duration_s = _wav_duration_s(wav_bytes)
+        _append_history(text, language, current_mode, duration_s)
 
         with self._lock:
             queued = self._state == State.QUEUED

@@ -17,17 +17,22 @@ _DEFAULT_TIMEOUT = 10  # seconds
 # ── Wire protocol ─────────────────────────────────────────────────────────────
 
 
-def _send_request(action: str, timeout: int = _DEFAULT_TIMEOUT) -> dict:
+def _send_request(action: str, timeout: int = _DEFAULT_TIMEOUT, **extra: object) -> dict:
     """Connect to STT daemon, send action, return response dict.
 
     Returns ``{"status": "error", "message": "STT daemon not running"}`` when the
     socket is absent or the connection is refused.
+
+    Args:
+        action: The action string to send.
+        timeout: Socket timeout in seconds.
+        **extra: Additional fields merged into the JSON payload.
     """
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(timeout)
     try:
         sock.connect(str(SOCKET_PATH))
-        payload = json.dumps({"action": action}, ensure_ascii=False) + "\n"
+        payload = json.dumps({"action": action, **extra}, ensure_ascii=False) + "\n"
         sock.sendall(payload.encode())
         buf = bytearray()
         max_response = 65536
@@ -43,9 +48,16 @@ def _send_request(action: str, timeout: int = _DEFAULT_TIMEOUT) -> dict:
         sock.close()
 
 
-def send_toggle() -> dict:
-    """Send a toggle action to the STT daemon and return the response dict."""
-    return _send_request("toggle", timeout=60)
+def send_toggle(mode: str | None = None) -> dict:
+    """Send a toggle action to the STT daemon and return the response dict.
+
+    Args:
+        mode: Optional mode name (e.g. "french", "code") to apply for this recording.
+    """
+    extra: dict[str, object] = {}
+    if mode is not None:
+        extra["mode"] = mode
+    return _send_request("toggle", timeout=60, **extra)
 
 
 def send_status() -> dict:
