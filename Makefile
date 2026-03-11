@@ -5,14 +5,14 @@ ifneq (,$(filter stt tts,$(firstword $(MAKECMDGOALS))))
   endif
 endif
 
-SUPERVISORCTL := $(HOME)/supervisor/scripts/supervisorctl.sh
-SUPERVISOR_START := $(HOME)/supervisor/scripts/start.sh
-HUB_DIR := $(HOME)/supervisor
+SUPERVISORCTL := $(HOME)/lyra-stack/scripts/supervisorctl.sh
+SUPERVISOR_START := $(HOME)/lyra-stack/scripts/start.sh
+HUB_DIR := $(HOME)/lyra-stack
 HUB_PID := $(HUB_DIR)/supervisord.pid
 
 define ensure_hub
 	@if [ ! -d "$(HUB_DIR)" ]; then \
-		echo "Error: ~/supervisor not found. Set up the global supervisor first."; \
+		echo "Error: ~/lyra-stack not found. Set up lyra-stack first."; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(HUB_PID)" ] || ! kill -0 $$(cat "$(HUB_PID)" 2>/dev/null) 2>/dev/null; then \
@@ -26,7 +26,7 @@ endef
 register:
 	@echo "Registering voiceCLI with global supervisor..."
 	@if [ ! -d "$(HUB_DIR)" ]; then \
-		echo "Error: ~/supervisor not found."; exit 1; \
+		echo "Error: ~/lyra-stack not found."; exit 1; \
 	fi
 	@ln -sf "$(abspath supervisor/conf.d/voicecli_tts.conf)" "$(HUB_DIR)/conf.d/voicecli_tts.conf"
 	@ln -sf "$(abspath supervisor/conf.d/voicecli_stt.conf)" "$(HUB_DIR)/conf.d/voicecli_stt.conf"
