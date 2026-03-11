@@ -153,10 +153,10 @@ def _write_clipboard(text: str) -> None:
 
 
 def _auto_paste() -> None:
-    """Trigger a Ctrl+V paste in the active window.
+    """Trigger a Ctrl+Shift+V paste (no formatting) in the active window.
 
     On WSL2: writes a flag file that the AHK script polls every 150 ms.
-    AHK then sends ^v natively on the Windows side — no powershell startup lag,
+    AHK then sends ^+v natively on the Windows side — no powershell startup lag,
     no foreground-window race conditions.
 
     Fallback: xdotool (native Linux / WSLg X11 windows).
@@ -172,10 +172,11 @@ def _auto_paste() -> None:
             r = subprocess.run(
                 ["cmd.exe", "/c", "echo %TEMP%"],
                 capture_output=True,
-                text=True,
                 timeout=3,
             )
-            win_path = r.stdout.strip()  # e.g. C:\Users\Mickael\AppData\Local\Temp
+            win_path = r.stdout.decode(
+                "cp850", errors="replace"
+            ).strip()  # e.g. C:\Users\Mickael\AppData\Local\Temp
             if len(win_path) >= 3 and win_path[1] == ":":
                 drive = win_path[0].lower()
                 rest = win_path[2:].replace("\\", "/")

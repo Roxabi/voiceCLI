@@ -15,7 +15,7 @@ Typical flow:
 
 1. First press: daemon starts recording. Notification: "Recording..."
 2. Second press: daemon stops recording, transcribes, writes text to clipboard. Notification shows the transcribed text.
-3. Ctrl+V in any app to paste.
+3. Ctrl+Shift+V in any app to paste without formatting.
 
 ## Prerequisites
 
@@ -82,7 +82,7 @@ CheckPaste() {
     if FileExist(pasteTrigger) {
         FileDelete pasteTrigger
         Sleep 80          ; let focus fully settle before pasting
-        Send "^v"
+        Send "^+v"
     }
 }
 
@@ -205,8 +205,8 @@ bash -c 'cd /path/to/voiceCLI && uv run voicecli dictate'
 ### WSL2 (recommended) — AHK trigger
 
 On WSL2, auto-paste works via a trigger file that AHK polls every 150ms. After transcription,
-the daemon writes `%TEMP%\voicecli_paste_trigger`. AHK detects it, deletes it, and sends `Ctrl+V`
-into the active Windows window — no X11 focus required, no PowerShell startup lag.
+the daemon writes `%TEMP%\voicecli_paste_trigger`. AHK detects it, deletes it, and sends `Ctrl+Shift+V`
+into the active Windows window — no X11 focus required, no PowerShell startup lag. Ctrl+Shift+V pastes as plain text (no formatting).
 
 Enable in `voicecli.toml`:
 
@@ -228,7 +228,7 @@ voicecli dictate --paste
 
 **Limitation:** `xdotool` only works in X11/XWayland windows. For native Windows apps,
 it has no effect. The text is always written to the clipboard regardless of `--paste`,
-so Ctrl+V always works as a fallback.
+so Ctrl+Shift+V always works as a fallback (or Ctrl+V if the app doesn't support paste-without-formatting).
 
 If `xdotool` is not installed, `--paste` silently does nothing. Install it with:
 
