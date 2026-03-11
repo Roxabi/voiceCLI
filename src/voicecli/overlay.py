@@ -277,7 +277,6 @@ class WaveformOverlay:
         self.root.bind("<Tab>", self._on_tab)
         # Right-click anywhere on the overlay = cancel (no focus needed)
         self.canvas.bind("<Button-3>", self._on_escape)
-        _play(_SND_START)
         self._animate()
         if not test_mode:
             self.root.after(600, self._schedule_poll)

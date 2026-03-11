@@ -312,6 +312,31 @@ def _spawn_overlay(mode: str | None = None) -> None:
         print(f"[stt] overlay spawn failed: {e}", file=sys.stderr)
 
 
+# ── UI sound ──────────────────────────────────────────────────────────────────
+
+
+def _play_ui_sound(name: str) -> None:
+    """Play a UI sound from the assets directory via paplay (non-blocking)."""
+    import subprocess
+    import sys
+
+    assets = (
+        Path(sys.executable).parent.parent
+        / "lib"
+        / "python3.12"
+        / "site-packages"
+        / "voicecli"
+        / "assets"
+    )
+    # Fallback: resolve relative to this file
+    assets_local = Path(__file__).parent / "assets"
+    path = assets_local / name if assets_local.exists() else assets / name
+    if path.exists():
+        subprocess.Popen(
+            ["paplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+
 # ── Chime wrapper ─────────────────────────────────────────────────────────────
 
 
@@ -662,6 +687,7 @@ class SttDaemon:
                 self._start_parecord_recording(level_callback=_write_level)
         if self._recording_thread:
             self._recording_thread.start()
+        threading.Thread(target=_play_ui_sound, args=("start.wav",), daemon=True).start()
         threading.Thread(target=_spawn_overlay, args=(effective_mode,), daemon=True).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
 
