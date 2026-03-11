@@ -1,9 +1,4 @@
-"""Tests for voicecli.overlay._hotkey_badge — RED phase.
-
-The function _hotkey_badge() does not exist yet in overlay.py.
-All tests are expected to fail with ImportError or AttributeError
-until the GREEN phase implementation is added.
-"""
+"""Tests for voicecli.overlay._hotkey_badge."""
 
 from __future__ import annotations
 
@@ -15,7 +10,7 @@ import pytest
 # This will raise ImportError until overlay.py exposes _hotkey_badge.
 # ---------------------------------------------------------------------------
 
-from voicecli.overlay import _hotkey_badge  # noqa: E402 — intentional late import
+from voicecli.overlay import _hotkey_badge
 
 
 # ---------------------------------------------------------------------------

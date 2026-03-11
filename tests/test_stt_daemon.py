@@ -168,11 +168,23 @@ class TestRecordingAndChimes:
     def test_toggle_starts_recording(self, daemon_send):
         """N3: toggle from idle → {"status":"ok","state":"recording"}."""
         send, _, _ = daemon_send
+        mock_spawn = MagicMock()
+        overlay_called = threading.Event()
+        mock_spawn.side_effect = lambda *a, **kw: overlay_called.set()
         # Arrange / Act
-        resp = send("toggle")
-        # Assert
+        with patch("voicecli.stt_daemon._spawn_overlay", mock_spawn):
+            resp = send("toggle")
+        # Assert response
         assert resp["status"] == "ok"
         assert resp["state"] == "recording"
+        # Assert _spawn_overlay was called with the correct hotkey args
+        assert overlay_called.wait(timeout=2.0), "_spawn_overlay was not called within 2 seconds"
+        mock_spawn.assert_called_once_with(
+            None,  # effective_mode (no mode passed, default_mode is None)
+            "ctrl+space",
+            "alt+shift+esc",
+            "alt+shift+tab",
+        )
 
     def test_status_during_recording(self, daemon_send):
         """status after N3 → state=recording."""

@@ -531,6 +531,11 @@ class SttDaemon:
         self._server_socket: socket.socket | None = None
         # Active recording mode (set when recording starts, cleared after transcription)
         self._current_mode: str | None = None
+        # Hotkey config loaded once at startup to avoid filesystem walk on every toggle
+        _stt_cfg = load_stt_config()
+        self._hotkey: str = _stt_cfg.get("hotkey", "ctrl+space")
+        self._hotkey_cancel: str = _stt_cfg.get("hotkey_cancel", "alt+shift+esc")
+        self._hotkey_mode: str = _stt_cfg.get("hotkey_mode", "alt+shift+tab")
 
     # ── Public control ────────────────────────────────────────────────────────
 
@@ -699,10 +704,9 @@ class SttDaemon:
         if self._recording_thread:
             self._recording_thread.start()
         threading.Thread(target=_play_ui_sound, args=("start.wav",), daemon=True).start()
-        _cfg = load_stt_config()
         threading.Thread(
             target=_spawn_overlay,
-            args=(effective_mode, _cfg["hotkey"], _cfg["hotkey_cancel"], _cfg["hotkey_mode"]),
+            args=(effective_mode, self._hotkey, self._hotkey_cancel, self._hotkey_mode),
             daemon=True,
         ).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
