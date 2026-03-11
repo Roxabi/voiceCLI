@@ -1,3 +1,4 @@
+supervisor/logs/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -20,6 +21,7 @@ STT/texts_out/*
 .claude/skills/*
 !.claude/skills/voice-design/
 voicecli.toml
+voicecli.vocab
 
 .env
 .claude/stack.yml
