@@ -437,6 +437,8 @@ class SttDaemon:
                 self._handle_toggle(conn, mode=mode)
             elif action == "cancel":
                 self._handle_cancel(conn)
+            elif action == "next_mode":
+                self._handle_next_mode(conn)
             else:
                 self._handle_unknown(conn, action)
         except Exception as exc:
@@ -614,6 +616,31 @@ class SttDaemon:
         if stop_ev is not None:
             stop_ev.set()
         _send_json(conn, {"status": "ok", "state": State.IDLE.value})
+
+    def _handle_next_mode(self, conn: socket.socket) -> None:
+        """Cycle to the next available mode and update default_mode."""
+        from voicecli.config import _find_config
+        from voicecli.stt_modes import load_modes
+
+        cfg_path = _find_config()
+        raw_cfg: dict = {}
+        if cfg_path:
+            import tomllib
+
+            with open(cfg_path, "rb") as f:
+                raw_cfg = tomllib.load(f)
+        modes = load_modes(raw_cfg)
+        mode_names = sorted(modes.keys())
+        current = self._current_mode or self.default_mode
+        if current in mode_names:
+            idx = (mode_names.index(current) + 1) % len(mode_names)
+        else:
+            idx = 0
+        next_mode = mode_names[idx]
+        self.default_mode = next_mode
+        self._current_mode = next_mode if self._state == State.RECORDING else None
+        desc = modes[next_mode].get("description", next_mode)
+        _send_json(conn, {"status": "ok", "mode": next_mode, "description": desc})
 
     def _queue_recording(self, conn: socket.socket) -> None:
         with self._lock:

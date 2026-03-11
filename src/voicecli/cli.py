@@ -238,6 +238,21 @@ def dictate_status() -> None:
     print(resp.get("state", "unknown"))
 
 
+@dictate_app.command("next-mode")
+def dictate_next_mode() -> None:
+    """Cycle to the next STT mode (becomes the new default)."""
+    from voicecli.stt_client import notify, send_next_mode
+
+    resp = send_next_mode()
+    if resp.get("status") == "error":
+        print(resp.get("message", "unknown error"), file=sys.stderr)
+        raise typer.Exit(code=1)
+    mode = resp.get("mode", "")
+    desc = resp.get("description", mode)
+    print(f"mode: {mode}")
+    notify(f"Mode: {desc}", timeout=2000)
+
+
 @dictate_app.command("modes")
 def dictate_modes() -> None:
     """List all available STT modes with descriptions."""

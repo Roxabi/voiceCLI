@@ -70,6 +70,11 @@ def send_cancel() -> dict:
     return _send_request("cancel")
 
 
+def send_next_mode() -> dict:
+    """Cycle to the next mode and return the response dict."""
+    return _send_request("next_mode")
+
+
 # ── Desktop notifications ─────────────────────────────────────────────────────
 
 # Stable replace-ID so each notify-send call replaces the previous bubble.

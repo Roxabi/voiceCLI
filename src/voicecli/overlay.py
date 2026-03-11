@@ -59,10 +59,12 @@ class WaveformOverlay:
         self.root.configure(bg=BG)
         self.root.attributes("-alpha", 0.93)
 
-        # Position: bottom-center of screen
+        # Position: bottom-center of primary monitor
+        # Halve width on wide setups (>3000px = likely dual monitor side-by-side)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        x = (sw - win_w) // 2
+        mon_w = sw // 2 if sw > 3000 else sw
+        x = mon_w // 2 - win_w // 2
         y = sh - win_h - 64
         self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
