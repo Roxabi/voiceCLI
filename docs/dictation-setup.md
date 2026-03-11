@@ -59,28 +59,53 @@ and exits. The clipboard is shared between WSL2 and Windows — text written by 
 daemon via `xclip`/`wl-copy` is immediately available for Ctrl+V in any Windows app.
 Notifications appear in the WSLg notification area in the Windows system tray.
 
-### AutoHotkey Alternative
+### AutoHotkey (Recommended for WSL2)
 
-If you prefer AutoHotkey (v2), save this as `dictate.ahk` and run it at login:
+AutoHotkey v2 gives the best experience on WSL2 — it handles toggle, mode cycling, cancel,
+and auto-paste without any X11 focus requirement.
+
+Save as `voicecli-dictate.ahk` in your Windows Startup folder
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`) so it auto-runs at login:
 
 ```ahk
-; AutoHotkey v2 — trigger voicecli dictate from anywhere
-!+Space:: {  ; Alt+Shift+Space
-    RunWait "wsl voicecli dictate", , "Hide"
+; VoiceCLI Dictate — Alt+Shift+Space to toggle, Alt+Shift+Tab to cycle modes, Alt+Shift+Esc to cancel
+; Auto-runs at Windows login via Startup folder
+
+; ── Auto-paste trigger ────────────────────────────────────────────────────────
+; The WSL daemon writes this file after transcription + clipboard write.
+; AHK polls it every 150 ms and pastes as soon as it appears.
+pasteTrigger := A_Temp . "\voicecli_paste_trigger"
+
+SetTimer CheckPaste, 150
+CheckPaste() {
+    global pasteTrigger
+    if FileExist(pasteTrigger) {
+        FileDelete pasteTrigger
+        Sleep 80          ; let focus fully settle before pasting
+        Send "^v"
+    }
+}
+
+; ── Toggle recording ──────────────────────────────────────────────────────────
+!+Space:: {
+    RunWait "wsl /home/<user>/.local/bin/voicecli-dictate", , "Hide"
+}
+
+; ── Cycle mode ────────────────────────────────────────────────────────────────
+!+Tab:: {
+    RunWait "wsl /home/<user>/.local/bin/voicecli-next-mode", , "Hide"
+}
+
+; ── Cancel recording ──────────────────────────────────────────────────────────
+!+Escape:: {
+    RunWait "wsl /home/<user>/.local/bin/voicecli-cancel", , "Hide"
 }
 ```
 
-For AutoHotkey v1:
+Replace `<user>` with your Linux username. The wrapper scripts delegate to `voicecli dictate`,
+`voicecli dictate next-mode`, and `voicecli dictate cancel` respectively.
 
-```ahk
-; AutoHotkey v1 — trigger voicecli dictate from anywhere
-!+Space::
-    RunWait, wsl voicecli dictate,, Hide
-return
-```
-
-Adjust the hotkey combination (`!` = Alt, `+` = Shift, `^` = Ctrl, `#` = Win) to
-your preference.
+Adjust hotkeys (`!` = Alt, `+` = Shift, `^` = Ctrl, `#` = Win) to your preference.
 
 ## Alternative: Built-in Hotkey Listener
 
@@ -177,8 +202,25 @@ bash -c 'cd /path/to/voiceCLI && uv run voicecli dictate'
 
 ## Auto-paste
 
+### WSL2 (recommended) — AHK trigger
+
+On WSL2, auto-paste works via a trigger file that AHK polls every 150ms. After transcription,
+the daemon writes `%TEMP%\voicecli_paste_trigger`. AHK detects it, deletes it, and sends `Ctrl+V`
+into the active Windows window — no X11 focus required, no PowerShell startup lag.
+
+Enable in `voicecli.toml`:
+
+```toml
+[stt]
+auto_paste = true
+```
+
+Requires the AHK script above to be running. Restart the daemon after changing this setting.
+
+### Linux / WSLg — xdotool
+
 The `--paste` flag triggers `xdotool type` to type the transcribed text directly into
-the focused window after each successful transcription.
+the focused X11/WSLg window after each successful transcription.
 
 ```bash
 voicecli dictate --paste
@@ -290,14 +332,18 @@ Add an `[stt]` table to `voicecli.toml` to configure STT behavior:
 
 ```toml
 [stt]
-model  = "large-v3-turbo"   # Whisper model (overridden by --model flag)
-hotkey = "alt+space"        # Hotkey for --listen mode
+model       = "large-v3-turbo"   # Whisper model (overridden by --model flag)
+hotkey      = "alt+space"        # Hotkey for --listen mode
+auto_paste  = true               # WSL2: write AHK trigger file after transcription
+default_mode = "default"         # Starting mode on daemon launch
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `model` | `large-v3-turbo` | faster-whisper model loaded by `stt-serve` at startup |
 | `hotkey` | `alt+space` | Hotkey string for `voicecli dictate --listen` |
+| `auto_paste` | `false` | Write AHK paste trigger after transcription (WSL2) |
+| `default_mode` | `"default"` | Initial STT mode; cycle with `Alt+Shift+Tab` |
 
 Priority chain: `CLI flag > voicecli.toml > hardcoded default`
 

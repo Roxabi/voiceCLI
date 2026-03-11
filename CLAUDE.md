@@ -91,6 +91,8 @@ src/voicecli/
   samples.py        — Sample management + PulseAudio recording with chimes
   transcribe.py     — Faster Whisper file transcription
   listen.py         — Kyutai STT real-time mic transcription
+  overlay.py        — Waveform overlay (tkinter, WSLg); plays start.wav via stt_daemon, stop.wav on close
+  assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed tap); start_mic/stop_mic alternates
   engines/
     qwen.py              — Qwen3-TTS engine (CustomVoice for generate, Base for clone)
     chatterbox.py        — Chatterbox Multilingual engine (23 languages, segment-aware)
@@ -331,6 +333,18 @@ Given the universal script above, the translator produces:
 - Scripts authored in `TTS/texts_in/`
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
+
+## STT / Dictate — Key Patterns
+
+- **AHK shortcuts** (Windows): `Alt+Shift+Space` = toggle, `Alt+Shift+Tab` = next-mode, `Alt+Shift+Esc` = cancel
+- **AHK script location**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\voicecli-dictate.ahk`
+- **Wrapper scripts**: `~/.local/bin/voicecli-dictate`, `voicecli-next-mode`, `voicecli-cancel`
+- **Auto-paste on WSL2**: daemon writes `%TEMP%\voicecli_paste_trigger` → AHK polls it every 150ms → sends `^v`
+- **Auto-paste config**: `auto_paste = true` in `[stt]` section of `voicecli.toml` (requires daemon restart)
+- **UI sounds**: start.wav played by `stt_daemon._play_ui_sound()` (zero-latency, before overlay spawns); stop.wav played by overlay on `_close()`
+- **No chimes in stt_daemon**: `_chime()` removed — overlay handles all UI sounds
+- **Overlay shortcuts are display-only**: Tab/Esc in overlay toolbar are informational; actual shortcuts go through AHK
+- **CLI commands**: `voicecli dictate cancel` | `voicecli dictate next-mode` | `voicecli dictate status`
 
 ## Gotchas
 
