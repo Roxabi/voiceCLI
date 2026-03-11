@@ -1,0 +1,142 @@
+---
+title: "refactor(overlay): centralize shortcuts — single source of truth propagating to overlay, AHK, and docs"
+issue: 28
+status: approved
+tier: F-lite
+date: 2026-03-11
+promoted-from: artifacts/frames/28-centralize-shortcuts-frame.mdx
+---
+
+## Context
+
+Promoted from approved frame: `artifacts/frames/28-centralize-shortcuts-frame.mdx`.
+
+Hotkey labels in `overlay.py:259` are hardcoded and stale (`A+Sh+Sp` etc.), while the AHK script, docs, and example config already use the correct values (`ctrl+space`, `alt+shift+esc`, `alt+shift+tab`). This spec defines how a single source of truth in `[stt]` config propagates to overlay labels at spawn time.
+
+## Goal
+
+Overlay badge labels always reflect the actual hotkeys from `voicecli.toml [stt]`, with `config.py` as the single source of defaults.
+
+## Users
+
+- **Primary:** Any user running the dictate daemon — they see correct hotkey labels in the overlay without manual sync.
+- **Secondary:** Anyone customizing hotkeys in `voicecli.toml` — their custom values appear in the overlay automatically after daemon restart.
+
+## Expected Behavior
+
+1. User runs `voicecli dictate` (starts daemon, which spawns overlay).
+2. Daemon calls `load_stt_config()` → gets `hotkey`, `hotkey_cancel`, `hotkey_mode` (from toml or defaults).
+3. Daemon spawns overlay process, passing hotkeys as env vars: `VOICECLI_OVERLAY_HOTKEY_TOGGLE`, `VOICECLI_OVERLAY_HOTKEY_CANCEL`, `VOICECLI_OVERLAY_HOTKEY_MODE`.
+4. `WaveformOverlay.__init__()` reads the env vars, converts each to a short display string, and uses them as badge labels (Stop / Cancel / Mode).
+5. With default config: Stop badge = `Ctrl+Sp`, Cancel badge = `A+Sh+Esc`, Mode badge = `A+Sh+Tab`.
+6. User with custom `hotkey = "alt+f4"` in `voicecli.toml` sees `A+F4` in the Stop badge after daemon restart.
+
+### Hotkey display format conversion
+
+`_hotkey_badge(hotkey_str: str) -> str` — pure function, lives in `overlay.py`:
+
+| Config value | Badge |
+|-------------|-------|
+| `ctrl+space` | `Ctrl+Sp` |
+| `alt+shift+esc` | `A+Sh+Esc` |
+| `alt+shift+tab` | `A+Sh+Tab` |
+| `ctrl+shift+r` | `C+Sh+R` |
+
+Abbreviation rules (applied left-to-right across `+`-split parts):
+- `ctrl` → `Ctrl` when it is the only modifier (e.g. `ctrl+space`); `C` when combined with other modifiers (e.g. `ctrl+shift+r`)
+- `alt` → `A`
+- `shift` → `Sh`
+- `space` → `Sp`
+- `esc` → `Esc`
+- `tab` → `Tab`
+- other → capitalize first letter; unknown parts pass through gracefully (no crash, no empty badge)
+
+## Data Model & Consumers
+
+```classDiagram
+  class SttConfig {
+    hotkey: str = "ctrl+space"
+    hotkey_cancel: str = "alt+shift+esc"
+    hotkey_mode: str = "alt+shift+tab"
+    model: str
+    language: str
+    auto_paste: bool
+  }
+
+  class OverlayEnv {
+    VOICECLI_OVERLAY_HOTKEY_TOGGLE: str
+    VOICECLI_OVERLAY_HOTKEY_CANCEL: str
+    VOICECLI_OVERLAY_HOTKEY_MODE: str
+    VOICECLI_OVERLAY_MODE: str
+  }
+
+  SttConfig --> OverlayEnv : written by _spawn_overlay()
+```
+
+```flowchart LR
+  subgraph config.py
+    SC[load_stt_config\nhotkey / hotkey_cancel / hotkey_mode]
+  end
+  subgraph stt_daemon.py
+    SO[_spawn_overlay\npasses env vars]
+  end
+  subgraph overlay.py
+    OI[WaveformOverlay.__init__\nreads env vars]
+    HB[_hotkey_badge\ndisplay formatter]
+    BD[Badge labels\nStop / Cancel / Mode]
+  end
+  subgraph voicecli.example.toml
+    EX[hotkey_cancel\nhotkey_mode\ndocumented]
+  end
+
+  SC -->|hotkey, hotkey_cancel, hotkey_mode| SO
+  SO -->|VOICECLI_OVERLAY_HOTKEY_*| OI
+  OI --> HB
+  HB --> BD
+  SC -.->|documents defaults| EX
+```
+
+**Consumer summary:**
+
+| Consumer | Fields consumed | When | Status |
+|----------|----------------|------|--------|
+| `stt_daemon._spawn_overlay()` | `hotkey`, `hotkey_cancel`, `hotkey_mode` | At overlay spawn | This issue |
+| `overlay.WaveformOverlay.__init__()` | env vars → badge labels | At overlay init | This issue |
+| `--setup` AHK wizard (future) | `hotkey`, `hotkey_cancel`, `hotkey_mode` | At setup generation | Future |
+
+## Breadboard
+
+| Affordance | Handler | Data |
+|------------|---------|------|
+| U1: Config `[stt]` in toml | `config.load_stt_config()` | Returns `SttConfig` dict with 3 hotkey keys + defaults. Both `_KNOWN_STT` (for type coercion) and the `result` seed dict must be updated — two mutation points. |
+| N1: `_spawn_overlay(mode, hotkeys)` | `stt_daemon._spawn_overlay()` — signature becomes `(mode, hotkey, hotkey_cancel, hotkey_mode)` or takes `cfg: dict`; single call site at line 690 | Sets 3 `VOICECLI_OVERLAY_HOTKEY_*` env vars from `SttConfig` |
+| N2: Badge label rendering | `overlay._hotkey_badge(s)` | Pure converter: "ctrl+space" → "Ctrl+Sp" |
+| N3: `WaveformOverlay.__init__()` | Reads env vars → calls `_hotkey_badge()` | Replaces hardcoded list at line 259 |
+| S1: Default fallback | `load_stt_config()` default dict | If toml absent or keys missing → hardcoded defaults in `_KNOWN_STT` |
+
+**Wiring:**
+- U1 → N1: daemon reads config once at spawn, passes all 3 hotkeys
+- N1 → N3: env vars bridge daemon → overlay process boundary
+- N3 → N2: overlay calls formatter once per badge at init time
+- S1 → N1: defaults flow through same path; no special case in overlay
+
+## Slices
+
+| # | Slice | Files | Demo |
+|---|-------|-------|------|
+| 1 | **Extend config** — add `hotkey_cancel`/`hotkey_mode` to `_KNOWN_STT` with correct defaults | `config.py` | `load_stt_config()` returns all 3 keys |
+| 2 | **Pass hotkeys to overlay** — `_spawn_overlay()` reads config and sets 3 env vars | `stt_daemon.py` | Env vars visible in spawned overlay process |
+| 3 | **Overlay reads labels** — replace hardcoded list with `_hotkey_badge()` + env var reads | `overlay.py` | Overlay shows correct badge text for default + custom hotkeys |
+| 4 | **Example toml** — document `hotkey_cancel` and `hotkey_mode` | `voicecli.example.toml` | Users can copy-paste the keys to customize |
+
+## Success Criteria
+
+- [ ] `load_stt_config()` returns `hotkey_cancel = "alt+shift+esc"` and `hotkey_mode = "alt+shift+tab"` when no toml is present
+- [ ] Overlay Stop badge displays `Ctrl+Sp` (not `A+Sh+Sp`) with default config
+- [ ] Overlay Cancel badge displays `A+Sh+Esc` with default config
+- [ ] Overlay Mode badge displays `A+Sh+Tab` with default config
+- [ ] Custom `hotkey = "ctrl+shift+d"` in voicecli.toml results in Stop badge `C+Sh+D` after daemon restart
+- [ ] `voicecli.example.toml` documents `hotkey_cancel` and `hotkey_mode` in `[stt]` section
+- [ ] `_hotkey_badge()` is covered by at least one parameterized unit test covering all default hotkeys and one custom value
+- [ ] Unrecognized parts in a custom hotkey string (e.g. `super+space`) are capitalized and passed through — no crash, no empty badge
+- [ ] All existing `stt_daemon` and `overlay` tests pass
