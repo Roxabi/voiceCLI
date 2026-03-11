@@ -104,7 +104,26 @@ def _write_clipboard(text: str) -> None:
                     return
             except Exception:
                 pass
-    print("[stt] clipboard write failed: no wl-copy/xclip/xsel/clip.exe found", file=sys.stderr)
+    # Build a helpful install suggestion based on environment
+    is_wsl = "WSL_DISTRO_NAME" in os.environ or (
+        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
+    )
+    if is_wsl:
+        suggestion = (
+            "clip.exe is built-in on WSL2 — check WSL_INTEROP is set, or: sudo apt install xclip"
+        )
+    elif shutil.which("apt"):
+        suggestion = "sudo apt install wl-clipboard"
+    elif shutil.which("dnf"):
+        suggestion = "sudo dnf install wl-clipboard"
+    elif shutil.which("pacman"):
+        suggestion = "sudo pacman -S wl-clipboard"
+    else:
+        suggestion = "install wl-clipboard or xclip"
+    print(
+        f"[stt] clipboard write failed: no wl-copy/xclip/xsel/clip.exe found — {suggestion}",
+        file=sys.stderr,
+    )
 
 
 # ── Recording saver ───────────────────────────────────────────────────────────

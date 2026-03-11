@@ -168,6 +168,116 @@ dictate_app = typer.Typer(
 app.add_typer(dictate_app, name="dictate", invoke_without_command=True)
 
 
+def _run_dictate_setup() -> None:
+    """Print a step-by-step setup guide tailored to the current environment."""
+    import os
+    import shutil
+    from pathlib import Path
+
+    username = Path.home().name
+
+    # Detect environment
+    is_wsl = "WSL_DISTRO_NAME" in os.environ or (
+        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
+    )
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    is_kde = "KDE" in desktop.upper()
+    is_gnome = "GNOME" in desktop.upper()
+
+    typer.echo("VoiceCLI Dictate — Setup Guide")
+    typer.echo("=" * 40)
+    typer.echo("")
+    typer.echo("Step 1: Start the STT daemon")
+    typer.echo("  voicecli stt-serve")
+    typer.echo("  (add to autostart — see Step 3)")
+    typer.echo("")
+
+    if is_wsl:
+        typer.echo("Step 2: Bind a hotkey — Windows AutoHotkey (recommended)")
+        typer.echo("  Save this as dictate.ahk in your Windows Startup folder:")
+        typer.echo(r"  (%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup)")
+        typer.echo("")
+        typer.echo("    !+Space:: {")
+        typer.echo(f'        RunWait "wsl /home/{username}/.local/bin/voicecli-dictate", , "Hide"')
+        typer.echo("    }")
+        typer.echo("    !+Tab:: {")
+        typer.echo(
+            f'        RunWait "wsl /home/{username}/.local/bin/voicecli-next-mode", , "Hide"'
+        )
+        typer.echo("    }")
+        typer.echo("")
+        typer.echo("  Or: Windows Settings > Bluetooth & Devices > Keyboard > Custom Shortcuts")
+        typer.echo(f"  Command: wsl /home/{username}/.local/bin/voicecli-dictate")
+        typer.echo("")
+        typer.echo("Step 3: Clipboard — ensure wl-clipboard or xclip is installed:")
+        typer.echo("  sudo apt install wl-clipboard")
+        typer.echo("")
+        typer.echo("Step 4: Overlay — ensure tkinter is installed:")
+        typer.echo("  sudo apt install python3-tk")
+    elif is_kde:
+        typer.echo("Step 2: KDE System Settings > Shortcuts > Custom Shortcuts")
+        typer.echo("  Edit > New > Global Shortcut > Command/URL")
+        typer.echo("  Trigger: your key combo (e.g. Alt+Shift+Space)")
+        typer.echo("  Action: voicecli dictate")
+        typer.echo("")
+        typer.echo("  For mode cycling (Alt+Shift+Tab):")
+        typer.echo("  Action: voicecli dictate next-mode")
+        typer.echo("")
+        typer.echo("Step 3: Auto-start daemon")
+        typer.echo("  Add to KDE Autostart (System Settings > Autostart):")
+        typer.echo("  voicecli stt-serve")
+    elif is_gnome:
+        typer.echo("Step 2: GNOME Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts")
+        typer.echo("  Name: VoiceCLI Dictate")
+        typer.echo("  Command: voicecli dictate")
+        typer.echo("  Shortcut: Alt+Shift+Space")
+        typer.echo("")
+        typer.echo("  Name: VoiceCLI Next Mode")
+        typer.echo("  Command: voicecli dictate next-mode")
+        typer.echo("  Shortcut: Alt+Shift+Tab")
+        typer.echo("")
+        typer.echo("Step 3: Auto-start daemon")
+        typer.echo("  Create ~/.config/autostart/voicecli-stt.desktop:")
+        typer.echo("")
+        typer.echo("    [Desktop Entry]")
+        typer.echo("    Type=Application")
+        typer.echo("    Name=VoiceCLI STT Daemon")
+        typer.echo("    Exec=voicecli stt-serve")
+        typer.echo("    Hidden=false")
+        typer.echo("    NoDisplay=false")
+        typer.echo("    X-GNOME-Autostart-enabled=true")
+    else:
+        typer.echo("Step 2: Bind your DE's keyboard shortcut to:")
+        typer.echo("  voicecli dictate          (toggle recording)")
+        typer.echo("  voicecli dictate next-mode  (cycle modes)")
+        typer.echo("")
+        typer.echo("Step 3: Auto-start daemon at login via your DE's autostart or:")
+        typer.echo("  Add to ~/.profile: voicecli stt-serve &")
+
+    typer.echo("")
+    typer.echo("Dependency check:")
+
+    # Clipboard
+    if shutil.which("wl-copy") or shutil.which("xclip") or shutil.which("clip.exe"):
+        typer.echo("  clipboard OK")
+    else:
+        typer.echo("  clipboard: install wl-clipboard")
+
+    # Notifications
+    if shutil.which("notify-send"):
+        typer.echo("  notifications OK")
+    else:
+        typer.echo("  notifications: install libnotify-bin")
+
+    # Overlay (tkinter)
+    try:
+        import tkinter  # noqa: F401
+
+        typer.echo("  overlay OK")
+    except ImportError:
+        typer.echo("  overlay: sudo apt install python3-tk")
+
+
 @dictate_app.callback(invoke_without_command=True)
 def dictate(
     ctx: typer.Context,
@@ -183,9 +293,17 @@ def dictate(
         Optional[str],
         typer.Option("--mode", help="STT mode to use for this recording (e.g. french, code)"),
     ] = None,
+    setup: Annotated[
+        bool,
+        typer.Option("--setup", help="Print step-by-step setup guide for this environment"),
+    ] = False,
 ) -> None:
     """Toggle dictation recording or start the hotkey listener."""
     if ctx.invoked_subcommand is not None:
+        return
+
+    if setup:
+        _run_dictate_setup()
         return
 
     if listen:
