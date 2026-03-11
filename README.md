@@ -3,11 +3,21 @@
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
 ![CUDA](https://img.shields.io/badge/CUDA-enabled-76B900?logo=nvidia&logoColor=white)
-![version](https://img.shields.io/badge/version-0.1.0-22c55e)
+![version](https://img.shields.io/badge/version-0.2.0-22c55e)
 
 Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
 
+## Why
+
+Local TTS is scattered across incompatible APIs, each with their own parameter names, quirks, and input formats. Switching engines means rewriting scripts.
+
+VoiceCLI gives you one CLI and one `.md` script format that works across Qwen3-TTS, Chatterbox Multilingual, and Chatterbox Turbo — a built-in translator adapts your script to each engine's capabilities automatically. No cloud API keys, no GPU server, no rewrite when you switch models.
+
+Built for developers and content creators who want expressive, multilingual speech synthesis running entirely on local hardware.
+
 ## Pipeline
+
+Input flows through four stages: frontmatter parsing → config backfill → engine translation → synthesis. The translator is the key piece — it applies an engine capability matrix so one universal `.md` script works across all backends without manual changes.
 
 ```mermaid
 flowchart LR
@@ -94,15 +104,15 @@ Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default*
 ### `generate` — Text to speech
 
 ```bash
-voicecligenerate "Your text here"
-voicecligenerate "Your text" --engine chatterbox --output out.wav
-voicecligenerate script.md                      # read from markdown file
-voicecligenerate article.txt                    # read from plain text file
-voicecligenerate script.md --segment-gap 300    # 300ms silence between segments
-voicecligenerate script.md --crossfade 50       # 50ms fade between segments
-voicecligenerate script.md --plain              # ignore [tags] and <!-- directives -->
-voicecligenerate article.txt --chunked          # split into separate chunk files
-voicecligenerate article.txt --chunked --chunk-size 300  # ~20s chunks
+voicecli generate "Your text here"
+voicecli generate "Your text" --engine chatterbox --output out.wav
+voicecli generate script.md                      # read from markdown file
+voicecli generate article.txt                    # read from plain text file
+voicecli generate script.md --segment-gap 300    # 300ms silence between segments
+voicecli generate script.md --crossfade 50       # 50ms fade between segments
+voicecli generate script.md --plain              # ignore [tags] and <!-- directives -->
+voicecli generate article.txt --chunked          # split into separate chunk files
+voicecli generate article.txt --chunked --chunk-size 300  # ~20s chunks
 ```
 
 | Flag | Short | Description | Default |
@@ -122,11 +132,11 @@ voicecligenerate article.txt --chunked --chunk-size 300  # ~20s chunks
 ### `clone` — Voice cloning
 
 ```bash
-voicecliclone "Text to speak" --ref reference.wav
-voicecliclone "Text to speak"              # uses active sample (see below)
-voicecliclone script.md --segment-gap 200  # with segment transitions
-voicecliclone script.md --plain            # ignore [tags] and <!-- directives -->
-voicecliclone article.txt --chunked        # split into separate chunk files
+voicecli clone "Text to speak" --ref reference.wav
+voicecli clone "Text to speak"              # uses active sample (see below)
+voicecli clone script.md --segment-gap 200  # with segment transitions
+voicecli clone script.md --plain            # ignore [tags] and <!-- directives -->
+voicecli clone article.txt --chunked        # split into separate chunk files
 ```
 
 | Flag | Short | Description | Default |
@@ -147,13 +157,13 @@ voicecliclone article.txt --chunked        # split into separate chunk files
 ### `samples` — Manage voice samples
 
 ```bash
-voiceclisamples list                       # list all samples
-voiceclisamples add voice.wav              # import a WAV file
-voiceclisamples record my_voice            # record from microphone (10s)
-voiceclisamples record my_voice -d 5       # record for 5 seconds
-voiceclisamples use my_voice.wav           # set as active sample
-voiceclisamples active                     # show current active sample
-voiceclisamples remove my_voice.wav        # delete a sample
+voicecli samples list                       # list all samples
+voicecli samples add voice.wav              # import a WAV file
+voicecli samples record my_voice            # record from microphone (10s)
+voicecli samples record my_voice -d 5       # record for 5 seconds
+voicecli samples use my_voice.wav           # set as active sample
+voicecli samples active                     # show current active sample
+voicecli samples remove my_voice.wav        # delete a sample
 ```
 
 Once you set an active sample, `clone` uses it automatically — no `--ref` needed.
@@ -161,24 +171,24 @@ Once you set an active sample, `clone` uses it automatically — no `--ref` need
 ### `voices` — List available voices
 
 ```bash
-voiceclivoices                             # Qwen voices
-voiceclivoices --engine chatterbox
+voicecli voices                             # Qwen voices
+voicecli voices --engine chatterbox
 ```
 
 ### `engines` — List available engines
 
 ```bash
-voicecliengines
+voicecli engines
 ```
 
 ### `transcribe` — Speech to text
 
 ```bash
-voiceclitranscribe audio.wav                   # auto-detect language
-voiceclitranscribe audio.wav --lang fr         # force language
-voiceclitranscribe audio.wav --model large-v3  # choose model
-voiceclitranscribe audio.wav --json            # JSON with language + timestamps
-voiceclitranscribe audio.wav -o result.txt     # save to file
+voicecli transcribe audio.wav                   # auto-detect language
+voicecli transcribe audio.wav --lang fr         # force language
+voicecli transcribe audio.wav --model large-v3  # choose model
+voicecli transcribe audio.wav --json            # JSON with language + timestamps
+voicecli transcribe audio.wav -o result.txt     # save to file
 ```
 
 | Flag | Short | Description | Default |
@@ -193,8 +203,8 @@ Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo
 ### `listen` — Live mic transcription
 
 ```bash
-voiceclilisten                                 # EN + FR (1b model)
-voiceclilisten --model 2.6b                    # English-only, higher quality
+voicecli listen                                 # EN + FR (1b model)
+voicecli listen --model 2.6b                    # English-only, higher quality
 ```
 
 Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
