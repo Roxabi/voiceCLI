@@ -315,12 +315,6 @@ def _spawn_overlay(mode: str | None = None) -> None:
 # ── Chime wrapper ─────────────────────────────────────────────────────────────
 
 
-def _chime(kind: str) -> None:
-    from voicecli.samples import _chime as samples_chime
-
-    samples_chime(kind)
-
-
 # ── warmup (re-exported so tests can patch voicecli.stt_daemon.warmup) ────────
 
 
@@ -668,7 +662,6 @@ class SttDaemon:
                 self._start_parecord_recording(level_callback=_write_level)
         if self._recording_thread:
             self._recording_thread.start()
-        threading.Thread(target=_chime, args=("start",), daemon=True).start()
         threading.Thread(target=_spawn_overlay, args=(effective_mode,), daemon=True).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
 
@@ -755,7 +748,6 @@ class SttDaemon:
             queued = self._state == State.QUEUED
             self._state = State.IDLE
 
-        threading.Thread(target=_chime, args=("stop",), daemon=True).start()
         _send_json(
             conn, {"status": "ok", "state": State.IDLE.value, "text": text, "language": language}
         )
@@ -826,7 +818,6 @@ class SttDaemon:
 
         if self._recording_thread:
             self._recording_thread.start()
-        threading.Thread(target=_chime, args=("start",), daemon=True).start()
 
 
 # ── Wire protocol (copied from daemon.py) ─────────────────────────────────────
