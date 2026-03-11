@@ -1,0 +1,17 @@
+{
+  "name": "voicecli-marketplace",
+  "version": "1.0.0",
+  "description": "Claude Code plugin for VoiceCLI — local AI voice generation and transcription.",
+  "owner": {
+    "name": "Roxabi",
+    "url": "https://github.com/Roxabi"
+  },
+  "plugins": [
+    {
+      "name": "voice-cli",
+      "description": "Deep VoiceCLI knowledge — author TTS scripts, generate speech, clone voices, transcribe audio, dictate with STT daemon.",
+      "source": "./",
+      "category": "tools"
+    }
+  ]
+}
