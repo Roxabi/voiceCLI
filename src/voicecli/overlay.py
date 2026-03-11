@@ -16,9 +16,9 @@ import sys
 import threading
 import tkinter as tk
 from collections import deque
-from pathlib import Path
 
-from voicecli.stt_client import SOCKET_PATH, send_cancel, send_status
+from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_status
+from voicecli.stt_daemon import LEVEL_FILE
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 BAR_COUNT = 58
@@ -38,7 +38,6 @@ BAR_MAX_H = 22  # max half-height of a bar (grows ± from WAVE_CY)
 POLL_MS = 200
 ANIM_MS = 50  # ~20 fps
 
-LEVEL_FILE = Path("/tmp/voicecli_audio_level")
 LEVEL_PEAK = 0.06
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -171,6 +170,8 @@ class WaveformOverlay:
             mon_offset, mon_w = 0, sw
         x = mon_offset + mon_w // 2 - WIN_W // 2
         self.root.geometry(f"{WIN_W}x{WIN_H}+{x}+24")
+        self.root.lift()
+        self.root.focus_force()
 
         self.canvas = tk.Canvas(
             self.root, width=WIN_W, height=WIN_H, bg=CORNER_KEY, highlightthickness=0
@@ -232,9 +233,11 @@ class WaveformOverlay:
         )
 
         # Shortcut badges: right side
+        # Rendered right-to-left; list order = left-to-right reading order.
+        # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
         rx = WIN_W - 6
-        for label in reversed(["Esc", "Cancel  ", "⎵", "Alt⇧", "Stop  "]):
-            if label.strip() in ("Stop", "Cancel"):
+        for label in reversed(["Tab", "Mode  ", "Esc", "Cancel  ", "Alt⇧", "Spc", "Stop  "]):
+            if label.strip() in ("Stop", "Cancel", "Mode"):
                 rx -= 4
                 self.canvas.create_text(
                     rx,
@@ -251,6 +254,7 @@ class WaveformOverlay:
                 _draw_badge(self.canvas, rx, tool_cy, label.strip())
 
         self.root.bind("<Escape>", self._on_escape)
+        self.root.bind("<Tab>", self._on_tab)
         self._animate()
         if not test_mode:
             self.root.after(600, self._schedule_poll)
@@ -315,6 +319,15 @@ class WaveformOverlay:
     def _on_escape(self, _event: object = None) -> None:
         send_cancel()
         self._close()
+
+    def _on_tab(self, _event: object = None) -> None:
+        def _do() -> None:
+            resp = send_next_mode()
+            if self._running:
+                mode = resp.get("mode", "") or "—"
+                self.root.after(0, lambda m=mode: self.canvas.itemconfig(self._mode_label, text=m))
+
+        threading.Thread(target=_do, daemon=True).start()
 
     def _close(self) -> None:
         self._running = False

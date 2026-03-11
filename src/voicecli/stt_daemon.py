@@ -26,6 +26,8 @@ HISTORY_MAX = 100
 
 MAX_MSG = 65536
 
+LEVEL_FILE = Path("/tmp/voicecli_audio_level")
+
 
 # ── State machine ─────────────────────────────────────────────────────────────
 
@@ -40,10 +42,14 @@ class State(Enum):
 # ── pyaudio probe ─────────────────────────────────────────────────────────────
 
 
+def _is_wsl() -> bool:
+    return "WSL_DISTRO_NAME" in os.environ or (
+        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
+    )
+
+
 def _probe_pyaudio() -> bool:
     """Return True if pyaudio is usable; print warning and return False otherwise."""
-    import os
-
     try:
         import pyaudio
 
@@ -125,10 +131,7 @@ def _write_clipboard(text: str) -> None:
             except Exception:
                 pass
     # Build a helpful install suggestion based on environment
-    is_wsl = "WSL_DISTRO_NAME" in os.environ or (
-        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
-    )
-    if is_wsl:
+    if _is_wsl():
         suggestion = (
             "clip.exe is built-in on WSL2 — check WSL_INTEROP is set, or: sudo apt install xclip"
         )
@@ -163,11 +166,7 @@ def _auto_paste() -> None:
 
     time.sleep(0.15)  # small grace period so overlay close is processed first
 
-    is_wsl = "WSL_DISTRO_NAME" in os.environ or (
-        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
-    )
-
-    if is_wsl:
+    if _is_wsl():
         # Resolve Windows %TEMP% → WSL path and drop the trigger file
         try:
             r = subprocess.run(
@@ -278,14 +277,12 @@ def _append_history(
 
     HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
-        existing: list[str] = []
-        if HISTORY_PATH.exists():
-            existing = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
-        existing.append(_json.dumps(entry, ensure_ascii=False))
-        # Trim to cap
-        if len(existing) > HISTORY_MAX:
-            existing = existing[-HISTORY_MAX:]
-        HISTORY_PATH.write_text("\n".join(existing) + "\n", encoding="utf-8")
+        with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+        # Trim only when over cap (read-modify-write is rare)
+        lines = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+        if len(lines) > HISTORY_MAX:
+            HISTORY_PATH.write_text("\n".join(lines[-HISTORY_MAX:]) + "\n", encoding="utf-8")
     except Exception as e:
         print(f"[stt] history write failed: {e}", file=sys.stderr)
 
@@ -348,8 +345,6 @@ class RecordingThread(threading.Thread):
         self._stop_event = threading.Event()
 
     def run(self) -> None:
-        import os
-
         import numpy as np
         import pyaudio
 
@@ -402,7 +397,6 @@ def _record_parecord(stop_event: threading.Event, level_callback=None) -> bytes:
     Prefers `parec` (raw PCM to stdout) which enables real-time level callbacks.
     Falls back to `parecord` (WAV to temp file, no levels) if parec is absent.
     """
-    import array as _arr
     import shutil
     import subprocess
     import tempfile
@@ -421,6 +415,8 @@ def _record_parecord(stop_event: threading.Event, level_callback=None) -> bytes:
         frames: list[bytes] = []
 
         def _reader() -> None:
+            import numpy as np
+
             assert proc.stdout is not None
             while True:
                 data = proc.stdout.read(CHUNK)
@@ -428,9 +424,8 @@ def _record_parecord(stop_event: threading.Event, level_callback=None) -> bytes:
                     break
                 frames.append(data)
                 if level_callback and len(data) >= 2:
-                    samps = _arr.array("h", data)
-                    rms = (sum(s * s for s in samps) / len(samps)) ** 0.5
-                    level_callback(rms / 32768.0)
+                    samps = np.frombuffer(data, dtype=np.int16)
+                    level_callback(float(np.sqrt(np.mean(samps.astype(np.float32) ** 2))) / 32768.0)
 
         reader = threading.Thread(target=_reader, daemon=True)
         reader.start()
@@ -653,11 +648,10 @@ class SttDaemon:
     def _start_recording(self, conn: socket.socket, mode: str | None = None) -> None:
         # Resolve effective mode: request mode > default_mode
         effective_mode = mode if mode is not None else self.default_mode
-        level_file = Path("/tmp/voicecli_audio_level")
 
         def _write_level(level: float) -> None:
             try:
-                level_file.write_text(f"{level:.4f}")
+                LEVEL_FILE.write_text(f"{level:.4f}")
             except Exception:
                 pass
 
