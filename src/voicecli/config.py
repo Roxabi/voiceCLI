@@ -94,6 +94,7 @@ _KNOWN_STT: dict[str, type] = {
     "language_detection_threshold": float,
     "language_detection_segments": int,
     "language_fallback": str,
+    "auto_paste": bool,
 }
 
 

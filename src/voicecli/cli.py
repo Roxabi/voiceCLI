@@ -1193,6 +1193,7 @@ def stt_serve(
         language_detection_segments=resolved_segments,
         language_fallback=resolved_fallback,
         default_mode=default_mode,
+        auto_paste=bool(stt_cfg.get("auto_paste", False)),
     ).serve()
 
 

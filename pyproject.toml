@@ -13,6 +13,7 @@ dependencies = [
     "faster-whisper>=1.2",
     "torch>=2.7",
     "torchaudio>=2.7",
+    "pyaudio>=0.2.14",
 ]
 
 [project.scripts]
