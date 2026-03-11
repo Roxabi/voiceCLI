@@ -141,7 +141,7 @@ def auto_paste(text: str) -> None:
 # ── Hotkey listener ───────────────────────────────────────────────────────────
 
 
-def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
+def hotkey_loop(hotkey: str = "ctrl+space", paste: bool = False) -> None:
     """Block until Ctrl+C, firing send_toggle() on each *hotkey* press.
 
     Applies a 300 ms debounce to avoid double-triggers.  Calls ``notify()`` and
@@ -149,7 +149,7 @@ def hotkey_loop(hotkey: str = "alt+space", paste: bool = False) -> None:
 
     Args:
         hotkey: Key combination in pynput format pieces separated by ``+``
-                (e.g. ``"alt+space"``, ``"ctrl+shift+d"``).
+                (e.g. ``"ctrl+space"``, ``"ctrl+shift+d"``).
         paste:  If True, type transcribed text into the focused window.
     """
     import re

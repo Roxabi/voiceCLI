@@ -101,14 +101,14 @@ _KNOWN_STT: dict[str, type] = {
 def load_stt_config(config: Path | None = None) -> dict:
     """Load the ``[stt]`` table from voicecli.toml.
 
-    Returns ``{"hotkey": "alt+space"}`` (and other defaults) when no config is
+    Returns ``{"hotkey": "ctrl+space"}`` (and other defaults) when no config is
     found or the table is absent.
 
     Args:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
     """
     path = config if config is not None else _find_config()
-    result: dict[str, object] = {"hotkey": "alt+space"}
+    result: dict[str, object] = {"hotkey": "ctrl+space"}
     if path is None:
         return result
     with open(path, "rb") as f:

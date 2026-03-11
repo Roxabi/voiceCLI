@@ -68,7 +68,7 @@ Save as `voicecli-dictate.ahk` in your Windows Startup folder
 (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\`) so it auto-runs at login:
 
 ```ahk
-; VoiceCLI Dictate — Alt+Shift+Space to toggle, Alt+Shift+Tab to cycle modes, Alt+Shift+Esc to cancel
+; VoiceCLI Dictate — Ctrl+Space to toggle, Alt+Shift+Tab to cycle modes, Alt+Shift+Esc to cancel
 ; Auto-runs at Windows login via Startup folder
 
 ; ── Auto-paste trigger ────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ CheckPaste() {
 }
 
 ; ── Toggle recording ──────────────────────────────────────────────────────────
-!+Space:: {
+^Space:: {
     RunWait "wsl /home/<user>/.local/bin/voicecli-dictate", , "Hide"
 }
 
@@ -133,7 +133,7 @@ voicecli dictate --listen
 Output:
 
 ```
-Listening for alt+space... (Ctrl+C to stop)
+Listening for ctrl+space... (Ctrl+C to stop)
 ```
 
 Press Ctrl+C to stop the listener.
@@ -144,7 +144,7 @@ In `voicecli.toml`, add an `[stt]` section:
 
 ```toml
 [stt]
-hotkey = "alt+space"
+hotkey = "ctrl+space"
 ```
 
 The default is `alt+space`. The hotkey string uses pynput's format: modifier names

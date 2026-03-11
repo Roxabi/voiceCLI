@@ -21,7 +21,7 @@ engine = "qwen"
 # ── STT daemon settings ────────────────────────────────────────────────────────
 # [stt]
 # model = "large-v3-turbo"       # faster-whisper model
-# hotkey = "alt+space"           # global hotkey for dictate --listen
+# hotkey = "ctrl+space"          # global hotkey for dictate --listen
 # language = "fr"                # force language for all recordings
 # language_detection_threshold = 0.8
 # language_detection_segments = 3

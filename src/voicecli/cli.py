@@ -197,7 +197,7 @@ def _run_dictate_setup() -> None:
         typer.echo("  Save this as dictate.ahk in your Windows Startup folder:")
         typer.echo(r"  (%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup)")
         typer.echo("")
-        typer.echo("    !+Space:: {")
+        typer.echo("    ^Space:: {")
         typer.echo(f'        RunWait "wsl /home/{username}/.local/bin/voicecli-dictate", , "Hide"')
         typer.echo("    }")
         typer.echo("    !+Tab:: {")
