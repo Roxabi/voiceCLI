@@ -23,6 +23,37 @@ from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_s
 from voicecli.stt_daemon import LEVEL_FILE
 
 _ASSETS = Path(__file__).parent / "assets"
+
+_ABBREV = {
+    "alt": "A",
+    "shift": "Sh",
+    "space": "Sp",
+    "esc": "Esc",
+    "tab": "Tab",
+}
+
+
+def _hotkey_badge(hotkey_str: str) -> str:
+    """Convert config hotkey string to short display badge text.
+
+    Rules:
+      - 'ctrl' -> 'Ctrl' when sole modifier; 'C' when combined with others
+      - 'alt' -> 'A', 'shift' -> 'Sh', 'space' -> 'Sp', 'esc' -> 'Esc', 'tab' -> 'Tab'
+      - other parts -> capitalize first letter (graceful fallback, no crash)
+    """
+    parts = hotkey_str.lower().split("+")
+    has_other_modifier = any(p in ("alt", "shift") for p in parts)
+    result = []
+    for p in parts:
+        if p == "ctrl":
+            result.append("C" if has_other_modifier else "Ctrl")
+        elif p in _ABBREV:
+            result.append(_ABBREV[p])
+        else:
+            result.append(p.capitalize())
+    return "+".join(result)
+
+
 _SND_START = _ASSETS / "start.wav"
 _SND_STOP = _ASSETS / "stop.wav"
 
@@ -256,7 +287,12 @@ class WaveformOverlay:
         # Rendered right-to-left; list order = left-to-right reading order.
         # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
         rx = WIN_W - 6
-        for label in reversed(["A+Sh+Tab", "Mode  ", "A+Sh+Esc", "Cancel  ", "A+Sh+Sp", "Stop  "]):
+        _hk_toggle = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE") or "ctrl+space")
+        _hk_cancel = _hotkey_badge(
+            os.environ.get("VOICECLI_OVERLAY_HOTKEY_CANCEL") or "alt+shift+esc"
+        )
+        _hk_mode = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE") or "alt+shift+tab")
+        for label in reversed([_hk_mode, "Mode  ", _hk_cancel, "Cancel  ", _hk_toggle, "Stop  "]):
             if label.strip() in ("Stop", "Cancel", "Mode"):  # noqa: SIM102
                 rx -= 4
                 self.canvas.create_text(
