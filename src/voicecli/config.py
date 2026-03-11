@@ -90,6 +90,10 @@ def load_config(config: Path | None = None) -> dict:
 _KNOWN_STT: dict[str, type] = {
     "hotkey": str,
     "model": str,
+    "language": str,
+    "language_detection_threshold": float,
+    "language_detection_segments": int,
+    "language_fallback": str,
 }
 
 

@@ -38,16 +38,60 @@ class TranscriptionResult:
 
 
 def transcribe(
-    audio_path: Path, model: str = DEFAULT_MODEL, language: str | None = None
+    audio_path: Path,
+    model: str = DEFAULT_MODEL,
+    language: str | None = None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+    language_fallback: str | None = None,
 ) -> TranscriptionResult:
     whisper = _load_model(model)
-    segments, info = whisper.transcribe(
-        str(audio_path),
+
+    # If threshold + fallback are set, run a fast language detection pass first
+    if (
+        language is None
+        and language_detection_threshold is not None
+        and language_fallback is not None
+    ):
+        detect_kwargs: dict = {}
+        if language_detection_segments is not None:
+            detect_kwargs["language_detection_segments"] = language_detection_segments
+        _, detect_info = whisper.transcribe(
+            str(audio_path),
+            language=None,
+            task="transcribe",
+            beam_size=1,
+            vad_filter=True,
+            **detect_kwargs,
+        )
+        if detect_info.language_probability < language_detection_threshold:
+            print(
+                f"[stt] low confidence ({detect_info.language_probability:.2f}) for '{detect_info.language}', falling back to '{language_fallback}'",
+                file=__import__("sys").stderr,
+            )
+            language = language_fallback
+        else:
+            language = detect_info.language
+
+    kwargs: dict = dict(
         language=language,
+        task="transcribe",
         beam_size=5,
         vad_filter=True,
     )
-    seg_list = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
+    if language_detection_threshold is not None and language_fallback is None:
+        kwargs["language_detection_threshold"] = language_detection_threshold
+    if language_detection_segments is not None:
+        kwargs["language_detection_segments"] = language_detection_segments
+    segments, info = whisper.transcribe(str(audio_path), **kwargs)
+    seg_list = []
+    for s in segments:
+        seg_list.append({"start": s.start, "end": s.end, "text": s.text.strip()})
+        duration = s.end - s.start
+        print(
+            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {s.text.strip()}",
+            file=__import__("sys").stderr,
+        )
     full_text = " ".join(s["text"] for s in seg_list)
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 

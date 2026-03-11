@@ -152,7 +152,19 @@ def samples_from_url(
 
 # ── Dictate sub-app ───────────────────────────────────────────────────────────
 
-dictate_app = typer.Typer(help="Dictation client for STT daemon")
+dictate_app = typer.Typer(
+    help="Dictation client for STT daemon",
+    epilog=(
+        "Quick setup:\n\n"
+        "  1. Start daemon:  voicecli stt-serve\n\n"
+        "  2. Bind a hotkey to: voicecli dictate\n\n"
+        "     WSL2 (global):  Windows Settings > Custom Shortcuts > 'wsl voicecli dictate'\n\n"
+        "     KDE:            System Settings > Custom Shortcuts > Command\n\n"
+        "     GNOME:          Settings > Keyboard > Custom Shortcuts\n\n"
+        "     X11 only:       voicecli dictate --listen  (pynput required)\n\n"
+        "  Full guide: docs/dictation-setup.md"
+    ),
+)
 app.add_typer(dictate_app, name="dictate", invoke_without_command=True)
 
 
@@ -930,10 +942,19 @@ def stt_serve(
     from voicecli.stt_daemon import SttDaemon
 
     cfg = load_config()
-    resolved_model = (
-        model or (cfg.get("stt", {}).get("model", "") if cfg else "") or "large-v3-turbo"
-    )
-    SttDaemon(model=resolved_model).serve()
+    stt_cfg = cfg.get("stt", {}) if cfg else {}
+    resolved_model = model or stt_cfg.get("model", "") or "large-v3-turbo"
+    resolved_language = stt_cfg.get("language") or None
+    resolved_threshold = stt_cfg.get("language_detection_threshold") or None
+    resolved_segments = stt_cfg.get("language_detection_segments") or None
+    resolved_fallback = stt_cfg.get("language_fallback") or None
+    SttDaemon(
+        model=resolved_model,
+        language=resolved_language,
+        language_detection_threshold=resolved_threshold,
+        language_detection_segments=resolved_segments,
+        language_fallback=resolved_fallback,
+    ).serve()
 
 
 @app.command()

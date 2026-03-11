@@ -109,26 +109,22 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
         return volume * env * wave
 
     if kind == "start":
-        # Warm rising triad: C4 → E4 → G4 → C5, each gently staggered
-        duration = 1.8
+        # Bright major chord: C5 + E5 + G5, instant attack, bell decay ~350ms
+        duration = 0.35
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 262, onset=0.0, sustain=0.4, release=0.8, volume=0.15)  # C4
-            + _note(t, 330, onset=0.25, sustain=0.4, release=0.7, volume=0.18)  # E4
-            + _note(t, 392, onset=0.50, sustain=0.4, release=0.6, volume=0.20)  # G4
-            + _note(t, 523, onset=0.75, sustain=0.5, release=0.5, volume=0.22)  # C5
+            _note(t, 523, onset=0.0, sustain=0.02, release=0.15, volume=0.20)  # C5
+            + _note(t, 659, onset=0.0, sustain=0.02, release=0.13, volume=0.18)  # E5
+            + _note(t, 784, onset=0.0, sustain=0.02, release=0.11, volume=0.16)  # G5
         )
-        # Global smooth fade-in and fade-out
-        signal *= np.clip(t / 0.15, 0, 1) * np.clip((duration - t) / 0.4, 0, 1)
     else:
-        # Soft resolved closure: G4 → E4 with gentle decay
-        duration = 1.0
+        # Soft descending resolution: G4 → E4, ~300ms
+        duration = 0.30
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 392, onset=0.0, sustain=0.3, release=0.5, volume=0.18)  # G4
-            + _note(t, 262, onset=0.25, sustain=0.4, release=0.4, volume=0.15)  # C4
+            _note(t, 392, onset=0.0, sustain=0.02, release=0.12, volume=0.18)  # G4
+            + _note(t, 330, onset=0.06, sustain=0.02, release=0.12, volume=0.16)  # E4
         )
-        signal *= np.clip((duration - t) / 0.3, 0, 1)
 
     signal = np.clip(signal, -1, 1)
     signal = (signal * 32767).astype(np.int16)

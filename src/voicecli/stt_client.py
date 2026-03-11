@@ -53,6 +53,11 @@ def send_status() -> dict:
     return _send_request("status")
 
 
+def send_cancel() -> dict:
+    """Send a cancel action to the STT daemon and return the response dict."""
+    return _send_request("cancel")
+
+
 # ── Desktop notifications ─────────────────────────────────────────────────────
 
 # Stable replace-ID so each notify-send call replaces the previous bubble.

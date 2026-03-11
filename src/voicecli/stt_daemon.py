@@ -91,16 +91,73 @@ def _write_clipboard(text: str) -> None:
         ["wl-copy"],
         ["xclip", "-selection", "clipboard"],
         ["xsel", "--clipboard", "--input"],
+        ["clip.exe"],
     ]:
         if shutil.which(cmd[0]):
             try:
+                encoding = "utf-16-le" if cmd[0] == "clip.exe" else "utf-8"
                 proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-                proc.communicate(input=text.encode())
+                proc.communicate(input=text.encode(encoding))
                 if proc.returncode == 0:
                     return
             except Exception:
                 pass
-    print("[stt] clipboard write failed: no wl-copy/xclip/xsel found", file=sys.stderr)
+    print("[stt] clipboard write failed: no wl-copy/xclip/xsel/clip.exe found", file=sys.stderr)
+
+
+# ── Recording saver ───────────────────────────────────────────────────────────
+
+
+def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
+    """Save WAV audio and transcript to STT/audio_in and STT/texts_out."""
+    if not wav_bytes and not text:
+        return
+    from datetime import datetime
+    from voicecli.config import _find_config
+
+    # Derive project root from voicecli.toml location, fall back to cwd
+    cfg_path = _find_config()
+    project_root = cfg_path.parent if cfg_path else Path.cwd()
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    lang_tag = f"_{language}" if language else ""
+
+    if wav_bytes:
+        audio_dir = project_root / "STT" / "audio_in"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = audio_dir / f"dictate{lang_tag}_{ts}.wav"
+        audio_path.write_bytes(wav_bytes)
+        print(f"[stt] saved audio: {audio_path}", file=sys.stderr)
+
+    if text:
+        text_dir = project_root / "STT" / "texts_out"
+        text_dir.mkdir(parents=True, exist_ok=True)
+        text_path = text_dir / f"dictate{lang_tag}_{ts}.txt"
+        text_path.write_text(text, encoding="utf-8")
+        print(f"[stt] saved transcript: {text_path}", file=sys.stderr)
+
+
+# ── Overlay launcher ──────────────────────────────────────────────────────────
+
+
+def _spawn_overlay() -> None:
+    """Launch the waveform overlay from the daemon process (survives WSL session exit)."""
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    log = Path(os.environ.get("TMPDIR", "/tmp")) / "voicecli_overlay.log"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "voicecli.overlay"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=open(log, "w"),
+            env=env,
+        )
+    except Exception as e:
+        print(f"[stt] overlay spawn failed: {e}", file=sys.stderr)
 
 
 # ── Chime wrapper ─────────────────────────────────────────────────────────────
@@ -206,8 +263,20 @@ def _record_parecord(stop_event: threading.Event) -> bytes:
 
 
 class SttDaemon:
-    def __init__(self, model: str = "large-v3-turbo", socket_path: Path | None = None):
+    def __init__(
+        self,
+        model: str = "large-v3-turbo",
+        socket_path: Path | None = None,
+        language: str | None = None,
+        language_detection_threshold: float | None = None,
+        language_detection_segments: int | None = None,
+        language_fallback: str | None = None,
+    ):
         self.model = model
+        self.language = language
+        self.language_detection_threshold = language_detection_threshold
+        self.language_detection_segments = language_detection_segments
+        self.language_fallback = language_fallback
         self._socket_path = Path(socket_path) if socket_path is not None else SOCKET_PATH
         self._state = State.IDLE
         self._lock = threading.Lock()
@@ -307,6 +376,8 @@ class SttDaemon:
                 self._handle_status(conn)
             elif action == "toggle":
                 self._handle_toggle(conn)
+            elif action == "cancel":
+                self._handle_cancel(conn)
             else:
                 self._handle_unknown(conn, action)
         except Exception as exc:
@@ -373,6 +444,7 @@ class SttDaemon:
         if self._recording_thread:
             self._recording_thread.start()
         threading.Thread(target=_chime, args=("start",), daemon=True).start()
+        threading.Thread(target=_spawn_overlay, daemon=True).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
 
     def _stop_and_transcribe(self, conn: socket.socket) -> None:
@@ -402,9 +474,17 @@ class SttDaemon:
         try:
             from voicecli.transcribe import transcribe
 
-            result = transcribe(tmp_path, model=self.model)
+            result = transcribe(
+                tmp_path,
+                model=self.model,
+                language=self.language,
+                language_detection_threshold=self.language_detection_threshold,
+                language_detection_segments=self.language_detection_segments,
+                language_fallback=self.language_fallback,
+            )
             text = result.text
             language = result.language
+            print(f"[stt] detected language: {language}", file=sys.stderr)
         except Exception as e:
             print(f"[stt] transcription error: {e}", file=sys.stderr)
         finally:
@@ -414,6 +494,8 @@ class SttDaemon:
             _write_clipboard(text)
         except Exception as e:
             print(f"[stt] clipboard error: {e}", file=sys.stderr)
+
+        _save_recording(wav_bytes, text, language)
 
         with self._lock:
             queued = self._state == State.QUEUED
@@ -426,6 +508,24 @@ class SttDaemon:
 
         if queued:
             self._start_recording_async()
+
+    def _handle_cancel(self, conn: socket.socket) -> None:
+        with self._lock:
+            state = self._state
+            if state not in (State.RECORDING, State.QUEUED):
+                _send_json(conn, {"status": "ok", "state": State.IDLE.value})
+                return
+            self._state = State.IDLE
+            rt = self._recording_thread
+            self._recording_thread = None
+            stop_ev = self._parecord_stop_event
+            self._parecord_stop_event = None
+
+        if rt is not None:
+            threading.Thread(target=rt.stop, daemon=True).start()
+        if stop_ev is not None:
+            stop_ev.set()
+        _send_json(conn, {"status": "ok", "state": State.IDLE.value})
 
     def _queue_recording(self, conn: socket.socket) -> None:
         with self._lock:
