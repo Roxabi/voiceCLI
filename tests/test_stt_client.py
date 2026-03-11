@@ -359,6 +359,22 @@ class TestHotkeyLoop:
         hotkeys_dict = call_args[0][0]
         assert "<alt>+<space>" in hotkeys_dict
 
+    def test_hotkey_loop_default_hotkey_formatted_correctly(self):
+        """hotkey_loop converts 'ctrl+space' (default) to '<ctrl>+<space>' for GlobalHotKeys."""
+        from voicecli.stt_client import hotkey_loop
+
+        mock_global_hotkeys_cls = MagicMock(return_value=self._make_listener())
+        pynput_mock, mock_keyboard = _make_pynput_mock(mock_global_hotkeys_cls)
+
+        with (
+            patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
+            patch("voicecli.stt_client.send_toggle", return_value={"status": "error"}),
+        ):
+            hotkey_loop(hotkey="ctrl+space")
+
+        hotkeys_dict = mock_global_hotkeys_cls.call_args[0][0]
+        assert "<ctrl>+<space>" in hotkeys_dict
+
     def test_hotkey_loop_multi_key_combo_formatted_correctly(self):
         """hotkey_loop converts 'ctrl+shift+d' to '<ctrl>+<shift>+<d>'."""
         from voicecli.stt_client import hotkey_loop

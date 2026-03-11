@@ -287,11 +287,11 @@ class WaveformOverlay:
         # Rendered right-to-left; list order = left-to-right reading order.
         # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
         rx = WIN_W - 6
-        _hk_toggle = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE", "ctrl+space"))
+        _hk_toggle = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE") or "ctrl+space")
         _hk_cancel = _hotkey_badge(
-            os.environ.get("VOICECLI_OVERLAY_HOTKEY_CANCEL", "alt+shift+esc")
+            os.environ.get("VOICECLI_OVERLAY_HOTKEY_CANCEL") or "alt+shift+esc"
         )
-        _hk_mode = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE", "alt+shift+tab"))
+        _hk_mode = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE") or "alt+shift+tab")
         for label in reversed([_hk_mode, "Mode  ", _hk_cancel, "Cancel  ", _hk_toggle, "Stop  "]):
             if label.strip() in ("Stop", "Cancel", "Mode"):  # noqa: SIM102
                 rx -= 4

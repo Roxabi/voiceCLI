@@ -33,6 +33,10 @@ from voicecli.overlay import _hotkey_badge
         ("alt+f4", "A+F4"),
         # unknown modifier passes through gracefully (capitalize first letter)
         ("super+space", "Super+Sp"),
+        # single-part (no plus sign) — bare key from misconfigured env var
+        ("space", "Sp"),
+        # mixed-case input — .lower() normalizes before lookup
+        ("Ctrl+Space", "Ctrl+Sp"),
     ],
 )
 def test_hotkey_badge(hotkey: str, expected: str) -> None:
