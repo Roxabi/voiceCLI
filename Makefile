@@ -5,14 +5,15 @@ ifneq (,$(filter stt tts,$(firstword $(MAKECMDGOALS))))
   endif
 endif
 
-SUPERVISORCTL := $(HOME)/projects/lyra-stack/scripts/supervisorctl.sh
-SUPERVISOR_START := $(HOME)/projects/lyra-stack/scripts/start.sh
-HUB_DIR := $(HOME)/projects/lyra-stack
-HUB_PID := $(HUB_DIR)/supervisord.pid
+LYRA_STACK_DIR ?= $(HOME)/projects/lyra-stack
+SUPERVISORCTL  := $(LYRA_STACK_DIR)/scripts/supervisorctl.sh
+SUPERVISOR_START := $(LYRA_STACK_DIR)/scripts/start.sh
+HUB_PID        := $(LYRA_STACK_DIR)/supervisord.pid
 
 define ensure_hub
-	@if [ ! -d "$(HUB_DIR)" ]; then \
-		echo "Error: ~/projects/lyra-stack not found. Set up lyra-stack first."; \
+	@if [ ! -d "$(LYRA_STACK_DIR)" ]; then \
+		echo "Error: lyra-stack not found at $(LYRA_STACK_DIR)"; \
+		echo "       Clone it or set LYRA_STACK_DIR=/path/to/lyra-stack"; \
 		exit 1; \
 	fi
 	@if [ ! -f "$(HUB_PID)" ] || ! kill -0 $$(cat "$(HUB_PID)" 2>/dev/null) 2>/dev/null; then \
@@ -24,14 +25,17 @@ endef
 .PHONY: register tts stt install lint test
 
 register:
-	@echo "Registering voiceCLI with global supervisor..."
-	@if [ ! -d "$(HUB_DIR)" ]; then \
-		echo "Error: ~/projects/lyra-stack not found."; exit 1; \
+	@echo "Registering voiceCLI with lyra-stack..."
+	@if [ ! -d "$(LYRA_STACK_DIR)" ]; then \
+		echo "Error: lyra-stack not found at $(LYRA_STACK_DIR)"; \
+		echo "       Clone it or set LYRA_STACK_DIR=/path/to/lyra-stack"; \
+		exit 1; \
 	fi
-	@ln -sf "$(abspath supervisor/conf.d/voicecli_tts.conf)" "$(HUB_DIR)/conf.d/voicecli_tts.conf"
-	@ln -sf "$(abspath supervisor/conf.d/voicecli_stt.conf)" "$(HUB_DIR)/conf.d/voicecli_stt.conf"
+	@mkdir -p "$(LYRA_STACK_DIR)/conf.d"
+	@ln -sf "$(abspath supervisor/conf.d/voicecli_tts.conf)" "$(LYRA_STACK_DIR)/conf.d/voicecli_tts.conf"
+	@ln -sf "$(abspath supervisor/conf.d/voicecli_stt.conf)" "$(LYRA_STACK_DIR)/conf.d/voicecli_stt.conf"
 	@mkdir -p supervisor/logs
-	@if [ -S "$(HUB_DIR)/supervisor.sock" ]; then \
+	@if [ -S "$(LYRA_STACK_DIR)/supervisor.sock" ]; then \
 		$(SUPERVISORCTL) reread && $(SUPERVISORCTL) update; \
 	fi
 	@echo "Done. Run 'make tts' or 'make stt' to start services."
@@ -41,9 +45,9 @@ tts:
 ifeq ($(SVC_CMD),reload)
 	@$(SUPERVISORCTL) restart voicecli_tts
 else ifeq ($(SVC_CMD),logs)
-	@tail -f $(HOME)/projects/voiceCLI/supervisor/logs/voicecli_tts.log
+	@$(SUPERVISORCTL) tail -f voicecli_tts
 else ifeq ($(SVC_CMD),errlogs)
-	@tail -f $(HOME)/projects/voiceCLI/supervisor/logs/voicecli_tts_error.log
+	@$(SUPERVISORCTL) tail -f voicecli_tts stderr
 else ifeq ($(SVC_CMD),stop)
 	@$(SUPERVISORCTL) stop voicecli_tts
 else ifeq ($(SVC_CMD),start)
@@ -59,9 +63,9 @@ stt:
 ifeq ($(SVC_CMD),reload)
 	@$(SUPERVISORCTL) restart voicecli_stt
 else ifeq ($(SVC_CMD),logs)
-	@tail -f $(HOME)/projects/voiceCLI/supervisor/logs/voicecli_stt.log
+	@$(SUPERVISORCTL) tail -f voicecli_stt
 else ifeq ($(SVC_CMD),errlogs)
-	@tail -f $(HOME)/projects/voiceCLI/supervisor/logs/voicecli_stt_error.log
+	@$(SUPERVISORCTL) tail -f voicecli_stt stderr
 else ifeq ($(SVC_CMD),stop)
 	@$(SUPERVISORCTL) stop voicecli_stt
 else ifeq ($(SVC_CMD),start)
