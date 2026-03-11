@@ -13,6 +13,11 @@ engine = "qwen"
 # chunked = false
 # chunk_size = 500
 
+# ── Telegram notifications ─────────────────────────────────────────────────────
+# [telegram]
+# bot_token = "YOUR_BOT_TOKEN"   # from @BotFather
+# chat_id = "YOUR_CHAT_ID"       # your personal chat ID
+
 # ── STT daemon settings ────────────────────────────────────────────────────────
 # [stt]
 # model = "large-v3-turbo"       # faster-whisper model
