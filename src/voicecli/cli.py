@@ -356,6 +356,21 @@ def dictate_status() -> None:
     print(resp.get("state", "unknown"))
 
 
+@dictate_app.command("test-overlay")
+def dictate_test_overlay() -> None:
+    """Show the waveform overlay for 5 seconds (for testing position/visibility)."""
+    import os
+    import sys as _sys
+    import subprocess
+
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    # Patch overlay to stay open regardless of daemon state
+    env["VOICECLI_OVERLAY_TEST"] = "1"
+    typer.echo("Showing overlay for 5 seconds — look at the top of your screen...")
+    subprocess.run([_sys.executable, "-m", "voicecli.overlay", "--test"], env=env)
+
+
 @dictate_app.command("next-mode")
 def dictate_next_mode() -> None:
     """Cycle to the next STT mode (becomes the new default)."""

@@ -8,6 +8,7 @@ Press ESC to cancel the recording.
 from __future__ import annotations
 
 import math
+import os
 import random
 import sys
 import tkinter as tk
@@ -59,13 +60,12 @@ class WaveformOverlay:
         self.root.configure(bg=BG)
         self.root.attributes("-alpha", 0.93)
 
-        # Position: bottom-center of primary monitor
+        # Position: top-center of primary monitor (avoids taskbar at bottom)
         # Halve width on wide setups (>3000px = likely dual monitor side-by-side)
         sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
         mon_w = sw // 2 if sw > 3000 else sw
         x = mon_w // 2 - win_w // 2
-        y = sh - win_h - 64
+        y = 24
         self.root.geometry(f"{win_w}x{win_h}+{x}+{y}")
 
         self.canvas = tk.Canvas(self.root, width=win_w, height=win_h, bg=BG, highlightthickness=0)
@@ -156,9 +156,13 @@ class WaveformOverlay:
 
 
 def main() -> None:
-    if not SOCKET_PATH.exists():
+    test_mode = "--test" in sys.argv or os.environ.get("VOICECLI_OVERLAY_TEST") == "1"
+    if not test_mode and not SOCKET_PATH.exists():
         sys.exit(0)  # daemon not running — nothing to show
-    WaveformOverlay().run()
+    overlay = WaveformOverlay()
+    if test_mode:
+        overlay.root.after(5000, overlay._close)
+    overlay.run()
 
 
 if __name__ == "__main__":
