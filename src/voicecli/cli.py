@@ -386,6 +386,17 @@ def dictate_next_mode() -> None:
     notify(f"Mode: {desc}", timeout=2000)
 
 
+@dictate_app.command("cancel")
+def dictate_cancel() -> None:
+    """Cancel the current STT recording without transcribing."""
+    from voicecli.stt_client import send_cancel
+
+    resp = send_cancel()
+    if resp.get("status") == "error":
+        print(resp.get("message", "unknown error"), file=sys.stderr)
+        raise typer.Exit(code=1)
+
+
 @dictate_app.command("modes")
 def dictate_modes() -> None:
     """List all available STT modes with descriptions."""

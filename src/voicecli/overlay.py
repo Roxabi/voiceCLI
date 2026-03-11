@@ -256,7 +256,7 @@ class WaveformOverlay:
         # Rendered right-to-left; list order = left-to-right reading order.
         # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
         rx = WIN_W - 6
-        for label in reversed(["Tab", "Mode  ", "Esc", "Cancel  ", "A+Sh+Sp", "Stop  "]):
+        for label in reversed(["A+Sh+Tab", "Mode  ", "A+Sh+Esc", "Cancel  ", "A+Sh+Sp", "Stop  "]):
             if label.strip() in ("Stop", "Cancel", "Mode"):  # noqa: SIM102
                 rx -= 4
                 self.canvas.create_text(
