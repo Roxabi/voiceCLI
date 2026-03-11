@@ -17,7 +17,8 @@ STT/audio_in/*
 STT/texts_out/*
 !STT/texts_out/.gitkeep
 .ruff_cache/
-.claude/skills/
+.claude/skills/*
+!.claude/skills/voicecli/
 !.claude/skills/voice-design/
 voicecli.toml
 

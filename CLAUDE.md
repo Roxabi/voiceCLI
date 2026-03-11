@@ -45,10 +45,10 @@ User runs: voicecli generate script.md -e chatterbox
 Each step is pure Python, no LLM involved. The translator is the key new piece — it makes
 one universal `.md` file work across all three engines without manual adaptation.
 
-### LLM skill (`roxabi-plugins/voice-me`)
+### LLM skill (`.claude/skills/voicecli/`)
 
-The `/voicecli` skill is provided by the `voice-me` plugin (installed from `roxabi-plugins`).
-Locally, `.claude/skills/voicecli/SKILL.md` is a symlink to the plugin (gitignored).
+The `/voicecli` skill lives at `.claude/skills/voicecli/SKILL.md` (tracked in git, source of truth).
+In `roxabi-plugins`, `plugins/voice-cli/skills/voice/SKILL.md` is a symlink back to here.
 
 The LLM handles:
 
