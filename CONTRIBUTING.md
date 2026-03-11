@@ -25,7 +25,7 @@ test(translate): cover tag-to-instruct edge cases
 refactor(cli): extract config backfill logic
 ```
 
-- Scope is optional but encouraged (`cli`, `engine`, `markdown`, `translate`, `config`, `samples`)
+- Scope is optional but encouraged (`cli`, `engine`, `markdown`, `translate`, `config`, `samples`, `stt`, `overlay`, `dictate`)
 - Breaking changes: add `!` after scope — `feat(cli)!: rename generate flags`
 
 ## PR conventions

@@ -35,22 +35,25 @@ uv sync
 
 ```bash
 # Generate speech with default voice (Qwen, Ryan)
-voicecligenerate "Hello, how are you today?"
+voicecli generate "Hello, how are you today?"
 
 # Pick a different voice
-voicecligenerate "Bonjour" --voice Vivian --lang French
+voicecli generate "Bonjour" --voice Vivian --lang French
 
 # Use Chatterbox engine
-voicecligenerate "This is exciting!" --engine chatterbox
+voicecli generate "This is exciting!" --engine chatterbox
 
 # Clone a voice from a reference audio file
-voicecliclone "Say this in my voice" --ref my_recording.wav
+voicecli clone "Say this in my voice" --ref my_recording.wav
 
 # Transcribe an audio file
-voiceclitranscribe recording.wav
+voicecli transcribe recording.wav
 
 # Live mic transcription
-voiceclilisten
+voicecli listen
+
+# Dictation mode (STT daemon + overlay)
+voicecli dictate
 ```
 
 ## User Config (`voicecli.toml`)
@@ -199,6 +202,28 @@ Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
 | `--model` | `-m` | Kyutai model (`1b` or `2.6b`) | `1b` |
+
+### `dictate` — Continuous STT dictation
+
+Runs a persistent STT daemon with a waveform overlay UI. Toggle recording with a keyboard shortcut, transcribe speech, and auto-paste the result into the active window.
+
+```bash
+voicecli dictate               # start STT daemon + overlay
+voicecli dictate cancel        # cancel current recording
+voicecli dictate next-mode     # cycle STT mode
+voicecli dictate status        # show daemon status
+```
+
+On WSL2, use the included AutoHotkey script for global shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt+Shift+Space` | Toggle recording |
+| `Alt+Shift+Tab` | Cycle mode |
+| `Alt+Shift+Esc` | Cancel |
+
+Auto-paste after transcription is enabled by `auto_paste = true` in `voicecli.toml` (`[stt]` section).
+See [docs/dictation-setup.md](docs/dictation-setup.md) for full setup.
 
 ### `serve` — Daemon (warm model for fast generation)
 
@@ -363,6 +388,8 @@ src/voicecli/
   samples.py        # Sample management (add/record/use/remove)
   transcribe.py     # Faster Whisper file transcription
   listen.py         # Kyutai STT real-time mic transcription
+  overlay.py        # Waveform overlay UI (tkinter/WSLg)
+  assets/           # UI sounds (start.wav, stop.wav)
 ```
 
 ## Documentation
@@ -370,6 +397,8 @@ src/voicecli/
 | Doc | Description |
 |-----|-------------|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [docs/dictation-setup.md](docs/dictation-setup.md) | Full dictation setup (AHK, WSL2, auto-paste) |
+| [docs/configuration.md](docs/configuration.md) | `voicecli.toml` reference |
 
 ## License
 

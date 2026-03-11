@@ -47,3 +47,22 @@ crossfade = 50          # ms fade between segments
 Only non-empty parts are joined. Raw `instruct` bypasses composition entirely.
 
 See [Ubiquitous Language — Instruct vs Structured Parts](./architecture/ubiquitous-language#instruct-vs-structured-parts) for the distinction.
+
+## STT Config (`[stt]`)
+
+```toml
+[stt]
+model        = "large-v3-turbo"   # Whisper model (overridden by --model flag)
+hotkey       = "alt+space"        # Hotkey for --listen mode
+auto_paste   = true               # WSL2: write AHK trigger file after transcription
+default_mode = "default"          # Starting mode on daemon launch
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `model` | `large-v3-turbo` | faster-whisper model loaded by the STT daemon |
+| `hotkey` | `alt+space` | Hotkey string for `voicecli dictate --listen` |
+| `auto_paste` | `false` | Write AHK paste trigger after transcription (WSL2) |
+| `default_mode` | `"default"` | Initial STT mode; cycle with `Alt+Shift+Tab` |
+
+Requires daemon restart after changes. See [dictation-setup.md](./dictation-setup.md) for the full WSL2 setup.
