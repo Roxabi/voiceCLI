@@ -12,13 +12,28 @@ from __future__ import annotations
 
 import os
 import random
+import subprocess
 import sys
 import threading
 import tkinter as tk
 from collections import deque
+from pathlib import Path
 
 from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_status
 from voicecli.stt_daemon import LEVEL_FILE
+
+_ASSETS = Path(__file__).parent / "assets"
+_SND_START = _ASSETS / "start.wav"
+_SND_STOP = _ASSETS / "stop.wav"
+
+
+def _play(path: Path) -> None:
+    """Play a WAV file non-blocking via paplay (fire-and-forget)."""
+    if path.exists():
+        subprocess.Popen(
+            ["paplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 BAR_COUNT = 58
@@ -172,6 +187,11 @@ class WaveformOverlay:
         self.root.geometry(f"{WIN_W}x{WIN_H}+{x}+24")
         self.root.lift()
         self.root.focus_force()
+        try:
+            # Grab all X11 keyboard events globally so Esc/Tab work without clicking
+            self.root.grab_set_global()
+        except tk.TclError:
+            pass
 
         self.canvas = tk.Canvas(
             self.root, width=WIN_W, height=WIN_H, bg=CORNER_KEY, highlightthickness=0
@@ -236,8 +256,8 @@ class WaveformOverlay:
         # Rendered right-to-left; list order = left-to-right reading order.
         # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
         rx = WIN_W - 6
-        for label in reversed(["Tab", "Mode  ", "Esc", "Cancel  ", "Alt⇧", "Spc", "Stop  "]):
-            if label.strip() in ("Stop", "Cancel", "Mode"):
+        for label in reversed(["Tab", "Mode  ", "Esc", "Cancel  ", "A+Sh+Sp", "Stop  "]):
+            if label.strip() in ("Stop", "Cancel", "Mode"):  # noqa: SIM102
                 rx -= 4
                 self.canvas.create_text(
                     rx,
@@ -255,6 +275,9 @@ class WaveformOverlay:
 
         self.root.bind("<Escape>", self._on_escape)
         self.root.bind("<Tab>", self._on_tab)
+        # Right-click anywhere on the overlay = cancel (no focus needed)
+        self.canvas.bind("<Button-3>", self._on_escape)
+        _play(_SND_START)
         self._animate()
         if not test_mode:
             self.root.after(600, self._schedule_poll)
@@ -331,6 +354,11 @@ class WaveformOverlay:
 
     def _close(self) -> None:
         self._running = False
+        _play(_SND_STOP)
+        try:
+            self.root.grab_release()
+        except Exception:
+            pass
         try:
             LEVEL_FILE.unlink(missing_ok=True)
         except Exception:

@@ -7,6 +7,11 @@ Each mode may specify: language, task, prompt, description (all optional).
 from __future__ import annotations
 
 BUILTIN_MODES: dict[str, dict] = {
+    "default": {
+        "description": "Auto language detection, clean transcription",
+        "task": "transcribe",
+        "prompt": "Clear speech. Proper punctuation and capitalization.",
+    },
     "french": {
         "description": "Dictation in French",
         "language": "fr",
@@ -19,12 +24,25 @@ BUILTIN_MODES: dict[str, dict] = {
         "task": "transcribe",
         "prompt": "Hello. Here is a well-punctuated English sentence.",
     },
-    "translate-en": {
-        "description": "Speak anything, get English output",
+    "fr-to-en": {
+        "description": "Speak French → English output",
+        "language": "fr",
         "task": "translate",
     },
+    "translate-en": {
+        "description": "Speak anything → English output",
+        "task": "translate",
+    },
+    "email": {
+        "description": "Email dictation — speak naturally, get structured email",
+        "task": "transcribe",
+        "prompt": (
+            "Email dictation. Subject: [topic]. Dear [Name], [body]. Best regards."
+            " Professional tone. Proper punctuation."
+        ),
+    },
     "code": {
-        "description": "Voice to code comment",
+        "description": "Voice to code / technical terms",
         "task": "transcribe",
         "prompt": "Variable name, function name, code comment, no filler words.",
     },

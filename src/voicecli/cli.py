@@ -1186,13 +1186,14 @@ def stt_serve(
     resolved_threshold = stt_cfg.get("language_detection_threshold") or None
     resolved_segments = stt_cfg.get("language_detection_segments") or None
     resolved_fallback = stt_cfg.get("language_fallback") or None
+    resolved_default_mode = default_mode or stt_cfg.get("default_mode") or None
     SttDaemon(
         model=resolved_model,
         language=resolved_language,
         language_detection_threshold=resolved_threshold,
         language_detection_segments=resolved_segments,
         language_fallback=resolved_fallback,
-        default_mode=default_mode,
+        default_mode=resolved_default_mode,
         auto_paste=bool(stt_cfg.get("auto_paste", False)),
     ).serve()
 
