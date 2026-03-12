@@ -109,6 +109,43 @@ def _bar_color(frac: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def _primary_monitor_geometry(sw: int) -> tuple[int, int]:
+    """Return (offset_x, width) of the primary monitor using xrandr.
+
+    Falls back to the leftmost half when xrandr is unavailable or parsing fails.
+    On WSLg, winfo_pointerx() is unreliable (stuck at monitor boundary), so we
+    use xrandr to find the monitor marked as primary or the one at offset +0+0.
+    """
+    try:
+        import re
+        import subprocess
+
+        out = subprocess.check_output(
+            ["xrandr"], env={"DISPLAY": os.environ.get("DISPLAY", ":0")}, text=True, timeout=2
+        )
+        # Look for a line like: XWAYLAND1 connected primary 2560x1440+0+0 ...
+        # or fall back to the monitor with the smallest x offset (+0+0).
+        primary_re = re.compile(r"connected primary (\d+)x\d+\+(\d+)\+\d+")
+        fallback_re = re.compile(r"connected (?:primary )?(\d+)x\d+\+(\d+)\+\d+")
+        best: tuple[int, int] | None = None  # (offset_x, width)
+        for line in out.splitlines():
+            m = primary_re.search(line)
+            if m:
+                return int(m.group(2)), int(m.group(1))
+            m = fallback_re.search(line)
+            if m:
+                ox = int(m.group(2))
+                if best is None or ox < best[0]:
+                    best = (ox, int(m.group(1)))
+        if best:
+            return best
+    except Exception:
+        pass
+    # Fallback: leftmost monitor
+    mon_w = sw // 2 if sw > 3000 else sw
+    return 0, mon_w
+
+
 def _read_level() -> float:
     try:
         return float(LEVEL_FILE.read_text().strip())
@@ -210,10 +247,7 @@ class WaveformOverlay:
         self.root.attributes("-alpha", 0.93)
 
         sw = self.root.winfo_screenwidth()
-        if sw > 3000:
-            mon_offset, mon_w = sw // 2, sw // 2
-        else:
-            mon_offset, mon_w = 0, sw
+        mon_offset, mon_w = _primary_monitor_geometry(sw)
         x = mon_offset + mon_w // 2 - WIN_W // 2
         self.root.geometry(f"{WIN_W}x{WIN_H}+{x}+24")
         self.root.lift()
