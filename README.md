@@ -66,6 +66,46 @@ voicecli listen
 voicecli dictate
 ```
 
+## Library API
+
+VoiceCLI is also a Python library. Install it as a dependency and call it directly — no subprocess, no HTTP server.
+
+```bash
+# From another project
+uv add --editable /path/to/voiceCLI
+```
+
+```python
+import asyncio
+from voicecli import generate, generate_async, transcribe, transcribe_async, clone_async
+
+# Synchronous TTS
+result = generate("Hello world")
+print(result.path)          # Path to WAV file
+print(result.duration_s)    # Duration in seconds
+
+# Async TTS (preferred in async contexts like Lyra)
+result = await generate_async("Bonjour", voice="Vivian", lang="French")
+
+# Voice cloning
+result = await clone_async("Say this", ref="sample.wav")
+
+# Transcription
+text = transcribe("recording.wav")
+
+# Async transcription
+result = await transcribe_async("recording.wav", lang="fr")
+print(result.text)
+print(result.language)
+
+# Introspection
+from voicecli import list_engines, list_voices
+engines = list_engines()   # list[str]
+voices = list_voices()     # list[str] (Qwen voices)
+```
+
+Public API (`__all__`): `generate`, `generate_async`, `clone`, `clone_async`, `transcribe`, `transcribe_async`, `list_engines`, `list_voices`, `TTSResult`, `TranscriptionResult`, `TTSDocument`, `Segment`.
+
 ## User Config (`voicecli.toml`)
 
 Optional file (gitignored). Sets default values so you don't pass flags every time.
