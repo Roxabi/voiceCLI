@@ -74,14 +74,18 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
-voicecli.example.toml — template config — copy to voicecli.toml (gitignored)
+voicecli.example.toml — template config — copy to ~/.voicecli/voicecli.toml
 TTS/
   texts_in/         — authored .md scripts (tracked in git)
-  voices_out/       — generated WAV/MP3 (gitignored)
-  samples/          — voice samples for cloning (gitignored)
-STT/
-  audio_in/         — audio files to transcribe (gitignored)
-  texts_out/        — transcription results (gitignored)
+~/.voicecli/
+  voicecli.toml     — user config (global, all projects)
+  voicecli.vocab    — personal vocabulary for STT (shared with Lyra)
+  TTS/
+    voices_out/     — generated WAV/MP3
+    samples/        — voice samples for cloning
+  STT/
+    audio_in/       — recorded audio from dictate
+    texts_out/      — transcription results
 src/voicecli/
   cli.py            — Typer app: command definitions, .md detection, flag overrides
   config.py         — TOML config loader (reads voicecli.toml)
@@ -104,7 +108,7 @@ src/voicecli/
 
 Optional TOML file (gitignored). Copy from `voicecli.example.toml` and customize.
 
-**Discovery**: voicecli searches for `voicecli.toml` by walking up from the CWD to `$HOME`. This means a config at `~/projects/voicecli.toml` is shared across all projects under `~/projects/`. If no file is found, a warning is printed to stderr and built-in defaults are used.
+**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. Place your config at `~/.voicecli/voicecli.toml` for global access regardless of CWD. If no file is found, a warning is printed to stderr and built-in defaults are used.
 
 ```toml
 [defaults]
@@ -328,10 +332,11 @@ Given the universal script above, the translator produces:
 
 - No over-engineering — this is a thin CLI, keep it flat and simple
 - Imports of heavy libs (torch, qwen_tts, chatterbox) are deferred to function bodies
-- Output WAVs/MP3s go to `TTS/voices_out/` dir by default
-- Samples stored in `TTS/samples/` dir
-- Transcription results saved to `STT/texts_out/` by default
-- Scripts authored in `TTS/texts_in/`
+- Output WAVs/MP3s go to `~/.voicecli/TTS/voices_out/` by default
+- Samples stored in `~/.voicecli/TTS/samples/`
+- Transcription results saved to `~/.voicecli/STT/texts_out/` by default
+- Dictate recordings saved to `~/.voicecli/STT/audio_in/`
+- Scripts authored in `TTS/texts_in/` (project-local, tracked in git)
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
 

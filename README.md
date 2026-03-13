@@ -110,10 +110,11 @@ Public API (`__all__`): `generate`, `generate_async`, `clone`, `clone_async`, `t
 
 Optional file (gitignored). Sets default values so you don't pass flags every time.
 
-**Discovery**: voicecli walks up from the CWD to `$HOME` looking for `voicecli.toml`. Place it in a parent directory (e.g. `~/projects/voicecli.toml`) to share it across multiple projects. A warning is printed to stderr if no file is found anywhere.
+**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. The canonical location is `~/.voicecli/voicecli.toml` — accessible from any project. A warning is printed to stderr if no file is found anywhere.
 
 ```bash
-cp voicecli.example.toml voicecli.toml   # then edit to taste
+mkdir -p ~/.voicecli
+cp voicecli.example.toml ~/.voicecli/voicecli.toml   # then edit to taste
 ```
 
 ```toml
@@ -235,7 +236,7 @@ voicecli transcribe audio.wav -o result.txt     # save to file
 |------|-------|-------------|---------|
 | `--model` | `-m` | Whisper model | `large-v3-turbo` |
 | `--lang` | `-l` | Force language code | auto-detect |
-| `--output` | `-o` | Save text to file | `STT/texts_out/` |
+| `--output` | `-o` | Save text to file | `~/.voicecli/STT/texts_out/` |
 | `--json` | | JSON output with timestamps | off |
 
 Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`

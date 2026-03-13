@@ -9,7 +9,7 @@ voiceCLI uses `voicecli.toml` (gitignored). Copy from `voicecli.example.toml` an
 
 ### Discovery
 
-`load_defaults()` walks up from CWD to `$HOME` looking for `voicecli.toml`. A config at `~/projects/voicecli.toml` is shared across all projects under `~/projects/`. If not found, a warning is printed to stderr and built-in defaults are used.
+`load_defaults()` checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. Place your config at `~/.voicecli/voicecli.toml` for global access regardless of which project you run from. If not found, a warning is printed to stderr and built-in defaults are used.
 
 ### Priority Chain
 
