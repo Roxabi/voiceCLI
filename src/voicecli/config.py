@@ -6,6 +6,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+VOICECLI_DIR = Path.home() / ".voicecli"
+
 
 def _parse_bool(value: object) -> bool:
     if isinstance(value, bool):
@@ -33,7 +35,10 @@ _KNOWN_DEFAULTS: dict[str, object] = {
 
 
 def _find_config() -> Path | None:
-    """Walk up from CWD to $HOME looking for voicecli.toml."""
+    """Look for voicecli.toml in ~/.voicecli/, then walk up from CWD to $HOME."""
+    canonical = VOICECLI_DIR / "voicecli.toml"
+    if canonical.is_file():
+        return canonical
     home = Path.home().resolve()
     current = Path.cwd().resolve()
     while True:
@@ -46,7 +51,7 @@ def _find_config() -> Path | None:
 
 
 def load_defaults(config: Path | None = None) -> dict:
-    """Load [defaults] from voicecli.toml, walking up from CWD to $HOME. Returns empty dict if not found.
+    """Load [defaults] from voicecli.toml, checking ~/.voicecli/ then walking up from CWD to $HOME. Returns empty dict if not found.
 
     Args:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
@@ -54,7 +59,7 @@ def load_defaults(config: Path | None = None) -> dict:
     path = config if config is not None else _find_config()
     if path is None:
         print(
-            "voicecli: no voicecli.toml found (searched from CWD to $HOME); using built-in defaults",
+            "voicecli: no voicecli.toml found (searched ~/.voicecli/ and from CWD to $HOME); using built-in defaults",
             file=sys.stderr,
         )
         return {}
@@ -101,7 +106,7 @@ _KNOWN_STT: dict[str, type] = {
 
 
 def load_vocab(vocab: Path | None = None) -> list[str]:
-    """Load personal vocabulary from voicecli.vocab, walking up from CWD to $HOME.
+    """Load personal vocabulary from ~/.voicecli/voicecli.vocab (or walk-up fallback).
 
     Returns a list of words/phrases (comments and blank lines stripped).
     Returns an empty list if no file is found.
@@ -112,17 +117,21 @@ def load_vocab(vocab: Path | None = None) -> list[str]:
     if vocab is not None:
         path: Path | None = vocab
     else:
-        home = Path.home().resolve()
-        current = Path.cwd().resolve()
-        path = None
-        while True:
-            candidate = current / "voicecli.vocab"
-            if candidate.is_file():
-                path = candidate
-                break
-            if current == home or current.parent == current:
-                break
-            current = current.parent
+        canonical = VOICECLI_DIR / "voicecli.vocab"
+        if canonical.is_file():
+            path = canonical
+        else:
+            home = Path.home().resolve()
+            current = Path.cwd().resolve()
+            path = None
+            while True:
+                candidate = current / "voicecli.vocab"
+                if candidate.is_file():
+                    path = candidate
+                    break
+                if current == home or current.parent == current:
+                    break
+                current = current.parent
 
     if path is None:
         return []

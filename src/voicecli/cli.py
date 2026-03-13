@@ -710,7 +710,9 @@ def transcribe(
         from voicecli.utils import default_output_path
 
         ext = "json" if json_output else "txt"
-        output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=Path("STT/texts_out"))
+        output = default_output_path(
+            prefix=audio.stem, fmt=ext, base_dir=Path.home() / ".voicecli" / "STT" / "texts_out"
+        )
 
     output.write_text(text_out, encoding="utf-8")
     typer.echo(f"Saved to {output}", err=True)
@@ -768,7 +770,10 @@ def init(
     ] = False,
 ):
     """Create a voicecli.toml config file (interactive wizard or -y for defaults)."""
-    config_path = Path("voicecli.toml")
+    from voicecli.config import VOICECLI_DIR
+
+    VOICECLI_DIR.mkdir(parents=True, exist_ok=True)
+    config_path = VOICECLI_DIR / "voicecli.toml"
     if config_path.exists():
         typer.echo("voicecli.toml already exists — not overwriting.")
         raise typer.Exit(1)
@@ -1082,15 +1087,17 @@ def doctor():
 
     # Directory structure
     typer.echo(typer.style("\nDirectories", bold=True))
-    for d in ["TTS/voices_out", "TTS/samples", "TTS/texts_in", "STT/audio_in", "STT/texts_out"]:
+    from voicecli.config import VOICECLI_DIR
+
+    for rel in ["TTS/voices_out", "TTS/samples", "TTS/texts_in", "STT/audio_in", "STT/texts_out"]:
         try:
-            p = Path(d)
+            p = VOICECLI_DIR / rel
             if p.exists():
-                ok(d)
+                ok(str(p))
             else:
-                warn(f"{d} (will be created on first use)")
+                warn(f"{p} (will be created on first use)")
         except Exception:
-            fail(f"{d}: check failed")
+            fail(f"{rel}: check failed")
 
     # User config
     typer.echo(typer.style("\nConfig", bold=True))
@@ -1101,7 +1108,7 @@ def doctor():
         if cfg:
             ok(f"voicecli.toml loaded ({len(cfg)} defaults: {', '.join(cfg)})")
         else:
-            config_path = Path("voicecli.toml")
+            config_path = VOICECLI_DIR / "voicecli.toml"
             if config_path.is_file():
                 warn("voicecli.toml found but [defaults] section is empty")
             else:

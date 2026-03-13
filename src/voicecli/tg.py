@@ -14,25 +14,13 @@ import re
 import subprocess
 import sys
 import tomllib
-from pathlib import Path
+
+from voicecli.config import _find_config
 
 
 # ---------------------------------------------------------------------------
-# Config loading (mirrors config.py walk-up logic)
+# Config loading
 # ---------------------------------------------------------------------------
-
-
-def _find_config() -> Path | None:
-    """Walk up from CWD to $HOME looking for voicecli.toml."""
-    home = Path.home().resolve()
-    current = Path.cwd().resolve()
-    while True:
-        candidate = current / "voicecli.toml"
-        if candidate.is_file():
-            return candidate
-        if current == home or current.parent == current:
-            return None
-        current = current.parent
 
 
 def load_telegram_config() -> dict[str, str]:
@@ -43,7 +31,7 @@ def load_telegram_config() -> dict[str, str]:
     """
     path = _find_config()
     if path is None:
-        raise RuntimeError("voicecli.toml not found (searched from CWD to $HOME)")
+        raise RuntimeError("voicecli.toml not found (searched ~/.voicecli/ and from CWD to $HOME)")
     with open(path, "rb") as f:
         data = tomllib.load(f)
     tg = data.get("telegram")

@@ -214,24 +214,21 @@ def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
     if not wav_bytes and not text:
         return
     from datetime import datetime
-    from voicecli.config import _find_config
 
-    # Derive project root from voicecli.toml location, fall back to cwd
-    cfg_path = _find_config()
-    project_root = cfg_path.parent if cfg_path else Path.cwd()
+    from voicecli.config import VOICECLI_DIR
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     lang_tag = f"_{language}" if language else ""
 
     if wav_bytes:
-        audio_dir = project_root / "STT" / "audio_in"
+        audio_dir = VOICECLI_DIR / "STT" / "audio_in"
         audio_dir.mkdir(parents=True, exist_ok=True)
         audio_path = audio_dir / f"dictate{lang_tag}_{ts}.wav"
         audio_path.write_bytes(wav_bytes)
         print(f"[stt] saved audio: {audio_path}", file=sys.stderr)
 
     if text:
-        text_dir = project_root / "STT" / "texts_out"
+        text_dir = VOICECLI_DIR / "STT" / "texts_out"
         text_dir.mkdir(parents=True, exist_ok=True)
         text_path = text_dir / f"dictate{lang_tag}_{ts}.txt"
         text_path.write_text(text, encoding="utf-8")
