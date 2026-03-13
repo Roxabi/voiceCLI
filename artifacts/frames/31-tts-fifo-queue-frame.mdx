@@ -1,0 +1,45 @@
+---
+title: "feat(tts): add FIFO request queue to TTS daemon"
+issue: 31
+status: approved
+tier: F-lite
+date: 2026-03-13
+---
+
+## Problem
+
+The TTS daemon (`daemon.py`) handles one connection at a time synchronously — it accepts a socket, synthesizes, responds, then closes. There is no queuing mechanism: if two clients connect simultaneously, the second blocks at the socket level or races depending on OS scheduling.
+
+Today only Lyra uses the daemon, so contention is rare. But video generation agents are planned as additional callers, making concurrent synthesis requests a certainty. Without a server-side queue, concurrent callers will either time out, error, or produce corrupted audio output because the GPU cannot handle parallel synthesis.
+
+The fix must live in the daemon — not in each client — so every caller benefits automatically and no coordination code is required across multiple repos.
+
+## Who
+
+- **Primary:** voiceCLI TTS daemon — gains correct serialization behavior
+- **Secondary (callers):** Lyra (voice responses to Telegram/Discord users), future video generation agents
+
+## Constraints
+
+- Single GPU — synthesis is strictly sequential; no parallelism possible
+- Existing JSON socket protocol must remain wire-compatible (no client changes required)
+- Clients can afford to block on their socket connection until their turn (no polling or callbacks needed)
+- Must not break the current CLI usage (`voice tts "..."`) — one-shot callers are unaffected
+
+## Out of Scope
+
+- Async job IDs / status polling (future)
+- Priority queue or request cancellation (future)
+- Client-side changes in Lyra or any other caller
+- STT daemon (already has a state-machine queue for its own use case)
+
+## Complexity
+
+**Tier: F-lite** — single-file change in `daemon.py`, well-understood threading/queue pattern, no protocol changes, no new dependencies.
+
+Signals observed:
+- Files touched: 1–2 (`daemon.py`, tests)
+- Technical risk: low — Python `queue.Queue` + thread worker is a standard pattern
+- Architectural impact: daemon-local only, no shared types or cross-module changes
+- Unknowns: 0
+- Domain breadth: 1 (backend daemon)
