@@ -161,80 +161,75 @@ class TestConcurrentGenerate:
             t.start()
             _wait_for_socket(sock_path)
 
-        results: list[dict] = [None, None]  # type: ignore[list-item]
-        errors: list[Exception] = []
+            results: list[dict] = [None, None]  # type: ignore[list-item]
+            errors: list[Exception] = []
 
-        output_a = tmp_path / "out_a.wav"
-        output_b = tmp_path / "out_b.wav"
+            output_a = tmp_path / "out_a.wav"
+            output_b = tmp_path / "out_b.wav"
 
-        def call_a():
-            try:
-                results[0] = _raw_request(
-                    sock_path,
-                    {
-                        "action": "generate",
-                        "engine": "qwen",
-                        "text": "hello from A",
-                        "voice": None,
-                        "output_path": str(output_a),
-                    },
-                )
-            except Exception as exc:
-                errors.append(exc)
+            def call_a():
+                try:
+                    results[0] = _raw_request(
+                        sock_path,
+                        {
+                            "action": "generate",
+                            "engine": "qwen",
+                            "text": "hello from A",
+                            "voice": None,
+                            "output_path": str(output_a),
+                        },
+                    )
+                except Exception as exc:
+                    errors.append(exc)
 
-        def call_b():
-            try:
-                results[1] = _raw_request(
-                    sock_path,
-                    {
-                        "action": "generate",
-                        "engine": "qwen",
-                        "text": "hello from B",
-                        "voice": None,
-                        "output_path": str(output_b),
-                    },
-                )
-            except Exception as exc:
-                errors.append(exc)
+            def call_b():
+                try:
+                    results[1] = _raw_request(
+                        sock_path,
+                        {
+                            "action": "generate",
+                            "engine": "qwen",
+                            "text": "hello from B",
+                            "voice": None,
+                            "output_path": str(output_b),
+                        },
+                    )
+                except Exception as exc:
+                    errors.append(exc)
 
-        # Launch both threads simultaneously
-        t_a = threading.Thread(target=call_a)
-        t_b = threading.Thread(target=call_b)
+            # Launch both threads simultaneously
+            t_a = threading.Thread(target=call_a)
+            t_b = threading.Thread(target=call_b)
 
-        t_start = time.monotonic()
-        t_a.start()
-        t_b.start()
+            t_start = time.monotonic()
+            t_a.start()
+            t_b.start()
 
-        # Both should complete within 2 × synthesis_delay + headroom (1.5 s each).
-        # With a queue the total wall time is ~1.0 s (serial). Without a queue and
-        # a blocking accept loop, connection B is accepted only after A finishes,
-        # which is fine — but if the timeout is tight both should still succeed
-        # given the queue serialises them. We join with generous timeout.
-        t_a.join(timeout=5.0)
-        t_b.join(timeout=5.0)
+            t_a.join(timeout=5.0)
+            t_b.join(timeout=5.0)
 
-        elapsed = time.monotonic() - t_start
+            elapsed = time.monotonic() - t_start
 
-        # No exceptions must have occurred
-        assert not errors, f"Thread(s) raised: {errors}"
+            # No exceptions must have occurred
+            assert not errors, f"Thread(s) raised: {errors}"
 
-        # Both results populated
-        assert results[0] is not None, "Thread A never received a response"
-        assert results[1] is not None, "Thread B never received a response"
+            # Both results populated
+            assert results[0] is not None, "Thread A never received a response"
+            assert results[1] is not None, "Thread B never received a response"
 
-        # Both must report success
-        assert results[0].get("status") == "ok", f"Thread A got: {results[0]}"
-        assert results[1].get("status") == "ok", f"Thread B got: {results[1]}"
+            # Both must report success
+            assert results[0].get("status") == "ok", f"Thread A got: {results[0]}"
+            assert results[1].get("status") == "ok", f"Thread B got: {results[1]}"
 
-        # Response paths must be distinct (each caller gets their own output)
-        assert results[0].get("path") != results[1].get("path"), (
-            "Both threads received the same output path — jobs may have been merged"
-        )
+            # Response paths must be distinct
+            assert results[0].get("path") != results[1].get("path"), (
+                "Both threads received the same output path — jobs may have been merged"
+            )
 
-        # Sanity: total elapsed < 2 × delay + 2 s overhead (queue serialises)
-        assert elapsed < 3.5, (
-            f"Concurrent requests took {elapsed:.2f}s — expected < 3.5s with a FIFO queue"
-        )
+            # Total elapsed < 2 × delay + 2 s overhead
+            assert elapsed < 3.5, (
+                f"Concurrent requests took {elapsed:.2f}s — expected < 3.5s with a FIFO queue"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -269,48 +264,43 @@ class TestPingFastPath:
             t.start()
             _wait_for_socket(sock_path)
 
-        output_path = tmp_path / "out_ping.wav"
-        synthesis_started = threading.Event()
-        generate_result: dict = {}
+            output_path = tmp_path / "out_ping.wav"
+            synthesis_started = threading.Event()
+            generate_result: dict = {}
 
-        def do_generate():
-            # Signal just before we hit the socket so the ping thread can start
-            synthesis_started.set()
-            generate_result["resp"] = _raw_request(
-                sock_path,
-                {
-                    "action": "generate",
-                    "engine": "qwen",
-                    "text": "synthesising now",
-                    "voice": None,
-                    "output_path": str(output_path),
-                },
-                timeout=10.0,
+            def do_generate():
+                synthesis_started.set()
+                generate_result["resp"] = _raw_request(
+                    sock_path,
+                    {
+                        "action": "generate",
+                        "engine": "qwen",
+                        "text": "synthesising now",
+                        "voice": None,
+                        "output_path": str(output_path),
+                    },
+                    timeout=10.0,
+                )
+
+            gen_thread = threading.Thread(target=do_generate, daemon=True)
+            gen_thread.start()
+
+            # Wait until generate is sent, then give it a moment to enter synthesis
+            synthesis_started.wait(timeout=3.0)
+            time.sleep(0.1)
+
+            # Now send ping — must respond in <50 ms
+            t_before = time.monotonic()
+            ping_resp = _raw_request(sock_path, {"action": "ping"}, timeout=5.0)
+            ping_elapsed_ms = (time.monotonic() - t_before) * 1000
+
+            gen_thread.join(timeout=5.0)
+
+            assert ping_resp.get("status") == "ok", f"ping returned: {ping_resp}"
+            assert ping_elapsed_ms < 50, (
+                f"ping took {ping_elapsed_ms:.1f} ms — expected <50 ms. "
+                "The accept loop is likely blocked during synthesis (no queue yet)."
             )
-
-        gen_thread = threading.Thread(target=do_generate, daemon=True)
-        gen_thread.start()
-
-        # Wait until generate is about to connect, then give it a moment to be
-        # accepted and enter synthesis (the mock engine delay starts immediately)
-        synthesis_started.wait(timeout=3.0)
-        time.sleep(0.1)  # Let the generate request be received + synthesis start
-
-        # Now send ping — must respond in <50 ms
-        t_before = time.monotonic()
-        ping_resp = _raw_request(sock_path, {"action": "ping"}, timeout=5.0)
-        ping_elapsed_ms = (time.monotonic() - t_before) * 1000
-
-        gen_thread.join(timeout=5.0)
-
-        # Assert: ping got a valid response
-        assert ping_resp.get("status") == "ok", f"ping returned: {ping_resp}"
-
-        # Assert: ping responded fast (fast path, not queued behind synthesis)
-        assert ping_elapsed_ms < 50, (
-            f"ping took {ping_elapsed_ms:.1f} ms — expected <50 ms. "
-            "The accept loop is likely blocked during synthesis (no queue yet)."
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -351,52 +341,51 @@ class TestErrorIsolation:
             t.start()
             _wait_for_socket(sock_path)
 
-        output_a = tmp_path / "err_a.wav"
-        output_b = tmp_path / "err_b.wav"
+            output_a = tmp_path / "err_a.wav"
+            output_b = tmp_path / "err_b.wav"
 
-        results: list[dict] = [None, None]  # type: ignore[list-item]
-        errors: list[Exception] = []
+            results: list[dict] = [None, None]  # type: ignore[list-item]
+            errors: list[Exception] = []
 
-        def call_a():
-            try:
-                results[0] = _raw_request(
-                    sock_path,
-                    {
-                        "action": "generate",
-                        "engine": "qwen",
-                        "text": "this will fail",
-                        "voice": None,
-                        "output_path": str(output_a),
-                    },
-                    timeout=5.0,
-                )
-            except Exception as exc:
-                errors.append(exc)
+            def call_a():
+                try:
+                    results[0] = _raw_request(
+                        sock_path,
+                        {
+                            "action": "generate",
+                            "engine": "qwen",
+                            "text": "this will fail",
+                            "voice": None,
+                            "output_path": str(output_a),
+                        },
+                        timeout=5.0,
+                    )
+                except Exception as exc:
+                    errors.append(exc)
 
-        def call_b():
-            # Small delay so A is enqueued first (FIFO ordering)
-            time.sleep(0.02)
-            try:
-                results[1] = _raw_request(
-                    sock_path,
-                    {
-                        "action": "generate",
-                        "engine": "qwen",
-                        "text": "this will succeed",
-                        "voice": None,
-                        "output_path": str(output_b),
-                    },
-                    timeout=5.0,
-                )
-            except Exception as exc:
-                errors.append(exc)
+            def call_b():
+                time.sleep(0.02)
+                try:
+                    results[1] = _raw_request(
+                        sock_path,
+                        {
+                            "action": "generate",
+                            "engine": "qwen",
+                            "text": "this will succeed",
+                            "voice": None,
+                            "output_path": str(output_b),
+                        },
+                        timeout=5.0,
+                    )
+                except Exception as exc:
+                    errors.append(exc)
 
-        t_a = threading.Thread(target=call_a)
-        t_b = threading.Thread(target=call_b)
-        t_a.start()
-        t_b.start()
-        t_a.join(timeout=5.0)
-        t_b.join(timeout=5.0)
+            t_a = threading.Thread(target=call_a)
+            t_b = threading.Thread(target=call_b)
+            t_a.start()
+            t_b.start()
+            t_a.join(timeout=5.0)
+            t_b.join(timeout=5.0)
 
         # No unexpected exceptions in either thread
         assert not errors, f"Thread(s) raised socket/timeout errors: {errors}"
