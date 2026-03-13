@@ -12,6 +12,7 @@ Actions:
 from __future__ import annotations
 
 import json
+import os
 import queue
 import socket
 import threading
@@ -21,6 +22,7 @@ from pathlib import Path
 from voicecli.engine import QWEN_ENGINES
 
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "daemon.sock"
+_OUTPUT_BASE = Path.home()  # output_path must resolve within this directory (patchable in tests)
 _DEFAULT_TIMEOUT = 300  # seconds
 
 
@@ -68,6 +70,7 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
         srv.bind(str(SOCKET_PATH))
+        os.chmod(str(SOCKET_PATH), 0o600)
         srv.listen(5)
         print(f"[voicecli daemon] Ready on {SOCKET_PATH}", flush=True)
         try:
@@ -124,9 +127,23 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
             engines[eng_name] = _load_engine(eng_name, fast)
 
         eng = engines[eng_name]
-        text = req["text"]
+        text = req.get("text")
+        if not text:
+            _send_json(conn, {"status": "error", "message": "missing required field: 'text'"})
+            return
+        output_path_str = req.get("output_path")
+        if not output_path_str:
+            _send_json(
+                conn, {"status": "error", "message": "missing required field: 'output_path'"}
+            )
+            return
+        output_path = Path(output_path_str).resolve()
+        if not str(output_path).startswith(str(_OUTPUT_BASE)):
+            _send_json(
+                conn, {"status": "error", "message": "output_path must be within home directory"}
+            )
+            return
         voice = req.get("voice")
-        output_path = Path(req["output_path"])
         language = req.get("language")
 
         # Reconstruct Segment objects from JSON
