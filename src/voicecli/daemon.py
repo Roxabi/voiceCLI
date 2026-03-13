@@ -12,13 +12,22 @@ Actions:
 from __future__ import annotations
 
 import json
+import queue
 import socket
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 from voicecli.engine import QWEN_ENGINES
 
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "daemon.sock"
 _DEFAULT_TIMEOUT = 300  # seconds
+
+
+@dataclass
+class _Job:
+    conn: socket.socket
+    req: dict
 
 
 # ── Public client API ─────────────────────────────────────────────────────────
@@ -54,6 +63,9 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
         print(f"[voicecli daemon] Preloading {preload}...", flush=True)
         engines[preload] = _load_engine(preload, fast)
 
+    _queue: queue.Queue = queue.Queue()
+    threading.Thread(target=_worker, args=(_queue, engines, fast), daemon=True).start()
+
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
         srv.bind(str(SOCKET_PATH))
         srv.listen(5)
@@ -61,7 +73,17 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
         try:
             while True:
                 conn, _ = srv.accept()
-                _handle(conn, engines, fast)
+                try:
+                    req = _recv_json(conn)
+                except Exception:
+                    conn.close()
+                    continue
+                if req.get("action") == "ping":
+                    _send_json(conn, {"status": "ok"})
+                    conn.close()
+                else:
+                    # conn ownership transfers to worker — main thread must not touch conn after this
+                    _queue.put(_Job(conn=conn, req=req))
         except KeyboardInterrupt:
             pass
         finally:
@@ -77,15 +99,20 @@ def _load_engine(name: str, fast: bool = False):
     return eng
 
 
-def _handle(conn: socket.socket, engines: dict, fast: bool = False) -> None:
-    """Process one request synchronously (GPU is single-threaded anyway)."""
-    try:
-        req = _recv_json(conn)
-        action = req.get("action")
+def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
+    """Single worker thread: drain the job queue and synthesize sequentially."""
+    while True:
+        job: _Job = q.get()
+        try:
+            _handle_job(job.conn, job.req, engines, fast)
+        finally:
+            q.task_done()
 
-        if action == "ping":
-            _send_json(conn, {"status": "ok"})
-            return
+
+def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
+    """Process one synthesis job. Called exclusively from the worker thread."""
+    try:
+        action = req.get("action")
 
         eng_name = req.get("engine")
         if not eng_name:
