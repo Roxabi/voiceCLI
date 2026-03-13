@@ -76,6 +76,7 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
         try:
             while True:
                 conn, _ = srv.accept()
+                conn.settimeout(5)
                 try:
                     req = _recv_json(conn)
                 except Exception:
@@ -182,8 +183,10 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
     except Exception as exc:
         try:
             _send_json(conn, {"status": "error", "message": str(exc)})
-        except Exception:
-            pass
+        except Exception as send_exc:
+            print(
+                f"[voicecli daemon] warning: failed to send error response: {send_exc}", flush=True
+            )
     finally:
         conn.close()
 

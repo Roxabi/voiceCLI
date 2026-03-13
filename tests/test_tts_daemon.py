@@ -18,6 +18,7 @@ import json
 import socket
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -85,44 +86,26 @@ def _make_mock_engine(delay: float = 0.0, raises_on_first: bool = False):
     return mock_eng
 
 
-# ---------------------------------------------------------------------------
-# Fixture
-# ---------------------------------------------------------------------------
+@contextmanager
+def _daemon_context(daemon_mod, sock_path: Path, mock_engine):
+    """Start a daemon_main thread with patched SOCKET_PATH and _load_engine.
 
-
-@pytest.fixture()
-def daemon_factory(tmp_path):
-    """Factory that starts a daemon_main thread with a given mock engine.
-
-    Returns (start_daemon, sock_path):
-      - start_daemon(mock_engine) → starts the thread and waits for socket
-      - sock_path → Path to the temporary socket
+    Yields once the socket is ready. The patches remain active for the full
+    duration of the ``with`` block.
     """
-    import voicecli.daemon as daemon_mod
 
-    sock_path = tmp_path / "tts-test.sock"
-    threads = []
+    def patched_load_engine(name, fast=False):
+        return mock_engine
 
-    def start_daemon(mock_engine):
-        """Patch SOCKET_PATH + _load_engine, then start daemon_main in a thread."""
-
-        def patched_load_engine(name, fast=False):
-            return mock_engine
-
-        with (
-            patch.object(daemon_mod, "SOCKET_PATH", sock_path),
-            patch.object(daemon_mod, "_load_engine", patched_load_engine),
-        ):
-            t = threading.Thread(
-                target=daemon_mod.daemon_main,
-                daemon=True,
-            )
-            t.start()
-            threads.append(t)
-            _wait_for_socket(sock_path)
-
-    yield start_daemon, sock_path
-    # Threads are daemon=True so they die with the process; no explicit teardown.
+    with (
+        patch.object(daemon_mod, "SOCKET_PATH", sock_path),
+        patch.object(daemon_mod, "_load_engine", patched_load_engine),
+        patch.object(daemon_mod, "_OUTPUT_BASE", sock_path.parent),
+    ):
+        t = threading.Thread(target=daemon_mod.daemon_main, daemon=True)
+        t.start()
+        _wait_for_socket(sock_path)
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -145,23 +128,13 @@ class TestConcurrentGenerate:
         the queue is needed.  We force that with a 0.5 s synthesis delay and a
         tight per-call deadline verified via wall-clock.
         """
+        # Arrange
         import voicecli.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-concurrent.sock"
         mock_engine = _make_mock_engine(delay=0.5)  # 500 ms per synthesis
 
-        def patched_load_engine(name, fast=False):
-            return mock_engine
-
-        with (
-            patch.object(daemon_mod, "SOCKET_PATH", sock_path),
-            patch.object(daemon_mod, "_load_engine", patched_load_engine),
-            patch.object(daemon_mod, "_OUTPUT_BASE", tmp_path),
-        ):
-            t = threading.Thread(target=daemon_mod.daemon_main, daemon=True)
-            t.start()
-            _wait_for_socket(sock_path)
-
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
             results: list[dict] = [None, None]  # type: ignore[list-item]
             errors: list[Exception] = []
 
@@ -198,7 +171,7 @@ class TestConcurrentGenerate:
                 except Exception as exc:
                     errors.append(exc)
 
-            # Launch both threads simultaneously
+            # Act — launch both threads simultaneously
             t_a = threading.Thread(target=call_a)
             t_b = threading.Thread(target=call_b)
 
@@ -207,6 +180,10 @@ class TestConcurrentGenerate:
 
             t_a.join(timeout=5.0)
             t_b.join(timeout=5.0)
+
+            # Assert
+            assert not t_a.is_alive(), "Thread A did not finish within 5s"
+            assert not t_b.is_alive(), "Thread B did not finish within 5s"
 
             # No exceptions must have occurred
             assert not errors, f"Thread(s) raised: {errors}"
@@ -242,31 +219,27 @@ class TestPingFastPath:
         completes (500 ms). This test will fail because the ping latency will
         be >> 50 ms.
         """
+        # Arrange
         import voicecli.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-ping.sock"
 
-        # Synthesis that blocks for 0.5 s — long enough to observe the latency
-        mock_engine = _make_mock_engine(delay=0.5)
+        synthesis_started = threading.Event()
 
-        def patched_load_engine(name, fast=False):
-            return mock_engine
+        mock_eng = MagicMock()
 
-        with (
-            patch.object(daemon_mod, "SOCKET_PATH", sock_path),
-            patch.object(daemon_mod, "_load_engine", patched_load_engine),
-            patch.object(daemon_mod, "_OUTPUT_BASE", tmp_path),
-        ):
-            t = threading.Thread(target=daemon_mod.daemon_main, daemon=True)
-            t.start()
-            _wait_for_socket(sock_path)
+        def fake_generate(text, voice, output_path, **kwargs):
+            synthesis_started.set()
+            time.sleep(0.5)
+            return output_path
 
+        mock_eng.generate.side_effect = fake_generate
+
+        with _daemon_context(daemon_mod, sock_path, mock_eng):
             output_path = tmp_path / "out_ping.wav"
-            synthesis_started = threading.Event()
             generate_result: dict = {}
 
             def do_generate():
-                synthesis_started.set()
                 generate_result["resp"] = _raw_request(
                     sock_path,
                     {
@@ -279,10 +252,11 @@ class TestPingFastPath:
                     timeout=10.0,
                 )
 
+            # Act
             gen_thread = threading.Thread(target=do_generate, daemon=True)
             gen_thread.start()
 
-            # Wait until generate is sent, then give it a moment to enter synthesis
+            # Wait until the worker thread actually begins synthesis
             synthesis_started.wait(timeout=3.0)
             time.sleep(0.1)
 
@@ -293,6 +267,7 @@ class TestPingFastPath:
 
             gen_thread.join(timeout=5.0)
 
+            # Assert
             assert ping_resp.get("status") == "ok", f"ping returned: {ping_resp}"
             assert ping_elapsed_ms < 50, (
                 f"ping took {ping_elapsed_ms:.1f} ms — expected <50 ms. "
@@ -320,6 +295,7 @@ class TestErrorIsolation:
         In the RED phase, if the blocking accept loop causes the second caller
         to timeout this test will fail, proving the queue is necessary.
         """
+        # Arrange
         import voicecli.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-error.sock"
@@ -327,18 +303,7 @@ class TestErrorIsolation:
         # Engine that raises on the first call, succeeds on subsequent calls
         mock_engine = _make_mock_engine(delay=0.1, raises_on_first=True)
 
-        def patched_load_engine(name, fast=False):
-            return mock_engine
-
-        with (
-            patch.object(daemon_mod, "SOCKET_PATH", sock_path),
-            patch.object(daemon_mod, "_load_engine", patched_load_engine),
-            patch.object(daemon_mod, "_OUTPUT_BASE", tmp_path),
-        ):
-            t = threading.Thread(target=daemon_mod.daemon_main, daemon=True)
-            t.start()
-            _wait_for_socket(sock_path)
-
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
             output_a = tmp_path / "err_a.wav"
             output_b = tmp_path / "err_b.wav"
 
@@ -378,12 +343,17 @@ class TestErrorIsolation:
                 except Exception as exc:
                     errors.append(exc)
 
+            # Act
             t_a = threading.Thread(target=call_a)
             t_b = threading.Thread(target=call_b)
             t_a.start()
             t_b.start()
             t_a.join(timeout=5.0)
             t_b.join(timeout=5.0)
+
+            # Assert
+            assert not t_a.is_alive(), "Thread A did not finish within 5s"
+            assert not t_b.is_alive(), "Thread B did not finish within 5s"
 
         # No unexpected exceptions in either thread
         assert not errors, f"Thread(s) raised socket/timeout errors: {errors}"
@@ -399,3 +369,130 @@ class TestErrorIsolation:
         assert results[1].get("status") == "ok", (
             f"Expected second job to return status=ok after first job error, got: {results[1]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# T4 — Validation errors: malformed requests return structured error responses
+# ---------------------------------------------------------------------------
+
+
+class TestValidationErrors:
+    def test_unknown_action(self, tmp_path):
+        """Unknown action returns status=error with 'Unknown' in the message."""
+        # Arrange
+        import voicecli.daemon as daemon_mod
+
+        sock_path = tmp_path / "tts-val-unknown.sock"
+        mock_engine = _make_mock_engine()
+
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
+            # Act
+            resp = _raw_request(
+                sock_path,
+                {
+                    "action": "unknown_action",
+                    "engine": "qwen",
+                    "text": "hi",
+                    "output_path": str(tmp_path / "x.wav"),
+                },
+            )
+
+        # Assert
+        assert resp.get("status") == "error"
+        assert "Unknown" in resp.get("message", ""), f"Unexpected message: {resp}"
+
+    def test_missing_engine(self, tmp_path):
+        """Request without 'engine' returns status=error with 'engine' in the message."""
+        # Arrange
+        import voicecli.daemon as daemon_mod
+
+        sock_path = tmp_path / "tts-val-engine.sock"
+        mock_engine = _make_mock_engine()
+
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
+            # Act
+            resp = _raw_request(
+                sock_path,
+                {
+                    "action": "generate",
+                    "text": "hi",
+                    "output_path": str(tmp_path / "x.wav"),
+                },
+            )
+
+        # Assert
+        assert resp.get("status") == "error"
+        assert "engine" in resp.get("message", ""), f"Unexpected message: {resp}"
+
+    def test_missing_text(self, tmp_path):
+        """Request without 'text' returns status=error with 'text' in the message."""
+        # Arrange
+        import voicecli.daemon as daemon_mod
+
+        sock_path = tmp_path / "tts-val-text.sock"
+        mock_engine = _make_mock_engine()
+
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
+            # Act
+            resp = _raw_request(
+                sock_path,
+                {
+                    "action": "generate",
+                    "engine": "qwen",
+                    "output_path": str(tmp_path / "x.wav"),
+                },
+            )
+
+        # Assert
+        assert resp.get("status") == "error"
+        assert "text" in resp.get("message", ""), f"Unexpected message: {resp}"
+
+    def test_clone_without_ref_audio(self, tmp_path):
+        """Clone action without ref_audio returns status=error with 'ref_audio' in the message."""
+        # Arrange
+        import voicecli.daemon as daemon_mod
+
+        sock_path = tmp_path / "tts-val-clone.sock"
+        mock_engine = _make_mock_engine()
+
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
+            # Act
+            resp = _raw_request(
+                sock_path,
+                {
+                    "action": "clone",
+                    "engine": "qwen",
+                    "text": "hi",
+                    "output_path": str(tmp_path / "x.wav"),
+                },
+            )
+
+        # Assert
+        assert resp.get("status") == "error"
+        assert "ref_audio" in resp.get("message", ""), f"Unexpected message: {resp}"
+
+    def test_malformed_json_daemon_survives(self, tmp_path):
+        """Daemon survives a malformed JSON payload — next ping still returns status=ok."""
+        # Arrange
+        import voicecli.daemon as daemon_mod
+
+        sock_path = tmp_path / "tts-val-json.sock"
+        mock_engine = _make_mock_engine()
+
+        with _daemon_context(daemon_mod, sock_path, mock_engine):
+            # Act — send raw bad bytes
+            raw_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            raw_sock.settimeout(5.0)
+            try:
+                raw_sock.connect(str(sock_path))
+                raw_sock.sendall(b"not json\n")
+            finally:
+                raw_sock.close()
+
+            # Give daemon a moment to recover
+            time.sleep(0.05)
+
+            # Assert — daemon still responds to a valid ping
+            ping_resp = _raw_request(sock_path, {"action": "ping"}, timeout=5.0)
+
+        assert ping_resp.get("status") == "ok", f"ping after bad JSON returned: {ping_resp}"
