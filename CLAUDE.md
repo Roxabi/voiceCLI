@@ -23,6 +23,68 @@ Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@ant
 Types: feat|fix|refactor|docs|style|test|chore|ci|perf
 Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
 
+### Dev Process
+
+**Entry point: `/dev #N`** — single command that scans artifacts, shows progress, and delegates to the right phase skill.
+
+| Tier | Criteria | Phases |
+|------|----------|--------|
+| **S** | ≤3 files, no arch, no risk | triage → implement → pr → validate → review → fix* → cleanup* |
+| **F-lite** | Clear scope, single domain | Frame → spec → plan → implement → verify → ship |
+| **F-full** | New arch, unclear reqs, >2 domains | Frame → analyze → spec → plan → implement → verify → ship |
+
+`*` = conditional (runs only if applicable)
+
+Phases: **Frame** (problem) → **Shape** (spec) → **Build** (code) → **Verify** (review) → **Ship** (release).
+
+### Orchestrator Delegation
+
+Orchestrator does not modify code/docs directly. Delegate: FE→`frontend-dev` | BE→`backend-dev` | Infra→`devops` | Docs→`doc-writer` | Tests→`tester` | Fixes→`fixer`. Exception: typo/single-line. Deploy→`devops` only.
+
+### Parallel Execution
+
+≥3 complex tasks → AskUserQuestion: Sequential | Parallel (Recommended).
+F-full + ≥4 independent tasks in 1 domain → multiple same-type agents on separate file groups.
+
+### Artifact Model
+
+Artifacts are the state markers `/dev` uses for progress detection and resumption.
+
+| Type | Directory | Question answered |
+|------|-----------|-------------------|
+| **Frame** | `artifacts/frames/` | What's the problem? |
+| **Analysis** | `artifacts/analyses/` | How deep is it? |
+| **Spec** | `artifacts/specs/` | What will we build? |
+| **Plan** | `artifacts/plans/` | How do we build it? |
+
+### Mandatory Worktree
+
+```bash
+git worktree add ../voiceCLI-XXX -b feat/XXX-slug staging
+cd ../voiceCLI-XXX && cp .env.example .env && uv sync
+```
+
+Exceptions: XS (confirm via AskUserQuestion) | `/dev` pre-implementation artifacts (frame, analysis, spec, plan) | `/promote` release artifacts.
+**Never code on main/staging without worktree.**
+
+### Code Review
+
+MUST read [code-review](docs/standards/code-review.md). Conventional Comments. Block only: security, correctness, standard violations.
+
+### Coding Standards
+
+| Context | Read |
+|---------|------|
+| API / Backend | [backend-patterns](docs/standards/backend-patterns.md) |
+| Tests | [testing](docs/standards/testing.md) |
+
+### Skills & Agents
+
+Skills: always use appropriate skill. Workflow skills → `dev-core` plugin.
+Agents: Sonnet = all agents (frontend-dev, backend-dev, devops, doc-writer, fixer, tester, architect, product-lead, security-auditor).
+
+**Shared agent rules:** Never commit/push (lead handles git) | Never force/hard/amend | Stage specific files only | Escalate blockers → lead | Message lead on completion.
+
 ## Global Workflow — What Handles What
 
 ### Code pipeline (deterministic, at runtime)
