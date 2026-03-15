@@ -11,3 +11,19 @@ repos:
         entry: uv run ruff format --check .
         language: system
         pass_filenames: false
+      - id: typecheck
+        name: typecheck
+        entry: uv run ruff check --select=PYI .
+        language: system
+        pass_filenames: false
+      - id: trufflehog
+        name: trufflehog secret scan
+        entry: trufflehog git file://. --only-verified --fail
+        language: system
+        pass_filenames: false
+      - id: license
+        name: license check
+        entry: uv run tools/license_check.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

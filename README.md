@@ -443,6 +443,10 @@ src/voicecli/
   assets/           # UI sounds (start.wav, stop.wav)
 ```
 
+## Contributing
+
+Contributions welcome — bug fixes, new engines, and documentation improvements. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, commit conventions, and PR process.
+
 ## Documentation
 
 | Doc | Description |
