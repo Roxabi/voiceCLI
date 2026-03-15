@@ -4,9 +4,10 @@ Protocol: newline-delimited JSON over AF_UNIX SOCK_STREAM.
 Socket path: ~/.local/share/voicecli/stt-daemon.sock
 
 Actions:
-  ping   — liveness check
-  status — return current state
-  toggle — start recording (idle→recording) or stop+transcribe (recording→transcribing→idle)
+  ping             — liveness check
+  status           — return current state
+  toggle           — start recording (idle→recording) or stop+transcribe (recording→transcribing→idle)
+  transcribe_file  — transcribe an audio file using the warm model
 """
 
 from __future__ import annotations
@@ -624,6 +625,8 @@ class SttDaemon:
                 self._handle_cancel(conn)
             elif action == "next_mode":
                 self._handle_next_mode(conn)
+            elif action == "transcribe_file":
+                self._handle_transcribe_file(conn, req)
             else:
                 self._handle_unknown(conn, action)
         except Exception as exc:
@@ -645,6 +648,58 @@ class SttDaemon:
 
     def _handle_unknown(self, conn: socket.socket, action: str) -> None:
         _send_json(conn, {"status": "error", "message": f"unknown action: {action}"})
+
+    def _handle_transcribe_file(self, conn: socket.socket, req: dict) -> None:
+        """Transcribe an audio file using the warm model. No state-machine interaction."""
+        audio_path = req.get("audio_path")
+        if not audio_path:
+            _send_json(conn, {"status": "error", "message": "missing required field: 'audio_path'"})
+            return
+        path = Path(audio_path)
+        if not path.exists():
+            _send_json(conn, {"status": "error", "message": f"file not found: {audio_path}"})
+            return
+
+        language = req.get("language")
+        task = req.get("task", "transcribe")
+        initial_prompt = req.get("initial_prompt")
+        language_detection_threshold = req.get("language_detection_threshold")
+        language_detection_segments = req.get("language_detection_segments")
+        language_fallback = req.get("language_fallback")
+
+        # Use daemon-level defaults when caller doesn't specify
+        if language_detection_threshold is None:
+            language_detection_threshold = self.language_detection_threshold
+        if language_detection_segments is None:
+            language_detection_segments = self.language_detection_segments
+        if language_fallback is None:
+            language_fallback = self.language_fallback
+
+        try:
+            from voicecli.transcribe import transcribe
+
+            result = transcribe(
+                path,
+                model=self.model,
+                language=language,
+                language_detection_threshold=language_detection_threshold,
+                language_detection_segments=language_detection_segments,
+                language_fallback=language_fallback,
+                task=task,
+                initial_prompt=initial_prompt,
+            )
+            _send_json(
+                conn,
+                {
+                    "status": "ok",
+                    "text": result.text,
+                    "language": result.language,
+                    "segments": result.segments,
+                },
+            )
+        except Exception as e:
+            print(f"[stt] transcribe_file error: {e}", file=sys.stderr)
+            _send_json(conn, {"status": "error", "message": str(e)})
 
     def _handle_toggle(self, conn: socket.socket, mode: str | None = None) -> None:
         with self._lock:

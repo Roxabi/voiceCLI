@@ -1,4 +1,9 @@
-"""File-based speech-to-text using Faster Whisper."""
+"""File-based speech-to-text using Faster Whisper.
+
+Daemon-first: if the STT daemon is running, transcribe requests are forwarded
+over Unix socket to reuse the warm model. Falls back to local model loading
+if the daemon is unavailable.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +42,68 @@ class TranscriptionResult:
     segments: list[dict]  # [{start, end, text}, ...]
 
 
+def _try_daemon(
+    audio_path: Path,
+    language: str | None,
+    language_detection_threshold: float | None,
+    language_detection_segments: int | None,
+    language_fallback: str | None,
+    task: str,
+    initial_prompt: str | None,
+) -> TranscriptionResult | None:
+    """Try the STT daemon for transcription. Returns None to fall back locally."""
+    from voicecli.stt_daemon import SOCKET_PATH
+
+    if not SOCKET_PATH.exists():
+        return None
+    import json
+    import socket
+
+    req: dict = {
+        "action": "transcribe_file",
+        "audio_path": str(audio_path.resolve()),
+        "task": task,
+    }
+    if language is not None:
+        req["language"] = language
+    if language_detection_threshold is not None:
+        req["language_detection_threshold"] = language_detection_threshold
+    if language_detection_segments is not None:
+        req["language_detection_segments"] = language_detection_segments
+    if language_fallback is not None:
+        req["language_fallback"] = language_fallback
+    if initial_prompt is not None:
+        req["initial_prompt"] = initial_prompt
+
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(300)
+        try:
+            sock.connect(str(SOCKET_PATH))
+            sock.sendall((json.dumps(req, ensure_ascii=False) + "\n").encode())
+            buf = bytearray()
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                if b"\n" in buf:
+                    break
+            resp = json.loads(buf.split(b"\n")[0])
+        finally:
+            sock.close()
+
+        if resp.get("status") == "ok":
+            return TranscriptionResult(
+                text=resp.get("text", ""),
+                language=resp.get("language"),
+                segments=resp.get("segments", []),
+            )
+    except Exception:
+        pass
+    return None
+
+
 def transcribe(
     audio_path: Path,
     model: str = DEFAULT_MODEL,
@@ -47,6 +114,19 @@ def transcribe(
     task: str = "transcribe",
     initial_prompt: str | None = None,
 ) -> TranscriptionResult:
+    # Try daemon first — reuses warm model, avoids loading locally
+    daemon_result = _try_daemon(
+        audio_path,
+        language,
+        language_detection_threshold,
+        language_detection_segments,
+        language_fallback,
+        task,
+        initial_prompt,
+    )
+    if daemon_result is not None:
+        return daemon_result
+
     whisper = _load_model(model)
 
     # If threshold + fallback are set, run a fast language detection pass first
