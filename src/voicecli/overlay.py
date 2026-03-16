@@ -257,11 +257,6 @@ class WaveformOverlay:
         self.root.geometry(f"{WIN_W}x{WIN_H}+{x}+24")
         self.root.lift()
         self.root.focus_force()
-        try:
-            # Grab all X11 keyboard events globally so Esc/Tab work without clicking
-            self.root.grab_set_global()
-        except tk.TclError:
-            pass
 
         self.canvas = tk.Canvas(
             self.root, width=WIN_W, height=WIN_H, bg=CORNER_KEY, highlightthickness=0
@@ -404,7 +399,7 @@ class WaveformOverlay:
         if not self._running:
             return
         state = resp.get("state")
-        if state == "idle" or resp.get("status") == "error":
+        if state != "recording" or resp.get("status") == "error":
             self._close()
             return
         mode = resp.get("mode")
@@ -429,10 +424,6 @@ class WaveformOverlay:
     def _close(self) -> None:
         self._running = False
         _play(_SND_STOP)
-        try:
-            self.root.grab_release()
-        except Exception:
-            pass
         try:
             LEVEL_FILE.unlink(missing_ok=True)
         except Exception:
