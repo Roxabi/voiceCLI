@@ -113,6 +113,37 @@ def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
             q.task_done()
 
 
+_VRAM_REQUIRED_GB: dict[str, float] = {
+    "qwen": 5.0,
+    "qwen-fast": 5.0,
+    "chatterbox": 2.0,
+    "chatterbox-turbo": 2.0,
+}
+_VRAM_REQUIRED_GB_DEFAULT = 4.0
+
+
+def _has_vram(eng_name: str) -> bool:
+    """Return True if enough free VRAM is available to load the engine."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return True  # CPU-only: no VRAM constraint
+        free_bytes, _ = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024**3)
+        required_gb = _VRAM_REQUIRED_GB.get(eng_name, _VRAM_REQUIRED_GB_DEFAULT)
+        if free_gb < required_gb:
+            print(
+                f"[voicecli daemon] Refusing to load '{eng_name}': "
+                f"{free_gb:.1f}GB free, need {required_gb:.1f}GB",
+                flush=True,
+            )
+            return False
+        return True
+    except Exception:
+        return True  # if check fails, let it try (existing behavior)
+
+
 def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
     """Process one synthesis job. Called exclusively from the worker thread."""
     try:
@@ -124,6 +155,18 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
             return
 
         if eng_name not in engines:
+            if not _has_vram(eng_name):
+                loaded = list(engines.keys())
+                _send_json(
+                    conn,
+                    {
+                        "status": "error",
+                        "message": (
+                            f"Insufficient VRAM to load '{eng_name}'. Already loaded: {loaded}"
+                        ),
+                    },
+                )
+                return
             print(f"[voicecli daemon] Loading {eng_name}...", flush=True)
             engines[eng_name] = _load_engine(eng_name, fast)
 
@@ -135,13 +178,18 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
         output_path_str = req.get("output_path")
         if not output_path_str:
             _send_json(
-                conn, {"status": "error", "message": "missing required field: 'output_path'"}
+                conn,
+                {"status": "error", "message": "missing required field: 'output_path'"},
             )
             return
         output_path = Path(output_path_str).resolve()
         if not str(output_path).startswith(str(_OUTPUT_BASE)):
             _send_json(
-                conn, {"status": "error", "message": "output_path must be within home directory"}
+                conn,
+                {
+                    "status": "error",
+                    "message": "output_path must be within home directory",
+                },
             )
             return
         voice = req.get("voice")
@@ -185,7 +233,8 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
             _send_json(conn, {"status": "error", "message": str(exc)})
         except Exception as send_exc:
             print(
-                f"[voicecli daemon] warning: failed to send error response: {send_exc}", flush=True
+                f"[voicecli daemon] warning: failed to send error response: {send_exc}",
+                flush=True,
             )
     finally:
         conn.close()
