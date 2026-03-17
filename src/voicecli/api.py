@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class DaemonUnavailableError(RuntimeError):
@@ -283,8 +286,9 @@ def _try_daemon(request: dict) -> Path | None:
         resp = daemon_request(request, timeout=300)
         if resp.get("status") == "ok":
             return Path(resp["path"])
+        log.error("daemon error: %s", resp.get("message", "unknown error"))
     except Exception:
-        pass
+        log.exception("daemon request failed")
     return None
 
 
