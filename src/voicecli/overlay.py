@@ -367,7 +367,7 @@ class WaveformOverlay:
                 self._cached_level = _read_level()
                 time.sleep(ANIM_MS / 1000.0)
 
-        threading.Thread(target=_loop, daemon=True).start()
+        threading.Thread(target=_loop, daemon=True, name="level-reader").start()
 
     # ── Animation loop ────────────────────────────────────────────────────────
 
@@ -406,7 +406,8 @@ class WaveformOverlay:
             return
 
         # Watchdog: auto-close if no valid poll response for WATCHDOG_S seconds
-        if time.monotonic() - self._last_good_poll > WATCHDOG_S:
+        # Skip while a poll is actively in-flight (bounded by 10s socket timeout)
+        if not self._poll_in_flight and time.monotonic() - self._last_good_poll > WATCHDOG_S:
             self._close()
             return
 
