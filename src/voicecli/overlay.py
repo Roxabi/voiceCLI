@@ -15,6 +15,7 @@ import random
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from collections import deque
 from pathlib import Path
@@ -83,6 +84,7 @@ BAR_MAX_H = 22  # max half-height of a bar (grows ± from WAVE_CY)
 
 POLL_MS = 200
 ANIM_MS = 50  # ~20 fps
+WATCHDOG_S = 15  # auto-close after N seconds without a valid poll response
 
 LEVEL_PEAK = 0.06
 
@@ -233,6 +235,9 @@ class WaveformOverlay:
         self._running = True
         self._test_mode = test_mode
         self._audio_level = 0.0
+        self._cached_level = 0.0  # updated by background thread, read by _animate
+        self._poll_in_flight = False  # prevent thread pile-up
+        self._last_good_poll = time.monotonic()  # watchdog: last valid "recording" response
 
         # Ring buffer of amplitudes (one per bar, scrolls left each frame)
         self._samples: deque[float] = deque([0.0] * BAR_COUNT, maxlen=BAR_COUNT)
@@ -347,9 +352,22 @@ class WaveformOverlay:
         self.root.bind("<Tab>", self._on_tab)
         # Right-click anywhere on the overlay = cancel (no focus needed)
         self.canvas.bind("<Button-3>", self._on_escape)
+        self._start_level_reader()
         self._animate()
         if not test_mode:
             self.root.after(600, self._schedule_poll)
+
+    # ── Background level reader ──────────────────────────────────────────────
+
+    def _start_level_reader(self) -> None:
+        """Read audio level file in a background thread to avoid blocking tkinter."""
+
+        def _loop() -> None:
+            while self._running:
+                self._cached_level = _read_level()
+                time.sleep(ANIM_MS / 1000.0)
+
+        threading.Thread(target=_loop, daemon=True).start()
 
     # ── Animation loop ────────────────────────────────────────────────────────
 
@@ -357,8 +375,8 @@ class WaveformOverlay:
         if not self._running:
             return
 
-        # Smooth audio level
-        raw = _read_level()
+        # Smooth audio level (read from cache — no file I/O on main thread)
+        raw = self._cached_level
         norm = min(raw / LEVEL_PEAK, 1.0)
         alpha = 0.5 if norm > self._audio_level else 0.10
         self._audio_level += (norm - self._audio_level) * alpha
@@ -387,12 +405,25 @@ class WaveformOverlay:
         if not self._running:
             return
 
-        def _do() -> None:
-            resp = send_status()
-            if self._running:
-                self.root.after(0, lambda r=resp: self._apply_poll(r))
+        # Watchdog: auto-close if no valid poll response for WATCHDOG_S seconds
+        if time.monotonic() - self._last_good_poll > WATCHDOG_S:
+            self._close()
+            return
 
-        threading.Thread(target=_do, daemon=True).start()
+        # Skip if previous poll thread is still running (prevents pile-up)
+        if not self._poll_in_flight:
+            self._poll_in_flight = True
+
+            def _do() -> None:
+                try:
+                    resp = send_status()
+                finally:
+                    self._poll_in_flight = False
+                if self._running:
+                    self.root.after(0, lambda r=resp: self._apply_poll(r))
+
+            threading.Thread(target=_do, daemon=True).start()
+
         self.root.after(POLL_MS, self._schedule_poll)
 
     def _apply_poll(self, resp: dict) -> None:
@@ -402,6 +433,7 @@ class WaveformOverlay:
         if state != "recording" or resp.get("status") == "error":
             self._close()
             return
+        self._last_good_poll = time.monotonic()
         mode = resp.get("mode")
         if mode:
             self.canvas.itemconfig(self._mode_label, text=mode)
