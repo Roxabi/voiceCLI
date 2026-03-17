@@ -139,9 +139,63 @@ def _has_vram(eng_name: str) -> bool:
         return False
 
 
+def _sanitize_request(req: dict) -> str | None:
+    """Validate and sanitize daemon request fields.
+
+    Returns an error message string if validation fails, None if OK.
+    Mutates req in-place to strip newlines from string fields.
+    """
+    import math
+
+    _STR_MAX = 256
+    _TEXT_MAX = 100_000
+
+    # Sanitize string fields: cap length, strip newlines (protocol safety)
+    for field, max_len in [
+        ("engine", 64),
+        ("voice", _STR_MAX),
+        ("language", _STR_MAX),
+        ("instruct", _STR_MAX),
+    ]:
+        val = req.get(field)
+        if val is not None and isinstance(val, str):
+            if len(val) > max_len:
+                return f"{field} exceeds maximum length ({max_len} chars)"
+            req[field] = val.replace("\n", "").replace("\r", "")
+
+    # Text length
+    text = req.get("text")
+    if isinstance(text, str) and len(text) > _TEXT_MAX:
+        return f"text exceeds maximum length ({_TEXT_MAX} chars)"
+    if isinstance(text, str):
+        req["text"] = text.replace("\n", " ").replace("\r", "")
+
+    # Float range validation
+    for field, lo, hi in [("exaggeration", 0.0, 2.0), ("cfg_weight", 0.0, 1.0)]:
+        val = req.get(field)
+        if val is not None:
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                return f"{field} must be a number"
+            if math.isnan(val) or math.isinf(val):
+                return f"{field} must be finite"
+            if not (lo <= val <= hi):
+                return f"{field} must be between {lo} and {hi}, got {val}"
+            req[field] = val
+
+    return None
+
+
 def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
     """Process one synthesis job. Called exclusively from the worker thread."""
     try:
+        # Validate and sanitize request fields
+        error = _sanitize_request(req)
+        if error:
+            _send_json(conn, {"status": "error", "message": error})
+            return
+
         action = req.get("action")
 
         eng_name = req.get("engine")
