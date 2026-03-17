@@ -38,6 +38,8 @@ def _check_float(name: str, value, lo: float, hi: float) -> None:
     """Validate a float parameter: type, finite, within range."""
     if value is None:
         return
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be a number, got bool")
     if not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a number, got {type(value).__name__}")
     import math
@@ -52,6 +54,8 @@ def _check_int(name: str, value, lo: int, hi: int) -> None:
     """Validate an integer parameter: type, within range."""
     if value is None:
         return
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, got bool")
     if not isinstance(value, int):
         raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
     if not (lo <= value <= hi):

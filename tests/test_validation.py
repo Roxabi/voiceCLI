@@ -132,6 +132,14 @@ class TestFloatValidation:
         """Int values should be accepted for float fields."""
         _validate_tts_params(extra_kwargs={"exaggeration": 1, "cfg_weight": 0})
 
+    def test_rejects_bool_exaggeration(self):
+        with pytest.raises(TypeError, match="got bool"):
+            _validate_tts_params(extra_kwargs={"exaggeration": True})
+
+    def test_rejects_bool_cfg_weight(self):
+        with pytest.raises(TypeError, match="got bool"):
+            _validate_tts_params(extra_kwargs={"cfg_weight": False})
+
 
 # ── Integer field validation ─────────────────────────────────────────────────
 
@@ -168,6 +176,14 @@ class TestIntValidation:
     def test_rejects_non_int_segment_gap(self):
         with pytest.raises(TypeError, match="must be an integer"):
             _validate_tts_params(segment_gap=200.5)
+
+    def test_rejects_bool_segment_gap(self):
+        with pytest.raises(TypeError, match="got bool"):
+            _validate_tts_params(segment_gap=True)
+
+    def test_rejects_bool_crossfade(self):
+        with pytest.raises(TypeError, match="got bool"):
+            _validate_tts_params(crossfade=False)
 
 
 # ── Integration: validation in generate/clone ────────────────────────────────
@@ -276,3 +292,75 @@ class TestDaemonSanitizeRequest:
         err = _sanitize_request(req)
         assert err is not None
         assert "must be a number" in err
+
+    def test_rejects_negative_segment_gap(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {"engine": "qwen", "text": "hello", "segment_gap": -100}
+        err = _sanitize_request(req)
+        assert err is not None
+        assert "between" in err
+
+    def test_rejects_too_large_crossfade(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {"engine": "qwen", "text": "hello", "crossfade": 99999}
+        err = _sanitize_request(req)
+        assert err is not None
+        assert "between" in err
+
+    def test_accepts_valid_segment_gap_and_crossfade(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {"engine": "qwen", "text": "hello", "segment_gap": 200, "crossfade": 50}
+        err = _sanitize_request(req)
+        assert err is None
+
+    def test_sanitizes_segment_strings(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {
+            "engine": "qwen",
+            "text": "hello",
+            "segments": [{"text": "seg1\ntext", "instruct": "loud\nevil", "language": "French"}],
+        }
+        err = _sanitize_request(req)
+        assert err is None
+        assert req["segments"][0]["text"] == "seg1 text"
+        assert req["segments"][0]["instruct"] == "loudevil"
+
+    def test_rejects_overlong_segment_instruct(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {
+            "engine": "qwen",
+            "text": "hello",
+            "segments": [{"text": "ok", "instruct": "x" * 257}],
+        }
+        err = _sanitize_request(req)
+        assert err is not None
+        assert "segments[0].instruct" in err
+
+    def test_rejects_segment_nan_exaggeration(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {
+            "engine": "qwen",
+            "text": "hello",
+            "segments": [{"text": "ok", "exaggeration": float("nan")}],
+        }
+        err = _sanitize_request(req)
+        assert err is not None
+        assert "segments[0].exaggeration" in err
+
+    def test_rejects_segment_out_of_range_crossfade(self):
+        from voicecli.daemon import _sanitize_request
+
+        req = {
+            "engine": "qwen",
+            "text": "hello",
+            "segments": [{"text": "ok", "crossfade": -1}],
+        }
+        err = _sanitize_request(req)
+        assert err is not None
+        assert "segments[0].crossfade" in err
