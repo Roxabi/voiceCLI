@@ -156,6 +156,7 @@ def _sanitize_request(req: dict) -> str | None:
         ("voice", _STR_MAX),
         ("language", _STR_MAX),
         ("instruct", _STR_MAX),
+        ("ref_text", _STR_MAX),
     ]:
         val = req.get(field)
         if val is not None and isinstance(val, str):
@@ -332,8 +333,15 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
             if not ref_audio:
                 _send_json(conn, {"status": "error", "message": "clone requires ref_audio"})
                 return
+            ref_audio_path = Path(ref_audio).resolve()
+            if not str(ref_audio_path).startswith(str(_OUTPUT_BASE)):
+                _send_json(
+                    conn,
+                    {"status": "error", "message": "ref_audio must be within home directory"},
+                )
+                return
             ref_text = req.get("ref_text")
-            result = eng.clone(text, Path(ref_audio), output_path, ref_text=ref_text, **kwargs)
+            result = eng.clone(text, ref_audio_path, output_path, ref_text=ref_text, **kwargs)
         else:
             _send_json(conn, {"status": "error", "message": f"Unknown action: {action!r}"})
             return

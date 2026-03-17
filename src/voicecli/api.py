@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,8 +43,6 @@ def _check_float(name: str, value, lo: float, hi: float) -> None:
         raise TypeError(f"{name} must be a number, got bool")
     if not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a number, got {type(value).__name__}")
-    import math
-
     if math.isnan(value) or math.isinf(value):
         raise ValueError(f"{name} must be finite, got {value}")
     if not (lo <= value <= hi):
@@ -840,6 +839,7 @@ def clone(
         chunk_size=chunk_size,
         extra_kwargs=kwargs,
     )
+    _check_str("ref_text", ref_text)
 
     from voicecli.engine import QWEN_ENGINES, get_engine
     from voicecli.utils import build_output_prefix, default_output_path
