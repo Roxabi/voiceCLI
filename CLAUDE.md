@@ -158,7 +158,7 @@ src/voicecli/
   samples.py        — Sample management + PulseAudio recording with chimes
   transcribe.py     — Faster Whisper file transcription
   listen.py         — Kyutai STT real-time mic transcription
-  overlay.py        — Waveform overlay (tkinter, WSLg); plays start.wav via stt_daemon, stop.wav on close
+  overlay.py        — Waveform overlay (GTK3 + gtk-layer-shell on Wayland, X11 fallback); stop.wav on close
   assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed tap); start_mic/stop_mic alternates
   engines/
     qwen.py              — Qwen3-TTS engine (CustomVoice for generate, Base for clone)

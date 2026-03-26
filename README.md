@@ -465,7 +465,7 @@ src/voicecli/
   samples.py        # Sample management (add/record/use/remove)
   transcribe.py     # Faster Whisper file transcription
   listen.py         # Kyutai STT real-time mic transcription
-  overlay.py        # Waveform overlay UI (tkinter/WSLg)
+  overlay.py        # Waveform overlay UI (GTK3 + gtk-layer-shell)
   assets/           # UI sounds (start.wav, stop.wav)
 ```
 

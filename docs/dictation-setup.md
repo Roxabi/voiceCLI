@@ -19,6 +19,12 @@ Typical flow:
 
 ## Prerequisites
 
+On Wayland (Pop!_OS, GNOME, COSMIC), install the overlay and auto-paste dependencies:
+
+```bash
+sudo apt install gir1.2-gtklayershell-0.1 wtype wl-clipboard
+```
+
 The STT daemon must be running before `voicecli dictate` can do anything:
 
 ```bash

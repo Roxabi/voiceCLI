@@ -212,8 +212,8 @@ def _run_dictate_setup() -> None:
         typer.echo("Step 3: Clipboard — ensure wl-clipboard or xclip is installed:")
         typer.echo("  sudo apt install wl-clipboard")
         typer.echo("")
-        typer.echo("Step 4: Overlay — ensure tkinter is installed:")
-        typer.echo("  sudo apt install python3-tk")
+        typer.echo("Step 4: Overlay — ensure GTK layer-shell is installed:")
+        typer.echo("  sudo apt install gir1.2-gtklayershell-0.1")
     elif is_kde:
         typer.echo("Step 2: KDE System Settings > Shortcuts > Custom Shortcuts")
         typer.echo("  Edit > New > Global Shortcut > Command/URL")
@@ -269,13 +269,16 @@ def _run_dictate_setup() -> None:
     else:
         typer.echo("  notifications: install libnotify-bin")
 
-    # Overlay (tkinter)
+    # Overlay (GTK3 + gtk-layer-shell)
     try:
-        import tkinter  # noqa: F401
+        import gi
+
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk  # noqa: F401
 
         typer.echo("  overlay OK")
-    except ImportError:
-        typer.echo("  overlay: sudo apt install python3-tk")
+    except (ValueError, ImportError):
+        typer.echo("  overlay: sudo apt install libgtk-3-0")
 
 
 @dictate_app.callback(invoke_without_command=True)
