@@ -4,4 +4,4 @@
 set -a
 [ -f "$HOME/projects/voiceCLI/.env" ] && source "$HOME/projects/voiceCLI/.env"
 set +a
-exec "$HOME/.local/bin/voicecli" serve --engine qwen-fast
+exec voicecli serve --engine qwen-fast

@@ -2,26 +2,44 @@
 
 Run as: python -m voicecli.overlay
 Closes automatically when the daemon is no longer in 'recording' state.
-Press ESC to cancel the recording.
 
-Design: dark rounded panel with symmetric waveform bars (grow ±from centre)
+Design: dark rounded panel with symmetric waveform bars (grow +/- from centre)
 and a bottom toolbar showing mode name + keyboard shortcuts.
+
+Rendering: GTK3 + gtk-layer-shell (Wayland-native) with Cairo drawing.
+Falls back to GTK3 without layer-shell (X11/XWayland) if gtk-layer-shell
+is not available.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import random
 import subprocess
 import sys
 import threading
 import time
-import tkinter as tk
 from collections import deque
 from pathlib import Path
 
-from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_status
-from voicecli.stt_daemon import LEVEL_FILE
+import cairo
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+
+try:
+    gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import GtkLayerShell  # noqa: E402
+
+    HAS_LAYER_SHELL = True
+except (ValueError, ImportError):
+    HAS_LAYER_SHELL = False
+
+from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_status  # noqa: E402
+from voicecli.stt_daemon import LEVEL_FILE  # noqa: E402
 
 _ASSETS = Path(__file__).parent / "assets"
 
@@ -35,13 +53,7 @@ _ABBREV = {
 
 
 def _hotkey_badge(hotkey_str: str) -> str:
-    """Convert config hotkey string to short display badge text.
-
-    Rules:
-      - 'ctrl' -> 'Ctrl' when sole modifier; 'C' when combined with others
-      - 'alt' -> 'A', 'shift' -> 'Sh', 'space' -> 'Sp', 'esc' -> 'Esc', 'tab' -> 'Tab'
-      - other parts -> capitalize first letter (graceful fallback, no crash)
-    """
+    """Convert config hotkey string to short display badge text."""
     parts = hotkey_str.lower().split("+")
     has_other_modifier = any(p in ("alt", "shift") for p in parts)
     result = []
@@ -80,7 +92,7 @@ WIN_W = WAVE_PAD_X * 2 + BAR_COUNT * (BAR_W + BAR_GAP) - BAR_GAP
 WIN_H = WAVE_H + TOOL_H
 
 WAVE_CY = WAVE_H // 2  # vertical centre of waveform
-BAR_MAX_H = 22  # max half-height of a bar (grows ± from WAVE_CY)
+BAR_MAX_H = 22  # max half-height of a bar (grows +/- from WAVE_CY)
 
 POLL_MS = 200
 ANIM_MS = 50  # ~20 fps
@@ -88,68 +100,28 @@ WATCHDOG_S = 15  # auto-close after N seconds without a valid poll response
 
 LEVEL_PEAK = 0.06
 
-# ── Colors ────────────────────────────────────────────────────────────────────
-CORNER_KEY = "#010203"
-BG = "#141420"
-TOOLBAR_BG = "#0d0d18"
-SEP_COLOR = "#252540"
-BAR_DIM = (0x28, 0x28, 0x48)  # very dark bar (idle / short)
-BAR_BRIGHT = (0xDD, 0xDD, 0xFF)  # near-white bar (active / tall)
-BADGE_BG = "#252542"
-BADGE_BORDER = "#44446a"
-BADGE_FG = "#9999bb"
-MODE_FG = "#ffffff"
-DOT_COLOR = "#e94560"
+# ── Colors (RGBA tuples for Cairo) ────────────────────────────────────────────
+BG = (0x14 / 255, 0x14 / 255, 0x20 / 255, 0.93)
+TOOLBAR_BG = (0x0D / 255, 0x0D / 255, 0x18 / 255, 0.93)
+SEP_COLOR = (0x25 / 255, 0x25 / 255, 0x40 / 255, 1.0)
+GUIDE_COLOR = (0x1E / 255, 0x1E / 255, 0x35 / 255, 1.0)
+BAR_DIM = (0x28 / 255, 0x28 / 255, 0x48 / 255)
+BAR_BRIGHT = (0xDD / 255, 0xDD / 255, 0xFF / 255)
+BADGE_BG = (0x25 / 255, 0x25 / 255, 0x42 / 255, 1.0)
+BADGE_BORDER = (0x44 / 255, 0x44 / 255, 0x6A / 255, 1.0)
+BADGE_FG = (0x99 / 255, 0x99 / 255, 0xBB / 255, 1.0)
+MODE_FG = (1.0, 1.0, 1.0, 1.0)
+DOT_COLOR = (0xE9 / 255, 0x45 / 255, 0x60 / 255, 1.0)
 
 
-def _bar_color(frac: float) -> str:
-    """Interpolate BAR_DIM → BAR_BRIGHT by height fraction."""
+def _bar_color(frac: float) -> tuple[float, float, float]:
+    """Interpolate BAR_DIM -> BAR_BRIGHT by height fraction."""
     t = max(0.0, min(1.0, frac))
-    r = int(BAR_DIM[0] + (BAR_BRIGHT[0] - BAR_DIM[0]) * t)
-    g = int(BAR_DIM[1] + (BAR_BRIGHT[1] - BAR_DIM[1]) * t)
-    b = int(BAR_DIM[2] + (BAR_BRIGHT[2] - BAR_DIM[2]) * t)
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
-def _primary_monitor_geometry(sw: int, px: int | None = None) -> tuple[int, int]:
-    """Return (offset_x, width) of the monitor where the cursor is.
-
-    Strategy:
-    1. xrandr monitor marked as "primary" → use it
-    2. winfo_pointerx() to find which monitor contains the cursor
-    3. Fall back to the monitor with the smallest x offset
-    4. Final fallback: right half of screen (sw // 2) for wide setups
-    """
-    try:
-        import re
-        import subprocess
-
-        out = subprocess.check_output(
-            ["xrandr"], env={"DISPLAY": os.environ.get("DISPLAY", ":0")}, text=True, timeout=2
-        )
-        primary_re = re.compile(r"connected primary (\d+)x\d+\+(\d+)\+\d+")
-        fallback_re = re.compile(r"connected (?:primary )?(\d+)x\d+\+(\d+)\+\d+")
-        monitors: list[tuple[int, int]] = []  # (offset_x, width)
-        for line in out.splitlines():
-            m = primary_re.search(line)
-            if m:
-                return int(m.group(2)), int(m.group(1))
-            m = fallback_re.search(line)
-            if m:
-                monitors.append((int(m.group(2)), int(m.group(1))))
-        if monitors:
-            # Use cursor position to find which monitor the user is on
-            if px is not None:
-                for offset_x, width in monitors:
-                    if offset_x <= px < offset_x + width:
-                        return offset_x, width
-            # Fall back to smallest-offset monitor
-            return min(monitors, key=lambda m: m[0])
-    except Exception:
-        pass
-    # Final fallback: right half for wide screens (matches old hardcoded behaviour)
-    mon_w = sw // 2 if sw > 3000 else sw
-    return sw - mon_w, mon_w
+    return (
+        BAR_DIM[0] + (BAR_BRIGHT[0] - BAR_DIM[0]) * t,
+        BAR_DIM[1] + (BAR_BRIGHT[1] - BAR_DIM[1]) * t,
+        BAR_DIM[2] + (BAR_BRIGHT[2] - BAR_DIM[2]) * t,
+    )
 
 
 def _read_level() -> float:
@@ -159,75 +131,14 @@ def _read_level() -> float:
         return 0.0
 
 
-def _draw_rounded_rect(
-    canvas: tk.Canvas, x1: int, y1: int, x2: int, y2: int, r: int, **kw: object
-) -> None:
-    kw2 = dict(kw)
-    canvas.create_arc(x1, y1, x1 + 2 * r, y1 + 2 * r, start=90, extent=90, style="pieslice", **kw2)  # type: ignore[arg-type]
-    canvas.create_arc(x2 - 2 * r, y1, x2, y1 + 2 * r, start=0, extent=90, style="pieslice", **kw2)  # type: ignore[arg-type]
-    canvas.create_arc(x2 - 2 * r, y2 - 2 * r, x2, y2, start=270, extent=90, style="pieslice", **kw2)  # type: ignore[arg-type]
-    canvas.create_arc(x1, y2 - 2 * r, x1 + 2 * r, y2, start=180, extent=90, style="pieslice", **kw2)  # type: ignore[arg-type]
-    canvas.create_rectangle(x1 + r, y1, x2 - r, y2, **kw2)  # type: ignore[arg-type]
-    canvas.create_rectangle(x1, y1 + r, x2, y2 - r, **kw2)  # type: ignore[arg-type]
-
-
-def _draw_badge(canvas: tk.Canvas, x: int, y: int, label: str) -> int:
-    """Draw a keyboard-key badge centred at y. Returns right edge x."""
-    pad = 5
-    w = len(label) * 6 + pad * 2
-    h = 14
-    x1, y1, x2, y2 = x, y - h // 2, x + w, y + h // 2
-    r = 3
-    canvas.create_arc(
-        x1,
-        y1,
-        x1 + 2 * r,
-        y1 + 2 * r,
-        start=90,
-        extent=90,
-        style="pieslice",
-        fill=BADGE_BG,
-        outline=BADGE_BORDER,
-    )
-    canvas.create_arc(
-        x2 - 2 * r,
-        y1,
-        x2,
-        y1 + 2 * r,
-        start=0,
-        extent=90,
-        style="pieslice",
-        fill=BADGE_BG,
-        outline=BADGE_BORDER,
-    )
-    canvas.create_arc(
-        x2 - 2 * r,
-        y2 - 2 * r,
-        x2,
-        y2,
-        start=270,
-        extent=90,
-        style="pieslice",
-        fill=BADGE_BG,
-        outline=BADGE_BORDER,
-    )
-    canvas.create_arc(
-        x1,
-        y2 - 2 * r,
-        x1 + 2 * r,
-        y2,
-        start=180,
-        extent=90,
-        style="pieslice",
-        fill=BADGE_BG,
-        outline=BADGE_BORDER,
-    )
-    canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=BADGE_BG, outline=BADGE_BG)
-    canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=BADGE_BG, outline=BADGE_BG)
-    canvas.create_line(x1 + r, y1, x2 - r, y1, fill=BADGE_BORDER)
-    canvas.create_line(x1 + r, y2, x2 - r, y2, fill=BADGE_BORDER)
-    canvas.create_text(x + w // 2, y, text=label, font=("monospace", 7), fill=BADGE_FG)
-    return x2
+def _rounded_rect(cr: object, x: float, y: float, w: float, h: float, r: float) -> None:
+    """Add a rounded rectangle sub-path to the Cairo context."""
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
 
 
 class WaveformOverlay:
@@ -235,9 +146,10 @@ class WaveformOverlay:
         self._running = True
         self._test_mode = test_mode
         self._audio_level = 0.0
-        self._cached_level = 0.0  # updated by background thread, read by _animate
-        self._poll_in_flight = False  # prevent thread pile-up
-        self._last_good_poll = time.monotonic()  # watchdog: last valid "recording" response
+        self._cached_level = 0.0
+        self._poll_in_flight = False
+        self._last_good_poll = time.monotonic()
+        self._mode_text = initial_mode or "—"
 
         # Ring buffer of amplitudes (one per bar, scrolls left each frame)
         self._samples: deque[float] = deque([0.0] * BAR_COUNT, maxlen=BAR_COUNT)
@@ -245,123 +157,176 @@ class WaveformOverlay:
         # Ornstein-Uhlenbeck process drives the amplitude envelope
         self._ou = 0.0
 
-        self.root = tk.Tk()
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.configure(bg=CORNER_KEY)
-        try:
-            self.root.attributes("-transparentcolor", CORNER_KEY)
-        except tk.TclError:
-            pass
-        self.root.attributes("-alpha", 0.93)
-
-        sw = self.root.winfo_screenwidth()
-        px = self.root.winfo_pointerx()
-        mon_offset, mon_w = _primary_monitor_geometry(sw, px=px)
-        x = mon_offset + mon_w // 2 - WIN_W // 2
-        self.root.geometry(f"{WIN_W}x{WIN_H}+{x}+24")
-        self.root.lift()
-        self.root.focus_force()
-
-        self.canvas = tk.Canvas(
-            self.root, width=WIN_W, height=WIN_H, bg=CORNER_KEY, highlightthickness=0
+        # Hotkey badges
+        self._hk_toggle = _hotkey_badge(
+            os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE") or "ctrl+space"
         )
-        self.canvas.pack()
-
-        # ── Background ────────────────────────────────────────────────────────
-        _draw_rounded_rect(self.canvas, 0, 0, WIN_W, WIN_H, CORNER_R, fill=BG, outline="")
-
-        # Slightly darker toolbar area (bottom strip)
-        _draw_rounded_rect(
-            self.canvas, 0, WAVE_H, WIN_W, WIN_H, CORNER_R, fill=TOOLBAR_BG, outline=""
-        )
-        self.canvas.create_rectangle(
-            0, WAVE_H, WIN_W, WAVE_H + CORNER_R, fill=TOOLBAR_BG, outline=""
-        )
-        # Separator line
-        self.canvas.create_line(CORNER_R, WAVE_H, WIN_W - CORNER_R, WAVE_H, fill=SEP_COLOR, width=1)
-        # Horizontal centre guide (very faint)
-        self.canvas.create_line(
-            WAVE_PAD_X, WAVE_CY, WIN_W - WAVE_PAD_X, WAVE_CY, fill="#1e1e35", width=1
-        )
-
-        # ── Waveform bars ─────────────────────────────────────────────────────
-        self._bars: list[int] = []
-        for i in range(BAR_COUNT):
-            bx = WAVE_PAD_X + i * (BAR_W + BAR_GAP)
-            bar = self.canvas.create_rectangle(
-                bx,
-                WAVE_CY,
-                bx + BAR_W,
-                WAVE_CY,
-                fill=_bar_color(0.0),
-                outline="",
-            )
-            self._bars.append(bar)
-
-        # ── Toolbar ───────────────────────────────────────────────────────────
-        tool_cy = WAVE_H + TOOL_H // 2
-
-        # Recording dot
-        self.canvas.create_oval(
-            10,
-            tool_cy - 4,
-            18,
-            tool_cy + 4,
-            fill=DOT_COLOR,
-            outline="",
-        )
-
-        # Mode label (white, bold, left-aligned after dot)
-        self._mode_label = self.canvas.create_text(
-            24,
-            tool_cy,
-            text=initial_mode or "—",
-            font=("sans-serif", 9, "bold"),
-            fill=MODE_FG,
-            anchor="w",
-        )
-
-        # Shortcut badges: right side
-        # Rendered right-to-left; list order = left-to-right reading order.
-        # Text labels: "Stop  ", "Cancel  ", "Mode  " — badges: everything else.
-        rx = WIN_W - 6
-        _hk_toggle = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_TOGGLE") or "ctrl+space")
-        _hk_cancel = _hotkey_badge(
+        self._hk_cancel = _hotkey_badge(
             os.environ.get("VOICECLI_OVERLAY_HOTKEY_CANCEL") or "alt+shift+esc"
         )
-        _hk_mode = _hotkey_badge(os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE") or "alt+shift+tab")
-        for label in reversed([_hk_mode, "Mode  ", _hk_cancel, "Cancel  ", _hk_toggle, "Stop  "]):
-            if label.strip() in ("Stop", "Cancel", "Mode"):  # noqa: SIM102
-                rx -= 4
-                self.canvas.create_text(
-                    rx,
-                    tool_cy,
-                    text=label.strip(),
-                    font=("sans-serif", 8),
-                    fill=BADGE_FG,
-                    anchor="e",
-                )
-                rx -= len(label.strip()) * 6 + 2
-            else:
-                bw = len(label.strip()) * 6 + 10
-                rx -= bw + 2
-                _draw_badge(self.canvas, rx, tool_cy, label.strip())
+        self._hk_mode = _hotkey_badge(
+            os.environ.get("VOICECLI_OVERLAY_HOTKEY_MODE") or "alt+shift+tab"
+        )
 
-        self.root.bind("<Escape>", self._on_escape)
-        self.root.bind("<Tab>", self._on_tab)
-        # Right-click anywhere on the overlay = cancel (no focus needed)
-        self.canvas.bind("<Button-3>", self._on_escape)
+        # ── Window setup ──────────────────────────────────────────────────────
+        self.window = Gtk.Window()
+        self.window.set_default_size(WIN_W, WIN_H)
+        self.window.set_resizable(False)
+        self.window.set_decorated(False)
+
+        # RGBA transparency
+        screen = self.window.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual:
+            self.window.set_visual(visual)
+        self.window.set_app_paintable(True)
+
+        if HAS_LAYER_SHELL:
+            # Wayland-native overlay via layer-shell
+            GtkLayerShell.init_for_window(self.window)
+            GtkLayerShell.set_layer(self.window, GtkLayerShell.Layer.OVERLAY)
+            GtkLayerShell.set_anchor(self.window, GtkLayerShell.Edge.TOP, True)
+            GtkLayerShell.set_margin(self.window, GtkLayerShell.Edge.TOP, 24)
+            GtkLayerShell.set_keyboard_mode(
+                self.window, GtkLayerShell.KeyboardMode.NONE
+            )
+        else:
+            # X11/XWayland fallback
+            self.window.set_keep_above(True)
+            self.window.set_type_hint(Gdk.WindowTypeHint.NOTIFICATION)
+            self.window.set_accept_focus(False)
+            # Centre horizontally, near top
+            screen_w = screen.get_width()
+            self.window.move(screen_w // 2 - WIN_W // 2, 24)
+
+        # Drawing area
+        self._drawing_area = Gtk.DrawingArea()
+        self._drawing_area.set_size_request(WIN_W, WIN_H)
+        self._drawing_area.connect("draw", self._on_draw)
+        self.window.add(self._drawing_area)
+
+        self.window.connect("destroy", self._on_destroy)
+
+        self.window.show_all()
+
+        # ── Start loops ───────────────────────────────────────────────────────
         self._start_level_reader()
-        self._animate()
+        GLib.timeout_add(ANIM_MS, self._animate)
         if not test_mode:
-            self.root.after(600, self._schedule_poll)
+            GLib.timeout_add(600, self._schedule_poll)
 
-    # ── Background level reader ──────────────────────────────────────────────
+    # ── Cairo drawing ─────────────────────────────────────────────────────────
+
+    def _on_draw(self, widget: Gtk.DrawingArea, cr: object) -> bool:
+        # Clear to fully transparent
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+
+        # ── Main background (rounded rect) ────────────────────────────────────
+        _rounded_rect(cr, 0, 0, WIN_W, WIN_H, CORNER_R)
+        cr.set_source_rgba(*BG)
+        cr.fill()
+
+        # ── Toolbar background (bottom strip) ─────────────────────────────────
+        _rounded_rect(cr, 0, WAVE_H, WIN_W, TOOL_H, CORNER_R)
+        cr.set_source_rgba(*TOOLBAR_BG)
+        cr.fill()
+        # Fill the gap between waveform and toolbar rounded corners
+        cr.rectangle(0, WAVE_H, WIN_W, CORNER_R)
+        cr.set_source_rgba(*TOOLBAR_BG)
+        cr.fill()
+
+        # ── Separator line ────────────────────────────────────────────────────
+        cr.set_source_rgba(*SEP_COLOR)
+        cr.set_line_width(1)
+        cr.move_to(CORNER_R, WAVE_H + 0.5)
+        cr.line_to(WIN_W - CORNER_R, WAVE_H + 0.5)
+        cr.stroke()
+
+        # ── Centre guide ──────────────────────────────────────────────────────
+        cr.set_source_rgba(*GUIDE_COLOR)
+        cr.move_to(WAVE_PAD_X, WAVE_CY + 0.5)
+        cr.line_to(WIN_W - WAVE_PAD_X, WAVE_CY + 0.5)
+        cr.stroke()
+
+        # ── Waveform bars ─────────────────────────────────────────────────────
+        for i, s in enumerate(self._samples):
+            h = int(s * BAR_MAX_H)
+            bx = WAVE_PAD_X + i * (BAR_W + BAR_GAP)
+            r, g, b = _bar_color(s)
+            cr.set_source_rgba(r, g, b, 1.0)
+            if h > 0:
+                cr.rectangle(bx, WAVE_CY - h, BAR_W, h * 2)
+                cr.fill()
+
+        # ── Toolbar content ───────────────────────────────────────────────────
+        tool_cy = WAVE_H + TOOL_H / 2
+
+        # Recording dot
+        cr.set_source_rgba(*DOT_COLOR)
+        cr.arc(14, tool_cy, 4, 0, 2 * math.pi)
+        cr.fill()
+
+        # Mode label
+        cr.set_source_rgba(*MODE_FG)
+        cr.select_font_face("sans-serif", 0, 1)  # NORMAL, BOLD
+        cr.set_font_size(11)
+        cr.move_to(24, tool_cy + 4)
+        cr.show_text(self._mode_text)
+
+        # Shortcut badges (right-aligned)
+        cr.set_font_size(9)
+        rx = WIN_W - 6
+        for label, badge_text in reversed([
+            ("Stop", self._hk_toggle),
+            ("Cancel", self._hk_cancel),
+            ("Mode", self._hk_mode),
+        ]):
+            # Draw badge
+            rx = self._draw_badge(cr, rx, tool_cy, badge_text)
+            rx -= 4
+            # Draw label text
+            cr.set_source_rgba(*BADGE_FG)
+            cr.set_font_size(9)
+            extents = cr.text_extents(label)
+            rx -= extents.width
+            cr.move_to(rx, tool_cy + 3.5)
+            cr.show_text(label)
+            rx -= 8
+
+        return True
+
+    def _draw_badge(self, cr: object, rx: float, cy: float, label: str) -> float:
+        """Draw a keyboard-key badge right-aligned at rx. Returns new rx."""
+        cr.set_font_size(8)
+        extents = cr.text_extents(label)
+        pad = 5
+        bw = extents.width + pad * 2
+        bh = 14
+        bx = rx - bw
+        by = cy - bh / 2
+        br = 3
+
+        # Badge background
+        _rounded_rect(cr, bx, by, bw, bh, br)
+        cr.set_source_rgba(*BADGE_BG)
+        cr.fill_preserve()
+        cr.set_source_rgba(*BADGE_BORDER)
+        cr.set_line_width(1)
+        cr.stroke()
+
+        # Badge text
+        cr.set_source_rgba(*BADGE_FG)
+        cr.move_to(bx + pad, cy + 3)
+        cr.show_text(label)
+
+        return bx - 2
+
+    # ── Background level reader ───────────────────────────────────────────────
 
     def _start_level_reader(self) -> None:
-        """Read audio level file in a background thread to avoid blocking tkinter."""
-
         def _loop() -> None:
             while self._running:
                 self._cached_level = _read_level()
@@ -371,11 +336,11 @@ class WaveformOverlay:
 
     # ── Animation loop ────────────────────────────────────────────────────────
 
-    def _animate(self) -> None:
+    def _animate(self) -> bool:
         if not self._running:
-            return
+            return False  # stop the GLib timer
 
-        # Smooth audio level (read from cache — no file I/O on main thread)
+        # Smooth audio level
         raw = self._cached_level
         norm = min(raw / LEVEL_PEAK, 1.0)
         alpha = 0.5 if norm > self._audio_level else 0.10
@@ -386,32 +351,24 @@ class WaveformOverlay:
         self._ou += -0.07 * self._ou + random.gauss(0, 0.13)
         self._ou = max(-1.0, min(1.0, self._ou))
 
-        # New sample: |OU| × level × slight per-frame jitter
+        # New sample
         sample = abs(self._ou) * display_level * random.uniform(0.78, 1.22)
         self._samples.append(sample)
 
-        # Render bars (symmetric: grows ± from WAVE_CY)
-        for i, s in enumerate(self._samples):
-            h = int(s * BAR_MAX_H)
-            bx = WAVE_PAD_X + i * (BAR_W + BAR_GAP)
-            self.canvas.coords(self._bars[i], bx, WAVE_CY - h, bx + BAR_W, WAVE_CY + h)
-            self.canvas.itemconfig(self._bars[i], fill=_bar_color(s))
-
-        self.root.after(ANIM_MS, self._animate)
+        # Trigger redraw
+        self._drawing_area.queue_draw()
+        return True  # keep timer running
 
     # ── Non-blocking daemon poll ──────────────────────────────────────────────
 
-    def _schedule_poll(self) -> None:
+    def _schedule_poll(self) -> bool:
         if not self._running:
-            return
+            return False
 
-        # Watchdog: auto-close if no valid poll response for WATCHDOG_S seconds
-        # Skip while a poll is actively in-flight (bounded by 10s socket timeout)
         if not self._poll_in_flight and time.monotonic() - self._last_good_poll > WATCHDOG_S:
             self._close()
-            return
+            return False
 
-        # Skip if previous poll thread is still running (prevents pile-up)
         if not self._poll_in_flight:
             self._poll_in_flight = True
 
@@ -421,40 +378,33 @@ class WaveformOverlay:
                 finally:
                     self._poll_in_flight = False
                 if self._running:
-                    self.root.after(0, lambda r=resp: self._apply_poll(r))
+                    GLib.idle_add(self._apply_poll, resp)
 
             threading.Thread(target=_do, daemon=True).start()
 
-        self.root.after(POLL_MS, self._schedule_poll)
+        return True  # keep timer running
 
-    def _apply_poll(self, resp: dict) -> None:
+    def _apply_poll(self, resp: dict) -> bool:
         if not self._running:
-            return
+            return False
         state = resp.get("state")
         if state != "recording" or resp.get("status") == "error":
             self._close()
-            return
+            return False
         self._last_good_poll = time.monotonic()
         mode = resp.get("mode")
         if mode:
-            self.canvas.itemconfig(self._mode_label, text=mode)
+            self._mode_text = mode
+        return False  # one-shot idle callback
 
     # ── Controls ──────────────────────────────────────────────────────────────
 
-    def _on_escape(self, _event: object = None) -> None:
-        send_cancel()
-        self._close()
-
-    def _on_tab(self, _event: object = None) -> None:
-        def _do() -> None:
-            resp = send_next_mode()
-            if self._running:
-                mode = resp.get("mode", "") or "—"
-                self.root.after(0, lambda m=mode: self.canvas.itemconfig(self._mode_label, text=m))
-
-        threading.Thread(target=_do, daemon=True).start()
+    def _on_destroy(self, _widget: object) -> None:
+        self._running = False
 
     def _close(self) -> None:
+        if not self._running:
+            return
         self._running = False
         _play(_SND_STOP)
         try:
@@ -462,12 +412,12 @@ class WaveformOverlay:
         except Exception:
             pass
         try:
-            self.root.destroy()
+            self.window.destroy()
         except Exception:
             pass
 
     def run(self) -> None:
-        self.root.mainloop()
+        Gtk.main()
 
 
 def main() -> None:
@@ -477,7 +427,7 @@ def main() -> None:
     initial_mode = os.environ.get("VOICECLI_OVERLAY_MODE") or ("test" if test_mode else None)
     overlay = WaveformOverlay(initial_mode=initial_mode, test_mode=test_mode)
     if test_mode:
-        overlay.root.after(8000, overlay._close)
+        GLib.timeout_add(8000, overlay._close)
     overlay.run()
 
 

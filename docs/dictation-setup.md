@@ -217,24 +217,31 @@ auto_paste = true
 
 Requires the AHK script above to be running. Restart the daemon after changing this setting.
 
-### Linux / WSLg — xdotool
+### Native Linux — wtype (Wayland) / xdotool (X11)
 
-The `--paste` flag triggers `xdotool type` to type the transcribed text directly into
-the focused X11/WSLg window after each successful transcription.
+Auto-paste types the transcribed text directly into the focused window after each
+successful transcription. On Wayland (Pop!_OS, GNOME 41+, COSMIC), `wtype` is used.
+On X11/XWayland/WSLg, `xdotool` is the fallback.
 
 ```bash
 voicecli dictate --paste
 ```
 
-**Limitation:** `xdotool` only works in X11/XWayland windows. For native Windows apps,
-it has no effect. The text is always written to the clipboard regardless of `--paste`,
-so Ctrl+Shift+V always works as a fallback (or Ctrl+V if the app doesn't support paste-without-formatting).
+The daemon-side `auto_paste` config also uses the same tool chain — it sends `Ctrl+V`
+after writing to the clipboard.
 
-If `xdotool` is not installed, `--paste` silently does nothing. Install it with:
+Install the right tool for your session type:
 
 ```bash
+# Wayland (recommended for Pop!_OS, GNOME, COSMIC)
+sudo apt install wtype wl-clipboard
+
+# X11 / XWayland / WSLg fallback
 sudo apt install xdotool
 ```
+
+If neither tool is installed, `--paste` silently does nothing. The text is always
+written to the clipboard regardless, so `Ctrl+Shift+V` works as a manual fallback.
 
 ## Status Check
 

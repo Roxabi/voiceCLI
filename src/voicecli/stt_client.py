@@ -116,26 +116,38 @@ def notify(body: str, timeout: int = 3000) -> None:
 
 
 def auto_paste(text: str) -> None:
-    """Type *text* into the focused window via xdotool.
+    """Type *text* into the focused window via wtype (Wayland) or xdotool (X11).
 
     Waits 150 ms first so the caller's window can regain focus after the hotkey
-    is released.  Silently skips if xdotool is not installed or any error occurs.
+    is released.  Silently skips if neither tool is installed or any error occurs.
     """
     import shutil
     import subprocess
     import time
 
-    if not shutil.which("xdotool"):
-        return
-    try:
-        time.sleep(0.15)
-        subprocess.run(
-            ["xdotool", "type", "--clearmodifiers", "--", text],
-            check=False,
-            capture_output=True,
-        )
-    except Exception:
-        pass
+    time.sleep(0.15)
+
+    if shutil.which("wtype"):
+        try:
+            subprocess.run(
+                ["wtype", "--", text],
+                check=False,
+                capture_output=True,
+            )
+            return
+        except Exception:
+            pass
+
+    if shutil.which("xdotool"):
+        try:
+            subprocess.run(
+                ["xdotool", "type", "--clearmodifiers", "--", text],
+                check=False,
+                capture_output=True,
+            )
+            return
+        except Exception:
+            pass
 
 
 # ── Hotkey listener ───────────────────────────────────────────────────────────

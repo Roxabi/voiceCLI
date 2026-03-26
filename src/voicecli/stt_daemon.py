@@ -190,8 +190,19 @@ def _auto_paste() -> None:
         except Exception as e:
             print(f"[stt] auto-paste AHK trigger failed: {e}", file=sys.stderr)
 
-    # Fallback: xdotool (native Linux or WSLg X11)
+    # Fallback: wtype (Wayland) → xdotool (X11/XWayland)
     import shutil
+
+    if shutil.which("wtype"):
+        try:
+            subprocess.Popen(
+                ["wtype", "-M", "ctrl", "-P", "v", "-p", "v", "-m", "ctrl"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except Exception as e:
+            print(f"[stt] auto-paste wtype failed: {e}", file=sys.stderr)
 
     if shutil.which("xdotool"):
         try:
@@ -204,7 +215,7 @@ def _auto_paste() -> None:
         except Exception as e:
             print(f"[stt] auto-paste xdotool failed: {e}", file=sys.stderr)
 
-    print("[stt] auto-paste: no suitable method (need AHK trigger or xdotool)", file=sys.stderr)
+    print("[stt] auto-paste: no suitable method (need wtype, xdotool, or AHK trigger)", file=sys.stderr)
 
 
 # ── Recording saver ───────────────────────────────────────────────────────────
@@ -302,7 +313,6 @@ def _spawn_overlay(
     import sys
 
     env = os.environ.copy()
-    env.setdefault("DISPLAY", ":0")
     if mode:
         env["VOICECLI_OVERLAY_MODE"] = mode
     env["VOICECLI_OVERLAY_HOTKEY_TOGGLE"] = hotkey

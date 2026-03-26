@@ -5,4 +5,4 @@ set -a
 [ -f "$HOME/projects/voiceCLI/.env" ] && source "$HOME/projects/voiceCLI/.env"
 set +a
 source "$(dirname "$0")/ensure-pulse.sh"
-exec "$HOME/.local/bin/voicecli" stt-serve
+exec voicecli stt-serve

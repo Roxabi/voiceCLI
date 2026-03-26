@@ -274,6 +274,12 @@ On WSL2, use the included AutoHotkey script for global shortcuts:
 | `Alt+Shift+Esc` | Cancel |
 
 Auto-paste after transcription is enabled by `auto_paste = true` in `voicecli.toml` (`[stt]` section).
+On Wayland (Pop!_OS, GNOME, COSMIC), install `wtype` and `wl-clipboard` for auto-paste support:
+
+```bash
+sudo apt install wtype wl-clipboard
+```
+
 See [docs/dictation-setup.md](docs/dictation-setup.md) for full setup.
 
 ### `serve` — Daemon (warm model for fast generation)
@@ -289,7 +295,27 @@ voicecli serve --fast             # use smaller 0.6B model
 
 `generate` and `clone` automatically use the daemon when it's running — no flags needed. Falls back silently to standalone if the daemon isn't up.
 
-To keep the daemon running across sessions, use supervisord or systemd (see `voicecli serve --help` for a config snippet).
+To keep the daemon running across sessions, register with [lyra-stack](https://github.com/Roxabi/lyra-stack) (recommended) or use systemd.
+
+#### Supervised daemons (lyra-stack)
+
+If you have [lyra-stack](https://github.com/Roxabi/lyra-stack) set up, register voiceCLI's TTS and STT daemons with:
+
+```bash
+make register        # symlinks supervisor configs into lyra-stack
+```
+
+Then manage them from either repo:
+
+```bash
+make tts             # start TTS daemon
+make tts reload      # restart
+make tts logs        # tail stdout
+make tts stop        # stop
+make stt             # same for STT daemon
+```
+
+If you installed via `make setup` in lyra-stack (and said yes to voiceCLI), registration was done automatically. You only need `make register` when cloning voiceCLI standalone.
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
