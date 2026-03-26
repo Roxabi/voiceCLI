@@ -34,7 +34,7 @@ register:
 	@mkdir -p "$(LYRA_STACK_DIR)/conf.d"
 	@ln -sf "$(abspath supervisor/conf.d/voicecli_tts.conf)" "$(LYRA_STACK_DIR)/conf.d/voicecli_tts.conf"
 	@ln -sf "$(abspath supervisor/conf.d/voicecli_stt.conf)" "$(LYRA_STACK_DIR)/conf.d/voicecli_stt.conf"
-	@mkdir -p supervisor/logs
+	@mkdir -p "$(HOME)/.local/state/voicecli/logs"
 	@if [ -S "$(LYRA_STACK_DIR)/supervisor.sock" ]; then \
 		$(SUPERVISORCTL) reread && $(SUPERVISORCTL) update; \
 	fi
