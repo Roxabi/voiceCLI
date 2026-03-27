@@ -269,11 +269,14 @@ class TestAutoPaste:
         mock_run.assert_not_called()
 
     def test_auto_paste_calls_xdotool_with_correct_args(self):
-        """auto_paste() calls xdotool type with the provided text."""
+        """auto_paste() calls xdotool type with the provided text (X11 fallback)."""
         from voicecli.stt_client import auto_paste
 
+        def _which(cmd):
+            return "/usr/bin/xdotool" if cmd == "xdotool" else None
+
         with (
-            patch("shutil.which", return_value="/usr/bin/xdotool"),
+            patch("shutil.which", side_effect=_which),
             patch("subprocess.run") as mock_run,
             patch("time.sleep"),  # skip the 150ms wait
         ):
@@ -285,12 +288,35 @@ class TestAutoPaste:
             capture_output=True,
         )
 
+    def test_auto_paste_prefers_wtype_on_wayland(self):
+        """auto_paste() prefers wtype over xdotool when both are available."""
+        from voicecli.stt_client import auto_paste
+
+        def _which(cmd):
+            return f"/usr/bin/{cmd}" if cmd in ("wtype", "xdotool") else None
+
+        with (
+            patch("shutil.which", side_effect=_which),
+            patch("subprocess.run") as mock_run,
+            patch("time.sleep"),
+        ):
+            auto_paste("hello world")
+
+        mock_run.assert_called_once_with(
+            ["wtype", "--", "hello world"],
+            check=False,
+            capture_output=True,
+        )
+
     def test_auto_paste_sleeps_before_typing(self):
         """auto_paste() calls time.sleep(0.15) before invoking xdotool."""
         from voicecli.stt_client import auto_paste
 
+        def _which(cmd):
+            return "/usr/bin/xdotool" if cmd == "xdotool" else None
+
         with (
-            patch("shutil.which", return_value="/usr/bin/xdotool"),
+            patch("shutil.which", side_effect=_which),
             patch("subprocess.run"),
             patch("time.sleep") as mock_sleep,
         ):
@@ -302,8 +328,11 @@ class TestAutoPaste:
         """auto_paste() swallows exceptions from xdotool silently."""
         from voicecli.stt_client import auto_paste
 
+        def _which(cmd):
+            return "/usr/bin/xdotool" if cmd == "xdotool" else None
+
         with (
-            patch("shutil.which", return_value="/usr/bin/xdotool"),
+            patch("shutil.which", side_effect=_which),
             patch("subprocess.run", side_effect=OSError("no display")),
             patch("time.sleep"),
         ):
