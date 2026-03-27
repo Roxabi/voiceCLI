@@ -215,7 +215,10 @@ def _auto_paste() -> None:
         except Exception as e:
             print(f"[stt] auto-paste xdotool failed: {e}", file=sys.stderr)
 
-    print("[stt] auto-paste: no suitable method (need wtype, xdotool, or AHK trigger)", file=sys.stderr)
+    print(
+        "[stt] auto-paste: no suitable method (need wtype, xdotool, or AHK trigger)",
+        file=sys.stderr,
+    )
 
 
 # ── Recording saver ───────────────────────────────────────────────────────────

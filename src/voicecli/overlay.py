@@ -187,9 +187,7 @@ class WaveformOverlay:
             GtkLayerShell.set_layer(self.window, GtkLayerShell.Layer.OVERLAY)
             GtkLayerShell.set_anchor(self.window, GtkLayerShell.Edge.TOP, True)
             GtkLayerShell.set_margin(self.window, GtkLayerShell.Edge.TOP, 24)
-            GtkLayerShell.set_keyboard_mode(
-                self.window, GtkLayerShell.KeyboardMode.NONE
-            )
+            GtkLayerShell.set_keyboard_mode(self.window, GtkLayerShell.KeyboardMode.NONE)
         else:
             # X11/XWayland fallback
             self.window.set_keep_above(True)
@@ -279,11 +277,13 @@ class WaveformOverlay:
         # Shortcut badges (right-aligned)
         cr.set_font_size(9)
         rx = WIN_W - 6
-        for label, badge_text in reversed([
-            ("Stop", self._hk_toggle),
-            ("Cancel", self._hk_cancel),
-            ("Mode", self._hk_mode),
-        ]):
+        for label, badge_text in reversed(
+            [
+                ("Stop", self._hk_toggle),
+                ("Cancel", self._hk_cancel),
+                ("Mode", self._hk_mode),
+            ]
+        ):
             # Draw badge
             rx = self._draw_badge(cr, rx, tool_cy, badge_text)
             rx -= 4
