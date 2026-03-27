@@ -17,7 +17,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install system dependencies
-        run: sudo apt-get install -y portaudio19-dev
+        run: sudo apt-get install -y portaudio19-dev libcairo2-dev libgirepository1.0-dev gir1.2-gtk-3.0
       - name: Install dependencies
         run: uv sync --dev
       - name: Lint
