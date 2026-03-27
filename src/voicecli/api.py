@@ -67,7 +67,7 @@ def _resolve_config(
         if field not in kw and field in cfg:
             kw[field] = cfg[field]
 
-    # Instruct default from config (raw bypass > composed from parts)
+    # Instruct: API kwargs > config raw > composed from (kwargs + config parts)
     if "instruct" not in kw:
         if "instruct" in cfg:
             kw["instruct"] = cfg["instruct"]
@@ -75,10 +75,10 @@ def _resolve_config(
             from voicecli.markdown import compose_instruct
 
             composed = compose_instruct(
-                cfg.get("accent"),
-                cfg.get("personality"),
-                cfg.get("speed"),
-                cfg.get("emotion"),
+                kw.get("accent") or cfg.get("accent"),
+                kw.get("personality") or cfg.get("personality"),
+                kw.get("speed") or cfg.get("speed"),
+                kw.get("emotion") or cfg.get("emotion"),
             )
             if composed:
                 kw["instruct"] = composed
