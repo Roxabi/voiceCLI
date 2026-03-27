@@ -12,13 +12,24 @@ Actions:
 from __future__ import annotations
 
 import json
+import os
+import queue
 import socket
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 from voicecli.engine import QWEN_ENGINES
 
 SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "daemon.sock"
+_OUTPUT_BASE = Path.home()  # output_path must resolve within this directory (patchable in tests)
 _DEFAULT_TIMEOUT = 300  # seconds
+
+
+@dataclass
+class _Job:
+    conn: socket.socket
+    req: dict
 
 
 # ── Public client API ─────────────────────────────────────────────────────────
@@ -54,14 +65,29 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
         print(f"[voicecli daemon] Preloading {preload}...", flush=True)
         engines[preload] = _load_engine(preload, fast)
 
+    _queue: queue.Queue = queue.Queue()
+    threading.Thread(target=_worker, args=(_queue, engines, fast), daemon=True).start()
+
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
         srv.bind(str(SOCKET_PATH))
+        os.chmod(str(SOCKET_PATH), 0o600)
         srv.listen(5)
         print(f"[voicecli daemon] Ready on {SOCKET_PATH}", flush=True)
         try:
             while True:
                 conn, _ = srv.accept()
-                _handle(conn, engines, fast)
+                conn.settimeout(5)
+                try:
+                    req = _recv_json(conn)
+                except Exception:
+                    conn.close()
+                    continue
+                if req.get("action") == "ping":
+                    _send_json(conn, {"status": "ok"})
+                    conn.close()
+                else:
+                    # conn ownership transfers to worker — main thread must not touch conn after this
+                    _queue.put(_Job(conn=conn, req=req))
         except KeyboardInterrupt:
             pass
         finally:
@@ -77,15 +103,51 @@ def _load_engine(name: str, fast: bool = False):
     return eng
 
 
-def _handle(conn: socket.socket, engines: dict, fast: bool = False) -> None:
-    """Process one request synchronously (GPU is single-threaded anyway)."""
-    try:
-        req = _recv_json(conn)
-        action = req.get("action")
+def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
+    """Single worker thread: drain the job queue and synthesize sequentially."""
+    while True:
+        job: _Job = q.get()
+        try:
+            _handle_job(job.conn, job.req, engines, fast)
+        finally:
+            q.task_done()
 
-        if action == "ping":
-            _send_json(conn, {"status": "ok"})
-            return
+
+_VRAM_REQUIRED_GB: dict[str, float] = {
+    "qwen": 5.0,
+    "qwen-fast": 5.0,
+    "chatterbox": 2.0,
+    "chatterbox-turbo": 2.0,
+}
+_VRAM_REQUIRED_GB_DEFAULT = 4.0
+
+
+def _has_vram(eng_name: str) -> bool:
+    """Return True if enough free VRAM is available to load the engine."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return True  # CPU-only: no VRAM constraint
+        free_bytes, _ = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024**3)
+        required_gb = _VRAM_REQUIRED_GB.get(eng_name, _VRAM_REQUIRED_GB_DEFAULT)
+        if free_gb < required_gb:
+            print(
+                f"[voicecli daemon] Refusing to load '{eng_name}': "
+                f"{free_gb:.1f}GB free, need {required_gb:.1f}GB",
+                flush=True,
+            )
+            return False
+        return True
+    except Exception:
+        return True  # if check fails, let it try (existing behavior)
+
+
+def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
+    """Process one synthesis job. Called exclusively from the worker thread."""
+    try:
+        action = req.get("action")
 
         eng_name = req.get("engine")
         if not eng_name:
@@ -93,13 +155,44 @@ def _handle(conn: socket.socket, engines: dict, fast: bool = False) -> None:
             return
 
         if eng_name not in engines:
+            if not _has_vram(eng_name):
+                loaded = list(engines.keys())
+                _send_json(
+                    conn,
+                    {
+                        "status": "error",
+                        "message": (
+                            f"Insufficient VRAM to load '{eng_name}'. Already loaded: {loaded}"
+                        ),
+                    },
+                )
+                return
             print(f"[voicecli daemon] Loading {eng_name}...", flush=True)
             engines[eng_name] = _load_engine(eng_name, fast)
 
         eng = engines[eng_name]
-        text = req["text"]
+        text = req.get("text")
+        if not text:
+            _send_json(conn, {"status": "error", "message": "missing required field: 'text'"})
+            return
+        output_path_str = req.get("output_path")
+        if not output_path_str:
+            _send_json(
+                conn,
+                {"status": "error", "message": "missing required field: 'output_path'"},
+            )
+            return
+        output_path = Path(output_path_str).resolve()
+        if not str(output_path).startswith(str(_OUTPUT_BASE)):
+            _send_json(
+                conn,
+                {
+                    "status": "error",
+                    "message": "output_path must be within home directory",
+                },
+            )
+            return
         voice = req.get("voice")
-        output_path = Path(req["output_path"])
         language = req.get("language")
 
         # Reconstruct Segment objects from JSON
@@ -138,8 +231,11 @@ def _handle(conn: socket.socket, engines: dict, fast: bool = False) -> None:
     except Exception as exc:
         try:
             _send_json(conn, {"status": "error", "message": str(exc)})
-        except Exception:
-            pass
+        except Exception as send_exc:
+            print(
+                f"[voicecli daemon] warning: failed to send error response: {send_exc}",
+                flush=True,
+            )
     finally:
         conn.close()
 

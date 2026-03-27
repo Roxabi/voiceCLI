@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+
+class DaemonUnavailableError(RuntimeError):
+    """Raised when the voicecli daemon is not reachable for a QWEN engine."""
 
 
 @dataclass
@@ -45,6 +53,7 @@ def _resolve_config(
     kw: dict = extra_kwargs.copy() if extra_kwargs else {}
 
     # Layer defaults: API kwarg > voicecli.toml > hardcoded
+    cli_engine = engine  # preserve caller state before fallback
     r_engine = engine or cfg.get("engine", "qwen")
     r_language = language or cfg.get("language", "English")
     cli_voice = voice  # preserve caller state before toml fallback
@@ -82,6 +91,7 @@ def _resolve_config(
         "engine": r_engine,
         "language": r_language,
         "voice": r_voice,
+        "cli_engine": cli_engine,
         "cli_voice": cli_voice,
         "mp3": mp3,
         "fast": fast,
@@ -150,6 +160,7 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
     script_stem: str | None = None
 
     engine = resolved["engine"]
+    cli_engine = resolved["cli_engine"]
     language = resolved["language"]
     voice = resolved["voice"]
     cli_voice = resolved["cli_voice"]
@@ -168,7 +179,7 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
 
         script_stem = text_path.stem
         doc = parse_md_file(text_path)
-        if doc.engine:
+        if doc.engine and cli_engine is None:
             engine = doc.engine
         _apply_config_defaults(doc, cfg)
         if plain:
@@ -239,8 +250,34 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 # ── Daemon helpers ───────────────────────────────────────────────────────────
 
 
+_DAEMON_WAIT_SECS = 60.0
+_DAEMON_POLL_INTERVAL = 2.0
+
+
+def _wait_for_daemon_socket(timeout: float = _DAEMON_WAIT_SECS) -> bool:
+    """Block until the daemon socket appears (or timeout expires).
+
+    Prints a single warning on the first poll so the caller knows why it waits.
+    Returns True if the socket is available, False if the timeout elapsed.
+    """
+    from voicecli.daemon import SOCKET_PATH
+
+    if SOCKET_PATH.exists():
+        return True
+    print(
+        f"[voicecli] daemon socket not found — waiting up to {timeout:.0f}s...",
+        flush=True,
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(_DAEMON_POLL_INTERVAL)
+        if SOCKET_PATH.exists():
+            return True
+    return False
+
+
 def _try_daemon(request: dict) -> Path | None:
-    """Send request to daemon. Returns WAV path on success, None to fall back."""
+    """Send request to daemon. Returns WAV path on success, None on failure."""
     from voicecli.daemon import SOCKET_PATH, daemon_request
 
     if not SOCKET_PATH.exists():
@@ -249,8 +286,9 @@ def _try_daemon(request: dict) -> Path | None:
         resp = daemon_request(request, timeout=300)
         if resp.get("status") == "ok":
             return Path(resp["path"])
+        log.error("daemon error: %s", resp.get("message", "unknown error"))
     except Exception:
-        pass
+        log.exception("daemon request failed")
     return None
 
 
@@ -276,7 +314,16 @@ def _make_chunk_daemon_fn(engine_name: str):
             ref = kwargs.get("ref_audio")
             req["ref_audio"] = str(ref.resolve()) if ref else None
             req["ref_text"] = kwargs.get("ref_text")
-        return _try_daemon(req) is not None
+        if not _wait_for_daemon_socket():
+            raise DaemonUnavailableError(
+                f"voicecli daemon not available for engine '{engine_name}' — "
+                "start with: voicecli serve --engine qwen-fast"
+            )
+        if _try_daemon(req) is None:
+            raise DaemonUnavailableError(
+                f"voicecli daemon failed to handle chunk for engine '{engine_name}'"
+            )
+        return True
 
     return daemon_fn
 
@@ -424,7 +471,16 @@ def _clone_chunked(
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
             p = _emit_chunk(
-                eng, "clone", seg.text, None, out, i, total, mp3=mp3, daemon_fn=daemon_fn, **kw
+                eng,
+                "clone",
+                seg.text,
+                None,
+                out,
+                i,
+                total,
+                mp3=mp3,
+                daemon_fn=daemon_fn,
+                **kw,
             )
             paths.append(p)
     else:
@@ -558,6 +614,11 @@ def generate(
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
     if r_engine in QWEN_ENGINES:
+        if not _wait_for_daemon_socket():
+            raise DaemonUnavailableError(
+                f"voicecli daemon not available for engine '{r_engine}' — "
+                "start with: voicecli serve --engine qwen-fast"
+            )
         daemon_result = _try_daemon(
             {
                 "action": "generate",
@@ -582,6 +643,7 @@ def generate(
 
                 mp3_path = wav_to_mp3(out)
             return TTSResult(wav_path=out, mp3_path=mp3_path)
+        raise DaemonUnavailableError(f"voicecli daemon failed to generate with engine '{r_engine}'")
 
     out = eng.generate(r_text, r_voice, out, language=r_language, **extra)
 
@@ -699,6 +761,11 @@ def clone(
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
     if r_engine in QWEN_ENGINES:
+        if not _wait_for_daemon_socket():
+            raise DaemonUnavailableError(
+                f"voicecli daemon not available for engine '{r_engine}' — "
+                "start with: voicecli serve --engine qwen-fast"
+            )
         daemon_result = _try_daemon(
             {
                 "action": "clone",
@@ -725,6 +792,7 @@ def clone(
 
                 mp3_path = wav_to_mp3(out)
             return TTSResult(wav_path=out, mp3_path=mp3_path)
+        raise DaemonUnavailableError(f"voicecli daemon failed to clone with engine '{r_engine}'")
 
     out = eng.clone(r_text, ref_path, out, ref_text=ref_text, language=r_language, **extra)
 

@@ -1,3 +1,4 @@
+out/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,9 +18,13 @@ STT/audio_in/*
 STT/texts_out/*
 !STT/texts_out/.gitkeep
 .ruff_cache/
-.claude/skills/
+.claude/skills/*
+!.claude/skills/voice-design/
 voicecli.toml
+voicecli.vocab
 
 .env
 .claude/stack.yml
 .claude/settings.local.json
+
+.claude/dev-core.yml

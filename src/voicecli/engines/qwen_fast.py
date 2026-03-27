@@ -81,7 +81,8 @@ class QwenFastEngine(QwenEngine):
             # Rename x_vector_only_mode → xvec_only for faster-qwen3-tts API
             if "x_vector_only_mode" in base_kwargs:
                 base_kwargs["xvec_only"] = base_kwargs.pop("x_vector_only_mode")
-            # Keep ref_audio/ref_text in kwargs — library caches voice prompt internally
+            # faster-qwen3-tts requires ref_text as positional (no default)
+            base_kwargs.setdefault("ref_text", "")
 
         all_wavs: list[np.ndarray] = []
         sr = None
@@ -122,10 +123,11 @@ class QwenFastEngine(QwenEngine):
         default_crossfade = kwargs.get("crossfade", 0)
 
         base_kwargs: dict = dict(language=language, ref_audio=str(ref_audio))
-        if ref_text:
-            base_kwargs["ref_text"] = ref_text
-        else:
-            base_kwargs["xvec_only"] = True  # faster-qwen3-tts API name
+        # faster-qwen3-tts requires ref_text as positional arg (no default),
+        # pass empty string for xvec-only mode
+        base_kwargs["ref_text"] = ref_text or ""
+        if not ref_text:
+            base_kwargs["xvec_only"] = True
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 

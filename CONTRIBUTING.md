@@ -1,5 +1,15 @@
 # Contributing
 
+## Dev environment setup
+
+```bash
+git clone https://github.com/Roxabi/voiceCLI && cd voiceCLI
+uv sync                         # install all dependencies
+uv run voicecli --help          # verify install
+```
+
+Requires Python 3.11–3.12, a CUDA GPU, and [uv](https://docs.astral.sh/uv/).
+
 ## Workflow
 
 All development goes through the `staging` branch. `main` is the stable release branch.
@@ -25,7 +35,7 @@ test(translate): cover tag-to-instruct edge cases
 refactor(cli): extract config backfill logic
 ```
 
-- Scope is optional but encouraged (`cli`, `engine`, `markdown`, `translate`, `config`, `samples`)
+- Scope is optional but encouraged (`cli`, `engine`, `markdown`, `translate`, `config`, `samples`, `stt`, `overlay`, `dictate`)
 - Breaking changes: add `!` after scope — `feat(cli)!: rename generate flags`
 
 ## PR conventions
@@ -50,6 +60,14 @@ Config: line-length 100, target py312 (see `pyproject.toml`).
 - Tests live in `tests/`
 - Run with `uv run pytest`
 - Mock heavy dependencies (torch, qwen_tts, chatterbox) — don't require GPU in tests
+
+## Code review expectations
+
+- One logical change per PR — keep diffs focused
+- Heavy deps (torch, qwen_tts, chatterbox) must stay lazily imported (deferred to function bodies)
+- No over-engineering — this is a thin CLI; avoid adding abstractions for one-off uses
+- New engine flags must go through the ENGINE_CAPS matrix in `translate.py`, not ad-hoc conditionals
+- All edge cases should have a test; GPU-dependent code must be mockable
 
 ## Project structure
 

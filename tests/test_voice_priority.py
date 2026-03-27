@@ -40,26 +40,31 @@ def md_without_voice(tmp_path):
 
 
 @pytest.fixture
-def _mock_engine():
-    """Mock get_engine and daemon to avoid loading real models."""
+def _mock_daemon():
+    """Mock daemon and engine so Qwen generate goes through the daemon path.
+
+    Returns a mock for _try_daemon whose call args contain the voice field.
+    """
     engine = MagicMock()
     engine.generate.return_value = Path("/tmp/fake.wav")
+    mock_try = MagicMock(return_value=Path("/tmp/fake.wav"))
     with (
         patch("voicecli.engine.get_engine", return_value=engine),
-        patch("voicecli.api._try_daemon", return_value=None),
+        patch("voicecli.api._wait_for_daemon_socket", return_value=True),
+        patch("voicecli.api._try_daemon", mock_try),
     ):
-        yield engine
+        yield mock_try
 
 
-def _called_voice(mock_engine):
-    """Extract voice from engine.generate(text, voice, out, ...) call."""
-    return mock_engine.generate.call_args[0][1]
+def _called_voice(mock_try_daemon):
+    """Extract voice from the daemon request dict passed to _try_daemon."""
+    return mock_try_daemon.call_args[0][0]["voice"]
 
 
 class TestVoicePriority:
     """Voice priority: CLI flag > frontmatter > voicecli.toml > hardcoded default."""
 
-    def test_frontmatter_overrides_toml(self, md_with_voice, _mock_engine):
+    def test_frontmatter_overrides_toml(self, md_with_voice, _mock_daemon):
         """Frontmatter voice=Dylan should override toml voice=Ono_Anna."""
         from voicecli.cli import app
         from typer.testing import CliRunner
@@ -70,10 +75,9 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", str(md_with_voice)])
 
         assert result.exit_code == 0, result.output
-        # voice is 2nd positional arg: generate(text, voice, output_path, ...)
-        assert _called_voice(_mock_engine) == "Dylan"
+        assert _called_voice(_mock_daemon) == "Dylan"
 
-    def test_cli_flag_overrides_frontmatter(self, md_with_voice, _mock_engine):
+    def test_cli_flag_overrides_frontmatter(self, md_with_voice, _mock_daemon):
         """CLI --voice Ryan should override frontmatter voice=Dylan."""
         from voicecli.cli import app
         from typer.testing import CliRunner
@@ -84,9 +88,9 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", "--voice", "Ryan", str(md_with_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _called_voice(_mock_engine) == "Ryan"
+        assert _called_voice(_mock_daemon) == "Ryan"
 
-    def test_toml_used_when_no_frontmatter(self, md_without_voice, _mock_engine):
+    def test_toml_used_when_no_frontmatter(self, md_without_voice, _mock_daemon):
         """Toml voice=Ono_Anna should apply when frontmatter has no voice."""
         from voicecli.cli import app
         from typer.testing import CliRunner
@@ -97,9 +101,9 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _called_voice(_mock_engine) == "Ono_Anna"
+        assert _called_voice(_mock_daemon) == "Ono_Anna"
 
-    def test_no_voice_when_nothing_set(self, md_without_voice, _mock_engine):
+    def test_no_voice_when_nothing_set(self, md_without_voice, _mock_daemon):
         """No voice passed to engine when neither CLI, frontmatter, nor toml set it."""
         from voicecli.cli import app
         from typer.testing import CliRunner
@@ -109,4 +113,4 @@ class TestVoicePriority:
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output
-        assert _called_voice(_mock_engine) is None
+        assert _called_voice(_mock_daemon) is None

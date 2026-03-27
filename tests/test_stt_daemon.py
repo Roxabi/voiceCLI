@@ -26,7 +26,7 @@ from voicecli.transcribe import TranscriptionResult
 _MOCK_TRANSCRIPTION = TranscriptionResult(text="hello world", language="en", segments=[])
 
 
-def _make_mock_recording_thread():
+def _make_mock_recording_thread(level_callback=None):
     """Return a MagicMock that acts like RecordingThread."""
     mock = MagicMock()
     # .stop() returns empty WAV-like bytes immediately
@@ -47,7 +47,8 @@ def daemon_send(tmp_path):
     All heavy externals are mocked:
       - _probe_pyaudio   → always returns True
       - RecordingThread  → mock that returns empty wav bytes on .stop()
-      - _chime           → no-op
+      - _play_ui_sound   → no-op (captured for assertions)
+      - _spawn_overlay   → no-op
       - _write_clipboard → no-op (captured for assertions)
       - transcribe       → returns TranscriptionResult("hello world", "en", [])
       - warmup           → no-op
@@ -56,14 +57,15 @@ def daemon_send(tmp_path):
 
     # Build fresh mock objects per fixture invocation so call counts are clean.
     mock_recording_thread_cls = MagicMock(side_effect=_make_mock_recording_thread)
-    mock_chime = MagicMock()
+    mock_play_ui_sound = MagicMock()
     mock_write_clipboard = MagicMock()
     mock_warmup = MagicMock()
 
     with (
         patch("voicecli.stt_daemon._probe_pyaudio", return_value=True),
         patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
-        patch("voicecli.stt_daemon._chime", mock_chime),
+        patch("voicecli.stt_daemon._play_ui_sound", mock_play_ui_sound),
+        patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
         patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
         patch("voicecli.stt_daemon.warmup", mock_warmup),
         # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
@@ -109,7 +111,7 @@ def daemon_send(tmp_path):
             finally:
                 sock.close()
 
-        yield send, mock_chime, mock_write_clipboard
+        yield send, mock_play_ui_sound, mock_write_clipboard
 
         # Tear down: stop the accept loop.
         daemon.stop()
@@ -166,11 +168,23 @@ class TestRecordingAndChimes:
     def test_toggle_starts_recording(self, daemon_send):
         """N3: toggle from idle → {"status":"ok","state":"recording"}."""
         send, _, _ = daemon_send
+        mock_spawn = MagicMock()
+        overlay_called = threading.Event()
+        mock_spawn.side_effect = lambda *a, **kw: overlay_called.set()
         # Arrange / Act
-        resp = send("toggle")
-        # Assert
+        with patch("voicecli.stt_daemon._spawn_overlay", mock_spawn):
+            resp = send("toggle")
+        # Assert response
         assert resp["status"] == "ok"
         assert resp["state"] == "recording"
+        # Assert _spawn_overlay was called with the correct hotkey args
+        assert overlay_called.wait(timeout=2.0), "_spawn_overlay was not called within 2 seconds"
+        mock_spawn.assert_called_once_with(
+            None,  # effective_mode (no mode passed, default_mode is None)
+            "ctrl+space",
+            "alt+shift+esc",
+            "alt+shift+tab",
+        )
 
     def test_status_during_recording(self, daemon_send):
         """status after N3 → state=recording."""
@@ -193,36 +207,16 @@ class TestRecordingAndChimes:
         assert resp["status"] == "ok"
         assert resp["state"] == "idle"
 
-    def test_chime_start_called(self, daemon_send):
-        """_chime("start") is called when N3 fires."""
-        send, mock_chime, _ = daemon_send
-        # Arrange: set up an Event so we don't rely on a fixed sleep
-        chime_called = threading.Event()
-        mock_chime.side_effect = lambda name: chime_called.set()
+    def test_ui_sound_start_called(self, daemon_send):
+        """_play_ui_sound("start.wav") is called when N3 fires."""
+        send, mock_play_ui_sound, _ = daemon_send
+        sound_called = threading.Event()
+        mock_play_ui_sound.side_effect = lambda name: sound_called.set()
         # Act
         send("toggle")  # N3
-        # Assert — wait up to 2s for chime thread to fire
-        assert chime_called.wait(timeout=2.0), "_chime was not called within 2 seconds"
-        mock_chime.assert_any_call("start")
-
-    def test_chime_stop_called(self, daemon_send):
-        """_chime("stop") is called after N4 completes."""
-        send, mock_chime, _ = daemon_send
-        # Arrange: track when the "stop" chime fires specifically
-        stop_chime_called = threading.Event()
-
-        def track_chime(name):
-            if name == "stop":
-                stop_chime_called.set()
-
-        mock_chime.side_effect = track_chime
-        # Arrange: start recording
-        send("toggle")  # N3
-        # Act: stop recording (N4 blocks until transcription done, chime fires inside)
-        send("toggle")  # N4
-        # Assert — wait up to 2s for stop chime thread to fire
-        assert stop_chime_called.wait(timeout=2.0), "_chime('stop') was not called within 2 seconds"
-        mock_chime.assert_any_call("stop")
+        # Assert — wait up to 2s for sound thread to fire
+        assert sound_called.wait(timeout=2.0), "_play_ui_sound was not called within 2 seconds"
+        mock_play_ui_sound.assert_any_call("start.wav")
 
 
 # ---------------------------------------------------------------------------
@@ -485,3 +479,107 @@ class TestQueueSupport:
 
         monkeypatch.setattr(transcribe_mod, "transcribe", lambda *a, **kw: _MOCK_TRANSCRIPTION)
         send("toggle")  # N4 on the auto-started recording
+
+
+# ---------------------------------------------------------------------------
+# S5 — PaRecord fallback path
+# ---------------------------------------------------------------------------
+
+
+class TestPaRecordFallback:
+    """Tests for the parecord fallback path (_probe_pyaudio returns False).
+
+    Separate from the main tests to avoid doubling run time for tests that
+    don't touch recording (ping, status, etc.).
+    """
+
+    @pytest.fixture()
+    def parecord_send(self, tmp_path):
+        """Daemon fixture with parecord fallback: _probe_pyaudio=False."""
+        sock_path = tmp_path / "stt-test-parecord.sock"
+
+        def mock_record_parecord(stop_event: threading.Event, level_callback=None) -> bytes:
+            stop_event.wait(timeout=5.0)
+            return b"RIFF\x00\x00\x00\x00WAVEfmt "
+
+        mock_recording_thread_cls = MagicMock()
+        mock_write_clipboard = MagicMock()
+        mock_warmup = MagicMock()
+
+        with (
+            patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.stt_daemon._record_parecord", mock_record_parecord),
+            patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
+            patch("voicecli.stt_daemon._play_ui_sound", MagicMock()),
+            patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
+            patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
+            patch("voicecli.stt_daemon.warmup", mock_warmup),
+            patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
+        ):
+            from voicecli.stt_daemon import SttDaemon
+
+            daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
+            t = threading.Thread(target=daemon.serve, daemon=True)
+            t.start()
+
+            deadline = time.monotonic() + 3.0
+            while not sock_path.exists():
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"Daemon socket never appeared at {sock_path}")
+                time.sleep(0.02)
+
+            def send(action: str, **kwargs) -> dict:
+                payload = {"action": action, **kwargs}
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(5.0)
+                sock.connect(str(sock_path))
+                try:
+                    sock.sendall((json.dumps(payload) + "\n").encode())
+                    buf = bytearray()
+                    while True:
+                        chunk = sock.recv(65536)
+                        if not chunk:
+                            break
+                        buf.extend(chunk)
+                        if b"\n" in buf:
+                            break
+                    return json.loads(buf.split(b"\n")[0])
+                finally:
+                    sock.close()
+
+            mock_warmup.assert_called_once()
+
+            yield send, MagicMock(), mock_write_clipboard, mock_recording_thread_cls
+
+            daemon.stop()
+            t.join(timeout=2.0)
+
+    def test_toggle_starts_recording(self, parecord_send):
+        """Toggle from idle → state=recording (parecord path)."""
+        send, _, _, _ = parecord_send
+        resp = send("toggle")
+        assert resp["status"] == "ok"
+        assert resp["state"] == "recording"
+
+    def test_toggle_stops_and_transcribes(self, parecord_send):
+        """Toggle stop → state=idle, transcription proceeds via parecord WAV."""
+        send, _, mock_clipboard, _ = parecord_send
+        send("toggle")  # idle → recording
+        resp = send("toggle")  # recording → transcribing → idle
+        assert resp["status"] == "ok"
+        assert resp["state"] == "idle"
+        assert resp["text"] == "hello world"
+        assert resp["language"] == "en"
+        mock_clipboard.assert_called_once_with("hello world")
+
+    def test_no_level_callback_crash(self, parecord_send):
+        """Parecord path has no level callback — full cycle completes without crash."""
+        send, _, _, mock_rt_cls = parecord_send
+        send("toggle")  # idle → recording
+        resp = send("status")
+        assert resp["state"] == "recording"
+        resp = send("toggle")  # recording → idle
+        assert resp["status"] == "ok"
+        assert resp["state"] == "idle"
+        # RecordingThread (which carries level_callback) was never instantiated
+        mock_rt_cls.assert_not_called()

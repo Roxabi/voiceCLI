@@ -4,6 +4,87 @@
 
 Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual and Chatterbox Turbo backends.
 
+## TL;DR
+
+- **Project:** VoiceCLI
+- **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
+- **Always** `AskUserQuestion` for choices — never plain-text questions
+- **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
+- **Always** use appropriate skill even without slash command
+
+### AskUserQuestion
+
+Always `AskUserQuestion` for: decisions, choices (≥2 options), approach proposals.
+**Never** plain-text "Do you want..." / "Should I..." → use the tool.
+
+### Git
+
+Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
+Types: feat|fix|refactor|docs|style|test|chore|ci|perf
+Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
+
+### Dev Process
+
+**Entry point: `/dev #N`** — single command that scans artifacts, shows progress, and delegates to the right phase skill.
+
+| Tier | Criteria | Phases |
+|------|----------|--------|
+| **S** | ≤3 files, no arch, no risk | triage → implement → pr → validate → review → fix* → cleanup* |
+| **F-lite** | Clear scope, single domain | Frame → spec → plan → implement → verify → ship |
+| **F-full** | New arch, unclear reqs, >2 domains | Frame → analyze → spec → plan → implement → verify → ship |
+
+`*` = conditional (runs only if applicable)
+
+Phases: **Frame** (problem) → **Shape** (spec) → **Build** (code) → **Verify** (review) → **Ship** (release).
+
+### Orchestrator Delegation
+
+Orchestrator does not modify code/docs directly. Delegate: FE→`frontend-dev` | BE→`backend-dev` | Infra→`devops` | Docs→`doc-writer` | Tests→`tester` | Fixes→`fixer`. Exception: typo/single-line. Deploy→`devops` only.
+
+### Parallel Execution
+
+≥3 complex tasks → AskUserQuestion: Sequential | Parallel (Recommended).
+F-full + ≥4 independent tasks in 1 domain → multiple same-type agents on separate file groups.
+
+### Artifact Model
+
+Artifacts are the state markers `/dev` uses for progress detection and resumption.
+
+| Type | Directory | Question answered |
+|------|-----------|-------------------|
+| **Frame** | `artifacts/frames/` | What's the problem? |
+| **Analysis** | `artifacts/analyses/` | How deep is it? |
+| **Spec** | `artifacts/specs/` | What will we build? |
+| **Plan** | `artifacts/plans/` | How do we build it? |
+
+### Mandatory Worktree
+
+```bash
+git worktree add ../voiceCLI-XXX -b feat/XXX-slug staging
+cd ../voiceCLI-XXX && cp .env.example .env && uv sync
+```
+
+Exceptions: XS (confirm via AskUserQuestion) | `/dev` pre-implementation artifacts (frame, analysis, spec, plan) | `/promote` release artifacts.
+**Never code on main/staging without worktree.**
+
+### Code Review
+
+MUST read [code-review](docs/standards/code-review.md). Conventional Comments. Block only: security, correctness, standard violations.
+
+### Coding Standards
+
+| Context | Read |
+|---------|------|
+| API / Backend | [backend-patterns](docs/standards/backend-patterns.md) |
+| Tests | [testing](docs/standards/testing.md) |
+
+### Skills & Agents
+
+Skills: always use appropriate skill. Workflow skills → `dev-core` plugin.
+Agents: Sonnet = all agents (frontend-dev, backend-dev, devops, doc-writer, fixer, tester, architect, product-lead, security-auditor).
+
+**Shared agent rules:** Never commit/push (lead handles git) | Never force/hard/amend | Stage specific files only | Escalate blockers → lead | Message lead on completion.
+
 ## Global Workflow — What Handles What
 
 ### Code pipeline (deterministic, at runtime)
@@ -26,10 +107,11 @@ User runs: voicecli generate script.md -e chatterbox
 Each step is pure Python, no LLM involved. The translator is the key new piece — it makes
 one universal `.md` file work across all three engines without manual adaptation.
 
-### LLM skill (`roxabi-plugins/voice-me`)
+### LLM skill (`skills/voice/SKILL.md`)
 
-The `/voicecli` skill is provided by the `voice-me` plugin (installed from `roxabi-plugins`).
-Locally, `.claude/skills/voicecli/SKILL.md` is a symlink to the plugin (gitignored).
+The `/voicecli` skill lives at `skills/voice/SKILL.md` (source of truth, part of the self-contained plugin).
+`.claude/skills/voicecli/SKILL.md` and `roxabi-plugins/plugins/voice-cli/skills/voice/SKILL.md` are both symlinks to it.
+Install directly: `claude plugin marketplace add Roxabi/voiceCLI && claude plugin install voice-cli`
 
 The LLM handles:
 
@@ -54,14 +136,18 @@ The skill just needs to know that unified format exists so it can write scripts 
 ## Project Layout
 
 ```
-voicecli.example.toml — template config — copy to voicecli.toml (gitignored)
+voicecli.example.toml — template config — copy to ~/.voicecli/voicecli.toml
 TTS/
   texts_in/         — authored .md scripts (tracked in git)
-  voices_out/       — generated WAV/MP3 (gitignored)
-  samples/          — voice samples for cloning (gitignored)
-STT/
-  audio_in/         — audio files to transcribe (gitignored)
-  texts_out/        — transcription results (gitignored)
+~/.voicecli/
+  voicecli.toml     — user config (global, all projects)
+  voicecli.vocab    — personal vocabulary for STT (shared with Lyra)
+  TTS/
+    voices_out/     — generated WAV/MP3
+    samples/        — voice samples for cloning
+  STT/
+    audio_in/       — recorded audio from dictate
+    texts_out/      — transcription results
 src/voicecli/
   cli.py            — Typer app: command definitions, .md detection, flag overrides
   config.py         — TOML config loader (reads voicecli.toml)
@@ -72,6 +158,8 @@ src/voicecli/
   samples.py        — Sample management + PulseAudio recording with chimes
   transcribe.py     — Faster Whisper file transcription
   listen.py         — Kyutai STT real-time mic transcription
+  overlay.py        — Waveform overlay (GTK3 + gtk-layer-shell on Wayland, X11 fallback); stop.wav on close
+  assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed tap); start_mic/stop_mic alternates
   engines/
     qwen.py              — Qwen3-TTS engine (CustomVoice for generate, Base for clone)
     chatterbox.py        — Chatterbox Multilingual engine (23 languages, segment-aware)
@@ -82,7 +170,7 @@ src/voicecli/
 
 Optional TOML file (gitignored). Copy from `voicecli.example.toml` and customize.
 
-**Discovery**: voicecli searches for `voicecli.toml` by walking up from the CWD to `$HOME`. This means a config at `~/projects/voicecli.toml` is shared across all projects under `~/projects/`. If no file is found, a warning is printed to stderr and built-in defaults are used.
+**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. Place your config at `~/.voicecli/voicecli.toml` for global access regardless of CWD. If no file is found, a warning is printed to stderr and built-in defaults are used.
 
 ```toml
 [defaults]
@@ -306,9 +394,26 @@ Given the universal script above, the translator produces:
 
 - No over-engineering — this is a thin CLI, keep it flat and simple
 - Imports of heavy libs (torch, qwen_tts, chatterbox) are deferred to function bodies
-- Output WAVs/MP3s go to `TTS/voices_out/` dir by default
-- Samples stored in `TTS/samples/` dir
-- Transcription results saved to `STT/texts_out/` by default
-- Scripts authored in `TTS/texts_in/`
+- Output WAVs/MP3s go to `~/.voicecli/TTS/voices_out/` by default
+- Samples stored in `~/.voicecli/TTS/samples/`
+- Transcription results saved to `~/.voicecli/STT/texts_out/` by default
+- Dictate recordings saved to `~/.voicecli/STT/audio_in/`
+- Scripts authored in `TTS/texts_in/` (project-local, tracked in git)
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
+
+## STT / Dictate — Key Patterns
+
+- **AHK shortcuts** (Windows): `Alt+Shift+Space` = toggle, `Alt+Shift+Tab` = next-mode, `Alt+Shift+Esc` = cancel
+- **AHK script location**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\voicecli-dictate.ahk`
+- **Wrapper scripts**: `~/.local/bin/voicecli-dictate`, `voicecli-next-mode`, `voicecli-cancel`
+- **Auto-paste on WSL2**: daemon writes `%TEMP%\voicecli_paste_trigger` → AHK polls it every 150ms → sends `^v`
+- **Auto-paste config**: `auto_paste = true` in `[stt]` section of `voicecli.toml` (requires daemon restart)
+- **UI sounds**: start.wav played by `stt_daemon._play_ui_sound()` (zero-latency, before overlay spawns); stop.wav played by overlay on `_close()`
+- **No chimes in stt_daemon**: `_chime()` removed — overlay handles all UI sounds
+- **Overlay shortcuts are display-only**: Tab/Esc in overlay toolbar are informational; actual shortcuts go through AHK
+- **CLI commands**: `voicecli dictate cancel` | `voicecli dictate next-mode` | `voicecli dictate status`
+
+## Gotchas
+
+<!-- Add project-specific gotchas here -->

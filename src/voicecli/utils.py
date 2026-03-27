@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-OUTPUT_DIR = Path("TTS/voices_out")
+OUTPUT_DIR = Path.home() / ".voicecli" / "TTS" / "voices_out"
 
 # Map full language names to ISO 639-1 codes (shared across engines and utils)
 LANG_MAP = {

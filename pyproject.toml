@@ -1,10 +1,10 @@
 [project]
 name = "voicecli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unified CLI for voice generation — Qwen3-TTS & Chatterbox backends"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "typer[all]>=0.12",
+    "typer>=0.12",
     "qwen-tts",
     "faster-qwen3-tts",
     "chatterbox-tts",
@@ -13,6 +13,9 @@ dependencies = [
     "faster-whisper>=1.2",
     "torch>=2.7",
     "torchaudio>=2.7",
+    "pyaudio>=0.2.14",
+    "PyGObject>=3.42",
+    "pycairo>=1.25",
 ]
 
 [project.scripts]
@@ -40,8 +43,8 @@ url = "https://download.pytorch.org/whl/cu128"
 override-dependencies = [
     "torch>=2.7",
     "torchaudio>=2.7",
-    # chatterbox pins transformers==4.46.3, qwen-tts pins ==4.57.3
-    "transformers>=4.57.3",
+    # chatterbox pins transformers==4.46.3, qwen-tts pins ==4.57.3; 5.x breaks qwen_tts
+    "transformers>=4.57.3,<5",
     # chatterbox pins numpy<1.26.0 which doesn't build on Python 3.12
     "numpy>=1.26",
     # pandas 2.1.0 doesn't build on 3.12, gradio pulls it in
@@ -54,6 +57,9 @@ override-dependencies = [
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
+
+[project.optional-dependencies]
+hotkey = ["pynput>=1.7"]
 
 [dependency-groups]
 dev = [

@@ -1,0 +1,392 @@
+---
+title: Architectural Patterns
+description: Design patterns used in voiceCLI — strategy, adapter, pipeline, lazy loading, and SOLID principles
+---
+
+## Overview
+
+voiceCLI is a thin CLI tool, not an enterprise application. The patterns below emerged naturally from the problem domain — multiple TTS engines with different capabilities, a universal document format, and the need for both CLI and library access. They are documented here so contributors understand the existing conventions and extend the codebase consistently.
+
+The architecture follows **hexagonal principles implicitly**: core domain modules have no infrastructure dependencies, engines are pluggable via an abstract base class, and the CLI is a thin adapter over a library API. This was not designed as a DDD system — the domain is simple enough that a flat module structure with clear layer boundaries is the right level of abstraction.
+
+## Strategy + Registry Pattern
+
+**Files:** `engine.py`, `engines/*.py`
+
+The TTS engine system uses the **Strategy pattern** (interchangeable algorithms behind a common interface) combined with a **Registry** (factory function that maps names to implementations).
+
+### Abstract Base Class (Port)
+
+```python
+# engine.py — domain-level abstraction, no heavy imports
+class TTSEngine(ABC):
+    name: str
+
+    @abstractmethod
+    def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path: ...
+
+    @abstractmethod
+    def clone(self, text: str, ref_audio: Path, output_path: Path,
+              ref_text: str | None = None, **kwargs) -> Path: ...
+
+    @abstractmethod
+    def list_voices(self) -> list[str]: ...
+```
+
+### Registry (Factory)
+
+```python
+# engine.py — deferred imports, only loaded when an engine is requested
+def _get_registry() -> dict[str, type[TTSEngine]]:
+    from voicecli.engines.chatterbox import ChatterboxEngine
+    from voicecli.engines.qwen import QwenEngine
+    # ...
+    return {
+        "qwen": QwenEngine,
+        "chatterbox": ChatterboxEngine,
+        # ...
+    }
+
+def get_engine(name: str) -> TTSEngine:
+    engines = _get_registry()
+    if name not in engines:
+        raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
+    return engines[name]()
+```
+
+### Adding a New Engine
+
+1. Create `src/voicecli/engines/new_engine.py` implementing `TTSEngine`
+2. Add the entry to `_get_registry()` in `engine.py`
+3. Add a capability entry to `ENGINE_CAPS` in `translate.py`
+4. No changes needed in `api.py`, `cli.py`, or any other module
+
+### Why This Pattern
+
+- Decouples orchestration from engine internals — `api.py` never imports engine classes directly
+- Each engine is independently testable
+- Heavy dependencies (torch, qwen_tts, chatterbox) stay isolated in engine modules
+- New engines don't require changes to existing code (OCP)
+
+---
+
+## Adapter / Translator Pattern
+
+**File:** `translate.py`
+
+The translator adapts a universal `TTSDocument` to engine-specific capabilities without modifying the document model. It acts as an **anti-corruption layer** between the user-facing markdown format and engine-specific requirements.
+
+### Capability Matrix
+
+```python
+# translate.py — single source of truth for all engine capabilities
+ENGINE_CAPS = {
+    "qwen": {
+        "instruct": True,      # supports instruct prompts
+        "tags": "to_instruct", # [laugh] → new segment with mapped instruct
+        "exaggeration": False,  # not supported → nulled
+        "language": True,       # per-segment language
+        "voice": True,          # per-segment voice
+    },
+    "chatterbox": {
+        "instruct": False,     # not supported → nulled
+        "tags": "strip",       # remove all [tag] markers
+        "exaggeration": True,  # per-segment expressiveness
+        "language": True,
+        "voice": False,
+    },
+    "chatterbox-turbo": {
+        "instruct": False,
+        "tags": "native",      # keep [laugh] as-is, engine handles them
+        "exaggeration": True,
+        "language": False,     # English only → nulled
+        "voice": False,
+    },
+}
+```
+
+### Translation Logic
+
+`translate_for_engine()` always works on a **deep copy** to preserve the original document:
+
+1. **Tag handling** — converts `[laugh]` etc. based on engine capability mode
+2. **Field nulling** — removes unsupported fields (instruct, exaggeration, voice, language)
+3. **Segment splitting** — for `to_instruct` mode, splits text at tags into new segments with mapped instruct + smooth transitions
+
+### Why This Pattern
+
+- **One universal `.md` format** works across all engines — users don't need to know engine internals
+- The capability matrix is the **single source of truth** for what each engine supports
+- Adding new capabilities means updating the matrix, not rewriting translation logic
+- Translation is deterministic and side-effect-free
+
+---
+
+## Data Transformation Pipeline
+
+**File:** `api.py`
+
+The generation pipeline is a **linear data transformation** — each step takes the output of the previous one and produces a more specific result.
+
+```
+User Input (text or Path)
+  ↓ _resolve_config()
+Config Resolution (layer CLI kwargs over TOML defaults)
+  ↓ _resolve_input()
+File Detection (.md / .txt / raw text)
+  ↓ parse_md_file()
+Markdown Parsing → TTSDocument + Segments
+  ↓ _apply_config_defaults()
+Config Backfill (TOML structured parts → doc/segments)
+  ↓ translate_for_engine()
+Engine Translation (null unsupported fields, convert tags)
+  ↓ get_engine() + generate/clone
+Engine Dispatch (daemon fallback → standalone)
+  ↓ wav_to_mp3()
+Optional MP3 Conversion
+  → TTSResult
+```
+
+### Design Properties
+
+- **Each step is pure Python** — no LLM, no side effects until engine dispatch
+- **Each step is independently testable** — parse, backfill, translate can be tested without GPU
+- **Priority chain enforced at resolution** — not scattered across modules
+- **Flat, not nested** — orchestration reads top-to-bottom in `generate()` / `clone()`
+
+### Config Backfill
+
+`_apply_config_defaults()` merges `voicecli.toml` structured parts (accent, personality, speed, emotion) into document segments where frontmatter didn't set them, then recomposes instruct. This runs **after** markdown parsing but **before** engine translation.
+
+### Why This Pattern
+
+- Easy to reason about — follow the data through a single function
+- Easy to debug — each step can be inspected independently
+- No hidden state — everything flows through the `resolved` dict
+
+---
+
+## Lazy Loading
+
+**Used throughout:** `engine.py`, `engines/*.py`, `api.py`
+
+Heavy libraries (torch, qwen_tts, chatterbox, transformers, soundfile) are **never imported at module level**. All heavy imports are deferred to function bodies.
+
+### At the Registry Level
+
+```python
+# engine.py — engine classes only imported when registry is accessed
+def _get_registry() -> dict[str, type[TTSEngine]]:
+    from voicecli.engines.qwen import QwenEngine
+    from voicecli.engines.chatterbox import ChatterboxEngine
+    # ...
+```
+
+### At the Engine Level
+
+```python
+# engines/qwen.py — torch and qwen_tts only imported on first generation
+class QwenEngine(TTSEngine):
+    def _load_model(self):
+        import torch
+        from qwen_tts import Qwen3TTSModel
+        # model loading happens here, not at import time
+```
+
+### At the API Level
+
+```python
+# api.py — domain modules imported inside functions
+def _resolve_config(...):
+    from voicecli.config import load_defaults   # only when needed
+    from voicecli.markdown import compose_instruct  # only when needed
+```
+
+### Why This Pattern
+
+- `import voicecli` stays lightweight — no torch, no CUDA context
+- CLI help, version output, and `list_engines()` don't trigger model loading
+- Users who only use one engine never load the others
+- Reduces startup time from ~60s (with model load) to <1s
+
+---
+
+## Library-First API
+
+**Files:** `api.py`, `__init__.py`
+
+The public API was designed as a **library first** — the CLI is just a thin adapter over it.
+
+### Public Interface
+
+```python
+# __init__.py — stable public contract
+from voicecli.api import (
+    TTSResult, generate, generate_async, clone, clone_async,
+    transcribe, transcribe_async, list_engines, list_voices,
+)
+from voicecli.markdown import TTSDocument, Segment
+```
+
+### CLI as Thin Wrapper
+
+```python
+# cli.py — CLI commands delegate to API, handle Typer-specific concerns
+@app.command()
+def generate_cmd(text: str, ...):
+    try:
+        result = api.generate(text, engine=engine, language=language, ...)
+        typer.echo(f"Saved: {result.wav_path}")
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1)
+```
+
+### Error Boundary
+
+The API raises Python exceptions (`ValueError`, `FileNotFoundError`, `RuntimeError`), never `typer.Exit` or `SystemExit`. The CLI layer catches these and formats user-friendly output.
+
+| Exception | When | CLI Handling |
+|-----------|------|--------------|
+| `ValueError` | Invalid engine, no active sample | `typer.echo(err)` + `Exit(1)` |
+| `FileNotFoundError` | Missing ref audio, missing script | `typer.echo(err)` + `Exit(1)` |
+| `RuntimeError` | CUDA/GPU errors (via `cuda_guard`) | Formatted diagnostic + `Exit(1)` |
+
+### Why This Pattern
+
+- Other Python projects can use `from voicecli import generate` without shelling out
+- Consistent behavior between CLI and library usage
+- Error handling is clean — domain errors in API, presentation errors in CLI
+
+---
+
+## Daemon Pattern
+
+**File:** `daemon.py`
+
+The daemon keeps Qwen models warm in VRAM across requests, eliminating ~60s cold start.
+
+### Design
+
+- **Protocol:** AF_UNIX socket (`~/.local/share/voicecli/daemon.sock`), newline-delimited JSON
+- **Transparent fallback:** If daemon is absent or socket errors, generation falls back silently to standalone
+- **Single request at a time:** GPU inference is single-threaded (GIL + CUDA), so no concurrent requests
+- **Lazy or eager loading:** Can preload models at startup or lazy-load on first request
+
+### Integration Point
+
+```python
+# api.py — daemon is tried first for Qwen engines, falls back on any error
+def _try_daemon(request: dict) -> Path | None:
+    if not SOCKET_PATH.exists():
+        return None
+    try:
+        resp = daemon_request(request, timeout=300)
+        if resp.get("status") == "ok":
+            return Path(resp["path"])
+    except Exception:
+        pass
+    return None
+```
+
+---
+
+## Composition Pattern
+
+**File:** `markdown.py`
+
+Instruct strings can be composed from structured parts or set as raw bypass.
+
+```python
+# markdown.py — deterministic composition
+def compose_instruct(accent, personality, speed, emotion):
+    parts = [p for p in (accent, personality, speed, emotion) if p]
+    return ". ".join(parts) if parts else None
+```
+
+**Rules:**
+- Raw `instruct` (if set) **bypasses** composition entirely
+- Structured parts compose in fixed order: accent → personality → speed → emotion
+- Works at both document and segment level
+- Config backfill recomposes after merging TOML defaults
+
+---
+
+## SOLID Principles — Applied to voiceCLI
+
+### SRP — Single Responsibility
+
+Each module owns one concern:
+
+| Module | Single Responsibility |
+|--------|----------------------|
+| `cli.py` | CLI flag parsing and output formatting |
+| `api.py` | Orchestration pipeline |
+| `markdown.py` | Document model and parsing |
+| `translate.py` | Engine capability adaptation |
+| `config.py` | TOML configuration loading |
+| `engine.py` | Engine abstraction and registry |
+| `engines/*.py` | One TTS backend per file |
+
+**Anti-pattern:** Putting config resolution, markdown parsing, and engine dispatch all in `cli.py` command handlers. This was the state before `api.py` was extracted.
+
+### OCP — Open/Closed
+
+The engine system is open for extension, closed for modification:
+
+- Adding a new engine: create a new file in `engines/`, register in `_get_registry()`, add to `ENGINE_CAPS`
+- No existing module needs modification beyond the two registration points
+- The capability matrix drives translation automatically for new engines
+
+### LSP — Liskov Substitution
+
+All engine implementations honor the `TTSEngine` contract:
+
+- `generate()` returns a `Path` to the output WAV
+- `clone()` returns a `Path` to the output WAV
+- `list_voices()` returns a `list[str]`
+
+`QwenFastEngine` extends `QwenEngine` correctly — it overrides model selection, not the contract.
+
+### ISP — Interface Segregation
+
+`TTSEngine` has exactly 3 methods. No engine is forced to implement unused operations.
+
+The public API (`generate`, `clone`, `transcribe`) exposes three focused functions, not a monolithic class.
+
+### DIP — Dependency Inversion
+
+- `api.py` depends on the `TTSEngine` abstraction (via `get_engine()`), not on concrete engine classes
+- `translate.py` depends on `TTSDocument` (domain model), not on engine internals
+- Engines depend on the ABC, not on the orchestration layer
+
+**Gap:** Unlike the roxabi-boilerplate's Symbol token DI, voiceCLI uses a simple registry function. This is appropriate — DI frameworks add complexity that a flat CLI tool doesn't need.
+
+---
+
+## When to Adopt More Structure
+
+voiceCLI is deliberately simple — a thin CLI with flat module structure. The current patterns are appropriate because:
+
+- The domain is well-bounded (TTS generation with N engines)
+- There are no cross-entity invariants to protect
+- There is no database or persistent state beyond config files
+- The number of modules is small (~15)
+
+**Signals that would warrant more structure:**
+
+| Observable Signal | Pattern to Consider |
+|-------------------|---------------------|
+| Engine initialization needs shared resources (GPU allocator, model cache) | Dependency injection container |
+| Config validation becomes complex (conditional fields, cross-field invariants) | Value objects / validated config dataclass |
+| Multiple consumers need different engine lifecycle (daemon, API server, CLI) | Engine lifecycle manager with explicit ownership |
+| Translation logic grows per-engine custom branches beyond the matrix | Per-engine translator classes behind a port interface |
+
+Until these signals are observed, the current flat architecture is the right level of abstraction.
+
+## Related Documentation
+
+- [Architecture overview](./index) — Project structure and layer diagram
+- [Ubiquitous Language](./ubiquitous-language) — Domain glossary
+- [Backend Patterns](../standards/backend-patterns) — Coding conventions and rules
+- [Testing Standards](../standards/testing) — Test structure and strategies

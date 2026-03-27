@@ -3,11 +3,21 @@
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
 ![CUDA](https://img.shields.io/badge/CUDA-enabled-76B900?logo=nvidia&logoColor=white)
-![version](https://img.shields.io/badge/version-0.1.0-22c55e)
+![version](https://img.shields.io/badge/version-0.2.0-22c55e)
 
 Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
 
+## Why
+
+Local TTS is scattered across incompatible APIs, each with their own parameter names, quirks, and input formats. Switching engines means rewriting scripts.
+
+VoiceCLI gives you one CLI and one `.md` script format that works across Qwen3-TTS, Chatterbox Multilingual, and Chatterbox Turbo — a built-in translator adapts your script to each engine's capabilities automatically. No cloud API keys, no GPU server, no rewrite when you switch models.
+
+Built for developers and content creators who want expressive, multilingual speech synthesis running entirely on local hardware.
+
 ## Pipeline
+
+Input flows through four stages: frontmatter parsing → config backfill → engine translation → synthesis. The translator is the key piece — it applies an engine capability matrix so one universal `.md` script works across all backends without manual changes.
 
 ```mermaid
 flowchart LR
@@ -35,32 +45,76 @@ uv sync
 
 ```bash
 # Generate speech with default voice (Qwen, Ryan)
-voicecligenerate "Hello, how are you today?"
+voicecli generate "Hello, how are you today?"
 
 # Pick a different voice
-voicecligenerate "Bonjour" --voice Vivian --lang French
+voicecli generate "Bonjour" --voice Vivian --lang French
 
 # Use Chatterbox engine
-voicecligenerate "This is exciting!" --engine chatterbox
+voicecli generate "This is exciting!" --engine chatterbox
 
 # Clone a voice from a reference audio file
-voicecliclone "Say this in my voice" --ref my_recording.wav
+voicecli clone "Say this in my voice" --ref my_recording.wav
 
 # Transcribe an audio file
-voiceclitranscribe recording.wav
+voicecli transcribe recording.wav
 
 # Live mic transcription
-voiceclilisten
+voicecli listen
+
+# Dictation mode (STT daemon + overlay)
+voicecli dictate
 ```
+
+## Library API
+
+VoiceCLI is also a Python library. Install it as a dependency and call it directly — no subprocess, no HTTP server.
+
+```bash
+# From another project
+uv add --editable /path/to/voiceCLI
+```
+
+```python
+import asyncio
+from voicecli import generate, generate_async, transcribe, transcribe_async, clone_async
+
+# Synchronous TTS
+result = generate("Hello world")
+print(result.path)          # Path to WAV file
+print(result.duration_s)    # Duration in seconds
+
+# Async TTS (preferred in async contexts like Lyra)
+result = await generate_async("Bonjour", voice="Vivian", lang="French")
+
+# Voice cloning
+result = await clone_async("Say this", ref="sample.wav")
+
+# Transcription
+text = transcribe("recording.wav")
+
+# Async transcription
+result = await transcribe_async("recording.wav", lang="fr")
+print(result.text)
+print(result.language)
+
+# Introspection
+from voicecli import list_engines, list_voices
+engines = list_engines()   # list[str]
+voices = list_voices()     # list[str] (Qwen voices)
+```
+
+Public API (`__all__`): `generate`, `generate_async`, `clone`, `clone_async`, `transcribe`, `transcribe_async`, `list_engines`, `list_voices`, `TTSResult`, `TranscriptionResult`, `TTSDocument`, `Segment`.
 
 ## User Config (`voicecli.toml`)
 
 Optional file (gitignored). Sets default values so you don't pass flags every time.
 
-**Discovery**: voicecli walks up from the CWD to `$HOME` looking for `voicecli.toml`. Place it in a parent directory (e.g. `~/projects/voicecli.toml`) to share it across multiple projects. A warning is printed to stderr if no file is found anywhere.
+**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. The canonical location is `~/.voicecli/voicecli.toml` — accessible from any project. A warning is printed to stderr if no file is found anywhere.
 
 ```bash
-cp voicecli.example.toml voicecli.toml   # then edit to taste
+mkdir -p ~/.voicecli
+cp voicecli.example.toml ~/.voicecli/voicecli.toml   # then edit to taste
 ```
 
 ```toml
@@ -91,15 +145,15 @@ Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default*
 ### `generate` — Text to speech
 
 ```bash
-voicecligenerate "Your text here"
-voicecligenerate "Your text" --engine chatterbox --output out.wav
-voicecligenerate script.md                      # read from markdown file
-voicecligenerate article.txt                    # read from plain text file
-voicecligenerate script.md --segment-gap 300    # 300ms silence between segments
-voicecligenerate script.md --crossfade 50       # 50ms fade between segments
-voicecligenerate script.md --plain              # ignore [tags] and <!-- directives -->
-voicecligenerate article.txt --chunked          # split into separate chunk files
-voicecligenerate article.txt --chunked --chunk-size 300  # ~20s chunks
+voicecli generate "Your text here"
+voicecli generate "Your text" --engine chatterbox --output out.wav
+voicecli generate script.md                      # read from markdown file
+voicecli generate article.txt                    # read from plain text file
+voicecli generate script.md --segment-gap 300    # 300ms silence between segments
+voicecli generate script.md --crossfade 50       # 50ms fade between segments
+voicecli generate script.md --plain              # ignore [tags] and <!-- directives -->
+voicecli generate article.txt --chunked          # split into separate chunk files
+voicecli generate article.txt --chunked --chunk-size 300  # ~20s chunks
 ```
 
 | Flag | Short | Description | Default |
@@ -119,11 +173,11 @@ voicecligenerate article.txt --chunked --chunk-size 300  # ~20s chunks
 ### `clone` — Voice cloning
 
 ```bash
-voicecliclone "Text to speak" --ref reference.wav
-voicecliclone "Text to speak"              # uses active sample (see below)
-voicecliclone script.md --segment-gap 200  # with segment transitions
-voicecliclone script.md --plain            # ignore [tags] and <!-- directives -->
-voicecliclone article.txt --chunked        # split into separate chunk files
+voicecli clone "Text to speak" --ref reference.wav
+voicecli clone "Text to speak"              # uses active sample (see below)
+voicecli clone script.md --segment-gap 200  # with segment transitions
+voicecli clone script.md --plain            # ignore [tags] and <!-- directives -->
+voicecli clone article.txt --chunked        # split into separate chunk files
 ```
 
 | Flag | Short | Description | Default |
@@ -144,13 +198,13 @@ voicecliclone article.txt --chunked        # split into separate chunk files
 ### `samples` — Manage voice samples
 
 ```bash
-voiceclisamples list                       # list all samples
-voiceclisamples add voice.wav              # import a WAV file
-voiceclisamples record my_voice            # record from microphone (10s)
-voiceclisamples record my_voice -d 5       # record for 5 seconds
-voiceclisamples use my_voice.wav           # set as active sample
-voiceclisamples active                     # show current active sample
-voiceclisamples remove my_voice.wav        # delete a sample
+voicecli samples list                       # list all samples
+voicecli samples add voice.wav              # import a WAV file
+voicecli samples record my_voice            # record from microphone (10s)
+voicecli samples record my_voice -d 5       # record for 5 seconds
+voicecli samples use my_voice.wav           # set as active sample
+voicecli samples active                     # show current active sample
+voicecli samples remove my_voice.wav        # delete a sample
 ```
 
 Once you set an active sample, `clone` uses it automatically — no `--ref` needed.
@@ -158,31 +212,31 @@ Once you set an active sample, `clone` uses it automatically — no `--ref` need
 ### `voices` — List available voices
 
 ```bash
-voiceclivoices                             # Qwen voices
-voiceclivoices --engine chatterbox
+voicecli voices                             # Qwen voices
+voicecli voices --engine chatterbox
 ```
 
 ### `engines` — List available engines
 
 ```bash
-voicecliengines
+voicecli engines
 ```
 
 ### `transcribe` — Speech to text
 
 ```bash
-voiceclitranscribe audio.wav                   # auto-detect language
-voiceclitranscribe audio.wav --lang fr         # force language
-voiceclitranscribe audio.wav --model large-v3  # choose model
-voiceclitranscribe audio.wav --json            # JSON with language + timestamps
-voiceclitranscribe audio.wav -o result.txt     # save to file
+voicecli transcribe audio.wav                   # auto-detect language
+voicecli transcribe audio.wav --lang fr         # force language
+voicecli transcribe audio.wav --model large-v3  # choose model
+voicecli transcribe audio.wav --json            # JSON with language + timestamps
+voicecli transcribe audio.wav -o result.txt     # save to file
 ```
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
 | `--model` | `-m` | Whisper model | `large-v3-turbo` |
 | `--lang` | `-l` | Force language code | auto-detect |
-| `--output` | `-o` | Save text to file | `STT/texts_out/` |
+| `--output` | `-o` | Save text to file | `~/.voicecli/STT/texts_out/` |
 | `--json` | | JSON output with timestamps | off |
 
 Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
@@ -190,8 +244,8 @@ Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo
 ### `listen` — Live mic transcription
 
 ```bash
-voiceclilisten                                 # EN + FR (1b model)
-voiceclilisten --model 2.6b                    # English-only, higher quality
+voicecli listen                                 # EN + FR (1b model)
+voicecli listen --model 2.6b                    # English-only, higher quality
 ```
 
 Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
@@ -199,6 +253,34 @@ Uses Kyutai STT for real-time mic-to-text. Press Ctrl+C to stop.
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
 | `--model` | `-m` | Kyutai model (`1b` or `2.6b`) | `1b` |
+
+### `dictate` — Continuous STT dictation
+
+Runs a persistent STT daemon with a waveform overlay UI. Toggle recording with a keyboard shortcut, transcribe speech, and auto-paste the result into the active window.
+
+```bash
+voicecli dictate               # start STT daemon + overlay
+voicecli dictate cancel        # cancel current recording
+voicecli dictate next-mode     # cycle STT mode
+voicecli dictate status        # show daemon status
+```
+
+On WSL2, use the included AutoHotkey script for global shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt+Shift+Space` | Toggle recording |
+| `Alt+Shift+Tab` | Cycle mode |
+| `Alt+Shift+Esc` | Cancel |
+
+Auto-paste after transcription is enabled by `auto_paste = true` in `voicecli.toml` (`[stt]` section).
+On Wayland (Pop!_OS, GNOME, COSMIC), install `wtype` and `wl-clipboard` for auto-paste support:
+
+```bash
+sudo apt install wtype wl-clipboard
+```
+
+See [docs/dictation-setup.md](docs/dictation-setup.md) for full setup.
 
 ### `serve` — Daemon (warm model for fast generation)
 
@@ -213,7 +295,27 @@ voicecli serve --fast             # use smaller 0.6B model
 
 `generate` and `clone` automatically use the daemon when it's running — no flags needed. Falls back silently to standalone if the daemon isn't up.
 
-To keep the daemon running across sessions, use supervisord or systemd (see `voicecli serve --help` for a config snippet).
+To keep the daemon running across sessions, register with [lyra-stack](https://github.com/Roxabi/lyra-stack) (recommended) or use systemd.
+
+#### Supervised daemons (lyra-stack)
+
+If you have [lyra-stack](https://github.com/Roxabi/lyra-stack) set up, register voiceCLI's TTS and STT daemons with:
+
+```bash
+make register        # symlinks supervisor configs into lyra-stack
+```
+
+Then manage them from either repo:
+
+```bash
+make tts             # start TTS daemon
+make tts reload      # restart
+make tts logs        # tail stdout
+make tts stop        # stop
+make stt             # same for STT daemon
+```
+
+If you installed via `make setup` in lyra-stack (and said yes to voiceCLI), registration was done automatically. You only need `make register` when cloning voiceCLI standalone.
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
@@ -363,13 +465,21 @@ src/voicecli/
   samples.py        # Sample management (add/record/use/remove)
   transcribe.py     # Faster Whisper file transcription
   listen.py         # Kyutai STT real-time mic transcription
+  overlay.py        # Waveform overlay UI (GTK3 + gtk-layer-shell)
+  assets/           # UI sounds (start.wav, stop.wav)
 ```
+
+## Contributing
+
+Contributions welcome — bug fixes, new engines, and documentation improvements. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, commit conventions, and PR process.
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
+| [docs/dictation-setup.md](docs/dictation-setup.md) | Full dictation setup (AHK, WSL2, auto-paste) |
+| [docs/configuration.md](docs/configuration.md) | `voicecli.toml` reference |
 
 ## License
 

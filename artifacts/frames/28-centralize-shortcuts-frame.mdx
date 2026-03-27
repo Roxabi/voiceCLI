@@ -1,0 +1,47 @@
+---
+title: "refactor(overlay): centralize shortcuts — single source of truth propagating to overlay, AHK, and docs"
+issue: 28
+status: approved
+tier: F-lite
+date: 2026-03-11
+---
+
+## Problem
+
+Keyboard shortcuts for the dictate daemon are hardcoded in multiple places and are currently out of sync. `overlay.py:259` still references the old `Alt+Shift+Space` toggle binding while the AHK script, example config, and docs already use the new `Ctrl+Space`. Any future hotkey change requires updating 3–4 files manually, and the overlay UI will show wrong labels if they drift again.
+
+| Location | Current value | Correct value |
+|----------|--------------|---------------|
+| `overlay.py:259` | `A+Sh+Sp` (Stop), `A+Sh+Esc` (Cancel), `A+Sh+Tab` (Mode) | `Ctrl+Space`, `Alt+Shift+Esc`, `Alt+Shift+Tab` |
+| `voicecli-dictate.ahk` | `^Space`, `!+Tab`, `!+Escape` | ✓ correct |
+| `docs/dictation-setup.md` | `^Space`, `!+Tab`, `!+Escape` | ✓ correct |
+| `voicecli.example.toml` | `ctrl+space` | ✓ correct |
+
+## Who
+
+- **Primary:** Developer / user configuring dictate hotkeys — they should be able to change a hotkey in one place and have overlay labels, AHK script, and docs all stay consistent.
+- **Secondary:** Future contributors — they should not need to hunt across files to update a shortcut.
+
+## Constraints
+
+- Overlay receives config at spawn time (via env var or CLI arg from `stt_daemon.py`); it cannot read `voicecli.toml` directly.
+- AHK script is a static Windows file — it cannot read a Python config at runtime. The single source of truth means the config drives AHK **generation** (via `--setup` wizard), not runtime injection.
+- Must stay backward-compatible: if `[stt]` hotkey keys are absent from `voicecli.toml`, fall back to hardcoded defaults.
+- No new dependencies; pure Python + existing TOML config infrastructure.
+
+## Out of Scope
+
+- Implementing hotkey change at runtime (AHK reload) — config is read once at setup/spawn.
+- Adding new shortcuts or changing what the shortcuts do.
+- Updating user-facing docs beyond fixing the stale overlay label reference.
+- Full `--setup` wizard implementation — only the AHK generation part that reads hotkeys from config.
+
+## Complexity
+
+**Tier: F-lite** — Clear single-domain refactor touching overlay.py, stt_daemon.py, config.py, and voicecli.example.toml; no new architecture, well-understood propagation pattern.
+
+Signals observed:
+- ~4–6 files touched (overlay.py, stt_daemon.py, config.py, voicecli.example.toml, possibly CLAUDE.md)
+- Known pattern: config → passed as arg/env → consumer reads at startup
+- 2 domains: Python daemon/overlay + Windows AHK generation
+- 1–2 unknowns: exact mechanism for passing hotkeys to overlay at spawn

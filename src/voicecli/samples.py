@@ -1,9 +1,10 @@
-"""Sample management: list, add, record, use, active, remove."""
+"""Sample management: list, add, record, use, active, remove, from-url."""
 
 import shutil
+import subprocess
 from pathlib import Path
 
-SAMPLES_DIR = Path("TTS/samples")
+SAMPLES_DIR = Path.home() / ".voicecli" / "TTS" / "samples"
 ACTIVE_FILE = SAMPLES_DIR / ".active"
 
 
@@ -61,7 +62,6 @@ def get_active_path() -> Path | None:
 def _play_wav(samples, samplerate: int = 44100) -> None:
     """Play a numpy int16 array via paplay."""
     import struct
-    import subprocess
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -109,30 +109,127 @@ def _chime(kind: str = "start", samplerate: int = 44100) -> None:
         return volume * env * wave
 
     if kind == "start":
-        # Warm rising triad: C4 → E4 → G4 → C5, each gently staggered
-        duration = 1.8
+        # Bright major chord: C5 + E5 + G5, instant attack, bell decay ~350ms
+        duration = 0.35
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 262, onset=0.0, sustain=0.4, release=0.8, volume=0.15)  # C4
-            + _note(t, 330, onset=0.25, sustain=0.4, release=0.7, volume=0.18)  # E4
-            + _note(t, 392, onset=0.50, sustain=0.4, release=0.6, volume=0.20)  # G4
-            + _note(t, 523, onset=0.75, sustain=0.5, release=0.5, volume=0.22)  # C5
+            _note(t, 523, onset=0.0, sustain=0.02, release=0.15, volume=0.20)  # C5
+            + _note(t, 659, onset=0.0, sustain=0.02, release=0.13, volume=0.18)  # E5
+            + _note(t, 784, onset=0.0, sustain=0.02, release=0.11, volume=0.16)  # G5
         )
-        # Global smooth fade-in and fade-out
-        signal *= np.clip(t / 0.15, 0, 1) * np.clip((duration - t) / 0.4, 0, 1)
     else:
-        # Soft resolved closure: G4 → E4 with gentle decay
-        duration = 1.0
+        # Soft descending resolution: G4 → E4, ~300ms
+        duration = 0.30
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         signal = (
-            _note(t, 392, onset=0.0, sustain=0.3, release=0.5, volume=0.18)  # G4
-            + _note(t, 262, onset=0.25, sustain=0.4, release=0.4, volume=0.15)  # C4
+            _note(t, 392, onset=0.0, sustain=0.02, release=0.12, volume=0.18)  # G4
+            + _note(t, 330, onset=0.06, sustain=0.02, release=0.12, volume=0.16)  # E4
         )
-        signal *= np.clip((duration - t) / 0.3, 0, 1)
 
     signal = np.clip(signal, -1, 1)
     signal = (signal * 32767).astype(np.int16)
     _play_wav(signal, samplerate)
+
+
+def _check_tool(name: str) -> None:
+    """Raise RuntimeError if an external tool is not installed."""
+    if not shutil.which(name):
+        hints = {
+            "yt-dlp": "Install with: uv tool install yt-dlp",
+            "ffmpeg": "Install with: sudo apt install ffmpeg",
+        }
+        hint = hints.get(name, f"Please install {name}")
+        raise RuntimeError(f"'{name}' not found on PATH. {hint}")
+
+
+def from_url(
+    url: str,
+    name: str,
+    *,
+    start: float = 10.0,
+    duration: float = 30.0,
+) -> Path:
+    """Download audio from a URL (YouTube etc.) via yt-dlp, extract and normalize a segment."""
+    import tempfile
+    from urllib.parse import urlparse
+
+    if start < 0:
+        raise ValueError(f"start must be non-negative, got {start}")
+    if duration <= 0:
+        raise ValueError(f"duration must be positive, got {duration}")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https URLs are supported, got '{parsed.scheme}://'")
+
+    _check_tool("yt-dlp")
+    _check_tool("ffmpeg")
+
+    ensure_dir()
+    # Sanitize name to a bare filename (prevent path traversal)
+    name = Path(name).name
+    if not name.endswith(".wav"):
+        name = f"{name}.wav"
+    dest = SAMPLES_DIR / name
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        raw_audio = Path(tmpdir) / "raw.%(ext)s"
+        # Download best audio
+        print(f"Downloading audio from {url}...")
+        try:
+            subprocess.run(
+                [
+                    "yt-dlp",
+                    "--no-config",
+                    "-x",
+                    "--audio-format",
+                    "wav",
+                    "-o",
+                    str(raw_audio),
+                    "--",
+                    url,
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"yt-dlp failed (exit {e.returncode}). Check the URL.") from e
+
+        # Find the downloaded .wav file (yt-dlp replaces %(ext)s)
+        downloaded = [p for p in Path(tmpdir).glob("raw.*") if p.suffix == ".wav"]
+        if not downloaded:
+            raise RuntimeError("yt-dlp did not produce a WAV output file")
+        raw_file = downloaded[0]
+
+        # Extract segment + normalize to mono 24kHz with loudnorm
+        print(f"Extracting {duration}s segment from {start}s, normalizing...")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(start),
+                    "-t",
+                    str(duration),
+                    "-i",
+                    str(raw_file),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "24000",
+                    "-af",
+                    "loudnorm=I=-16:TP=-1.5:LRA=11",
+                    str(dest),
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"ffmpeg failed (exit {e.returncode}). The audio may be corrupted."
+            ) from e
+
+    print(f"Saved sample to {dest}")
+    return dest
 
 
 def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) -> Path:
