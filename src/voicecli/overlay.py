@@ -38,7 +38,7 @@ try:
 except (ValueError, ImportError):
     HAS_LAYER_SHELL = False
 
-from voicecli.stt_client import SOCKET_PATH, send_cancel, send_next_mode, send_status  # noqa: E402
+from voicecli.stt_client import SOCKET_PATH, send_status  # noqa: E402
 from voicecli.stt_daemon import LEVEL_FILE  # noqa: E402
 
 _ASSETS = Path(__file__).parent / "assets"
