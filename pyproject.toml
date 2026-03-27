@@ -14,8 +14,6 @@ dependencies = [
     "torch>=2.7",
     "torchaudio>=2.7",
     "pyaudio>=0.2.14",
-    "PyGObject>=3.42",
-    "pycairo>=1.25",
 ]
 
 [project.scripts]
@@ -60,6 +58,7 @@ pythonpath = ["src"]
 
 [project.optional-dependencies]
 hotkey = ["pynput>=1.7"]
+overlay = ["PyGObject>=3.42", "pycairo>=1.25"]
 
 [dependency-groups]
 dev = [

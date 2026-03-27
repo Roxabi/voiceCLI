@@ -2410,8 +2410,6 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "lameenc" },
     { name = "pyaudio" },
-    { name = "pycairo" },
-    { name = "pygobject" },
     { name = "qwen-tts" },
     { name = "soundfile" },
     { name = "torch" },
@@ -2422,6 +2420,10 @@ dependencies = [
 [package.optional-dependencies]
 hotkey = [
     { name = "pynput" },
+]
+overlay = [
+    { name = "pycairo" },
+    { name = "pygobject" },
 ]
 
 [package.dev-dependencies]
@@ -2439,8 +2441,8 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.2" },
     { name = "lameenc", specifier = ">=1.7" },
     { name = "pyaudio", specifier = ">=0.2.14" },
-    { name = "pycairo", specifier = ">=1.25" },
-    { name = "pygobject", specifier = ">=3.42" },
+    { name = "pycairo", marker = "extra == 'overlay'", specifier = ">=1.25" },
+    { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts" },
     { name = "soundfile" },
@@ -2448,7 +2450,7 @@ requires-dist = [
     { name = "torchaudio", specifier = ">=2.7" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["hotkey"]
+provides-extras = ["hotkey", "overlay"]
 
 [package.metadata.requires-dev]
 dev = [
