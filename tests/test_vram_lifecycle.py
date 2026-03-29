@@ -249,7 +249,7 @@ class TestSttOomRetry:
         with (
             patch("voicecli.stt_daemon.load_stt_config", return_value={}),
             patch("voicecli.transcribe.transcribe", side_effect=_always_oom),
-            patch("time.sleep"),
+            patch("time.sleep") as mock_sleep,
             patch("gc.collect"),
             patch("torch.cuda", mock_cuda),
             patch("torch.cuda.empty_cache"),
@@ -265,3 +265,42 @@ class TestSttOomRetry:
         response = json.loads(sent_bytes.decode().rstrip("\n"))
         assert response["status"] == "error"
         assert "OOM" in response["message"] or "retries" in response["message"]
+
+        # Assert — backoff timing: 5s → 10s → 20s
+        from unittest.mock import call
+
+        mock_sleep.assert_has_calls([call(5), call(10), call(20)])
+
+    def test_non_oom_exception_returns_immediately(self, tmp_path):
+        """Non-OOM exceptions should return an error immediately without retry."""
+        # Arrange
+        import json
+
+        daemon, audio_path, fake_conn = self._make_daemon_and_conn(tmp_path)
+
+        mock_cuda = MagicMock()
+        mock_cuda.OutOfMemoryError = _FakeOOM
+
+        with (
+            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
+            patch(
+                "voicecli.transcribe.transcribe",
+                side_effect=ValueError("Unknown model 'bad'"),
+            ),
+            patch("time.sleep") as mock_sleep,
+            patch("gc.collect"),
+            patch("torch.cuda", mock_cuda),
+            patch("torch.cuda.empty_cache"),
+        ):
+            req = {"action": "transcribe_file", "audio_path": str(audio_path)}
+
+            # Act
+            daemon._handle_transcribe_file(fake_conn, req)
+
+        # Assert — error returned immediately, no sleep/retry
+        assert fake_conn.sendall.call_count >= 1
+        sent_bytes = fake_conn.sendall.call_args[0][0]
+        response = json.loads(sent_bytes.decode().rstrip("\n"))
+        assert response["status"] == "error"
+        assert "bad" in response["message"]
+        mock_sleep.assert_not_called()

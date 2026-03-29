@@ -110,8 +110,8 @@ def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
         try:
             _handle_job(job.conn, job.req, engines, fast)
         finally:
-            _vram_cleanup()
             q.task_done()
+            _vram_cleanup()
 
 
 _VRAM_REQUIRED_GB: dict[str, float] = {
