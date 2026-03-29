@@ -416,4 +416,27 @@ Given the universal script above, the translator produces:
 
 ## Gotchas
 
-<!-- Add project-specific gotchas here -->
+### Daemons managed by supervisord (lyra-stack)
+
+`voicecli serve` (TTS) and `voicecli stt-serve` (STT) are **not standalone processes** — they are managed by supervisord via `~/projects/lyra-stack`. Killing them with `kill` will not work: supervisord auto-restarts them within seconds.
+
+To temporarily stop a daemon, use supervisorctl:
+```bash
+cd ~/projects/lyra-stack
+make tts stop      # stop TTS daemon
+make stt stop      # stop STT daemon
+make tts start     # restart TTS daemon
+make stt start     # restart STT daemon
+make ps            # check status of all services
+```
+
+### VRAM contention on RTX 3080 (10 GB)
+
+The TTS daemon (qwen-fast) uses ~7.4 GB VRAM and the STT daemon uses ~2.2 GB — together they fill the entire GPU. When both are running, `voicecli clone` (or any operation requiring additional VRAM allocations) will fail with CUDA OOM even though the model is already loaded.
+
+**Fix**: stop the STT daemon via supervisord before running a clone operation, then restart it after:
+```bash
+make -C ~/projects/lyra-stack stt stop
+voicecli clone "text" -e qwen-fast
+make -C ~/projects/lyra-stack stt start
+```
