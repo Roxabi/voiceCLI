@@ -111,6 +111,7 @@ def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
             _handle_job(job.conn, job.req, engines, fast)
         finally:
             q.task_done()
+            _vram_cleanup()
 
 
 _VRAM_REQUIRED_GB: dict[str, float] = {
@@ -120,6 +121,20 @@ _VRAM_REQUIRED_GB: dict[str, float] = {
     "chatterbox-turbo": 2.0,
 }
 _VRAM_REQUIRED_GB_DEFAULT = 4.0
+
+
+def _vram_cleanup() -> None:
+    """Release cached VRAM allocations after a job completes."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 def _has_vram(eng_name: str) -> bool:

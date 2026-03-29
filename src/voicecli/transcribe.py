@@ -5,6 +5,7 @@ over Unix socket to reuse the warm model. Falls back to local model loading
 if the daemon is unavailable.
 """
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,7 @@ VALID_MODELS = frozenset(
 )
 
 _model_cache: dict[str, object] = {}
+_model_lock = threading.Lock()
 
 
 @dataclass
@@ -187,15 +189,36 @@ def warmup(model: str = DEFAULT_MODEL) -> None:
     _load_model(model)
 
 
+def unload_model() -> None:
+    """Unload all cached models and release VRAM."""
+    with _model_lock:
+        if not _model_cache:
+            return
+        _model_cache.clear()
+
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    print("[stt] Models unloaded.")
+
+
 def _load_model(model: str):
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"
         )
-    if model not in _model_cache:
-        from faster_whisper import WhisperModel
+    with _model_lock:
+        if model not in _model_cache:
+            from faster_whisper import WhisperModel
 
-        print(f"[stt] Loading faster-whisper {model}...")
-        _model_cache[model] = WhisperModel(model, device="cuda", compute_type="float16")
-        print("[stt] Model loaded.")
-    return _model_cache[model]
+            print(f"[stt] Loading faster-whisper {model}...")
+            _model_cache[model] = WhisperModel(model, device="cuda", compute_type="float16")
+            print("[stt] Model loaded.")
+        return _model_cache[model]

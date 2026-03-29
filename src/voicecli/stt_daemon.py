@@ -562,7 +562,6 @@ class SttDaemon:
 
     def serve(self) -> None:
         self._use_pyaudio = _probe_pyaudio()
-        warmup(self.model)
         self._socket_path.parent.mkdir(parents=True, exist_ok=True)
         self._socket_path.unlink(missing_ok=True)
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as srv:
@@ -688,31 +687,59 @@ class SttDaemon:
         if language_fallback is None:
             language_fallback = self.language_fallback
 
-        try:
-            from voicecli.transcribe import transcribe
+        import gc
+        import time
 
-            result = transcribe(
-                path,
-                model=self.model,
-                language=language,
-                language_detection_threshold=language_detection_threshold,
-                language_detection_segments=language_detection_segments,
-                language_fallback=language_fallback,
-                task=task,
-                initial_prompt=initial_prompt,
-            )
-            _send_json(
-                conn,
-                {
-                    "status": "ok",
-                    "text": result.text,
-                    "language": result.language,
-                    "segments": result.segments,
-                },
-            )
-        except Exception as e:
-            print(f"[stt] transcribe_file error: {e}", file=sys.stderr)
-            _send_json(conn, {"status": "error", "message": str(e)})
+        from voicecli.transcribe import transcribe
+
+        try:
+            import torch
+
+            _oom_type: type = torch.cuda.OutOfMemoryError
+        except (ImportError, AttributeError):
+            _oom_type = type(None)  # never matches — no torch, no OOM handling
+
+        max_retries = 3
+        delay = 5
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = transcribe(
+                    path,
+                    model=self.model,
+                    language=language,
+                    language_detection_threshold=language_detection_threshold,
+                    language_detection_segments=language_detection_segments,
+                    language_fallback=language_fallback,
+                    task=task,
+                    initial_prompt=initial_prompt,
+                )
+                _send_json(
+                    conn,
+                    {
+                        "status": "ok",
+                        "text": result.text,
+                        "language": result.language,
+                        "segments": result.segments,
+                    },
+                )
+                return
+            except Exception as e:  # noqa: BLE001
+                if isinstance(e, _oom_type):
+                    print(
+                        f"[voicecli stt] OOM loading model, retry {attempt}/{max_retries}"
+                        f" in {delay}s...",
+                        file=sys.stderr,
+                    )
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    print(f"[stt] transcribe_file error: {e}", file=sys.stderr)
+                    _send_json(conn, {"status": "error", "message": str(e)})
+                    return
+
+        _send_json(conn, {"status": "error", "message": f"CUDA OOM after {max_retries} retries"})
 
     def _handle_toggle(self, conn: socket.socket, mode: str | None = None) -> None:
         with self._lock:
