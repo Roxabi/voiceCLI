@@ -687,7 +687,17 @@ class SttDaemon:
         if language_fallback is None:
             language_fallback = self.language_fallback
 
+        import gc
+        import time
+
         from voicecli.transcribe import transcribe
+
+        try:
+            import torch
+
+            _oom_type: type = torch.cuda.OutOfMemoryError
+        except (ImportError, AttributeError):
+            _oom_type = type(None)  # never matches — no torch, no OOM handling
 
         max_retries = 3
         delay = 5
@@ -714,17 +724,12 @@ class SttDaemon:
                 )
                 return
             except Exception as e:  # noqa: BLE001
-                import torch
-
-                if isinstance(e, torch.cuda.OutOfMemoryError):
+                if isinstance(e, _oom_type):
                     print(
                         f"[voicecli stt] OOM loading model, retry {attempt}/{max_retries}"
                         f" in {delay}s...",
                         file=sys.stderr,
                     )
-                    import gc
-                    import time
-
                     gc.collect()
                     torch.cuda.empty_cache()
                     time.sleep(delay)

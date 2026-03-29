@@ -138,7 +138,6 @@ def _vram_cleanup() -> None:
 
 
 def _has_vram(eng_name: str) -> bool:
-
     """Return True if enough free VRAM is available to load the engine."""
     try:
         import torch
