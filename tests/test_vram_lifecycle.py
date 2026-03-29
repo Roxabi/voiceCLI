@@ -78,6 +78,7 @@ class TestVramCleanup:
 
         # Simulate ImportError by making the import block raise
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
