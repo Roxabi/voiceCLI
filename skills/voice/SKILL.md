@@ -56,6 +56,8 @@ Five engines with different strengths. Pick based on user intent:
 | paralinguistic tags | to_instruct | to_instruct | strip | **native** | strip |
 | exaggeration (0.25–2.0) | no | no | **yes** (per-segment) | **yes** (per-segment) | no |
 | cfg_weight (0.0–1.0) | no | no | **yes** (per-segment) | **yes** (per-segment) | no |
+| flow_steps (3=fast, 8=quality) | no | no | no | no | **yes** (per-segment) |
+| cfg_alpha (1.0–1.2) | no | no | no | no | **yes** (per-segment) |
 | language (multi) | **yes** (per-segment) | **yes** (per-segment) | **yes** (per-segment) | no (EN only) | **yes** (9 langs) |
 | built-in voices | **yes** (9, per-segment) | **yes** (9, per-segment) | no | no | **yes** (20 presets) |
 | voice cloning | **yes** | **yes** | **yes** | **yes** | no |
@@ -124,10 +126,8 @@ Raw `instruct` bypasses composition. **Write instruct parts in the target langua
 **Segment propagation**: toml structured parts are backfilled into `.md` segments where frontmatter didn't set them, so a script with no frontmatter still inherits instruct from voicecli.toml.
 
 ```toml
-# ── Voxtral settings ──
-# [voxtral]
-# voice = "neutral_female"     # default voice (20 presets available)
-# flow_steps = 3               # ODE solver steps (3=fast, 8=quality)
+# ── Voxtral-specific defaults (also settable via --flow-steps / --cfg-alpha) ──
+# flow_steps = 8               # ODE solver steps (3=fast, 8=quality)
 # cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)
 ```
 
@@ -151,6 +151,8 @@ emotion: "Chaleureuse"    # emotional state (Qwen, composes into instruct)
 instruct: "Parle avec colère" # raw instruct bypass (overrides structured parts)
 exaggeration: 0.75        # expressiveness 0.25-2.0 (Chatterbox only)
 cfg_weight: 0.3           # speaker adherence 0.0-1.0 (Chatterbox only)
+flow_steps: 8             # ODE solver steps, 3=fast 8=quality (Voxtral only)
+cfg_alpha: 1.2            # classifier-free guidance, 1.0=faster 1.2=quality (Voxtral only)
 segment_gap: 200          # ms silence between segments (default 0)
 crossfade: 50             # ms fade between segments (default 0)
 ---
@@ -164,7 +166,7 @@ Directives accumulate before a text block and apply to the text that follows.
 Each section inherits frontmatter defaults, overridden by its inline directives.
 Commas inside quoted values are safe: `<!-- emotion: "Passionnée, mais contenue" -->`.
 
-Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `language`, `voice`, `segment_gap`, `crossfade`
+Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `flow_steps`, `cfg_alpha`, `language`, `voice`, `segment_gap`, `crossfade`
 
 ### Segment Transitions
 
@@ -182,6 +184,7 @@ Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeratio
 - `<!-- accent: "Parisien" -->` — single-key still works
 - `<!-- instruct: "Speak seriously" -->` — raw instruct bypass (Qwen)
 - `<!-- exaggeration: 0.8, cfg_weight: 0.3 -->` — per-section expressiveness (Chatterbox)
+- `<!-- flow_steps: 8, cfg_alpha: 1.2 -->` — per-section Voxtral quality tuning
 - `<!-- language: Japanese, voice: Ono_Anna -->` — per-section language + voice switch
 - `<!-- segment_gap: 500, crossfade: 100 -->` — per-section transition control
 - `[laugh]` `[sigh]` etc. — paralinguistic tags (see tag handling above)

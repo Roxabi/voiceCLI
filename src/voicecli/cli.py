@@ -546,6 +546,14 @@ def generate(
             "--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)"
         ),
     ] = None,
+    flow_steps: Annotated[
+        Optional[int],
+        typer.Option("--flow-steps", help="Voxtral ODE solver steps (3=fast, 8=quality)"),
+    ] = None,
+    cfg_alpha: Annotated[
+        Optional[float],
+        typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
+    ] = None,
     plain: Annotated[
         bool,
         typer.Option(
@@ -559,6 +567,12 @@ def generate(
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
     from voicecli.api import generate as api_generate
+
+    extra: dict = {}
+    if flow_steps is not None:
+        extra["flow_steps"] = flow_steps
+    if cfg_alpha is not None:
+        extra["cfg_alpha"] = cfg_alpha
 
     try:
         result = api_generate(
@@ -575,6 +589,7 @@ def generate(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")
         if result.mp3_path:
@@ -627,6 +642,14 @@ def clone(
             "--chunk-size", help="Target chunk size in characters (~15 chars/sec of speech)"
         ),
     ] = None,
+    flow_steps: Annotated[
+        Optional[int],
+        typer.Option("--flow-steps", help="Voxtral ODE solver steps (3=fast, 8=quality)"),
+    ] = None,
+    cfg_alpha: Annotated[
+        Optional[float],
+        typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
+    ] = None,
     plain: Annotated[
         bool,
         typer.Option(
@@ -640,6 +663,12 @@ def clone(
 ):
     """Clone a voice from reference audio and synthesize text."""
     from voicecli.api import clone as api_clone
+
+    extra: dict = {}
+    if flow_steps is not None:
+        extra["flow_steps"] = flow_steps
+    if cfg_alpha is not None:
+        extra["cfg_alpha"] = cfg_alpha
 
     try:
         result = api_clone(
@@ -657,6 +686,7 @@ def clone(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")
         if result.mp3_path:

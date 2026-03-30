@@ -13,10 +13,8 @@ engine = "qwen"
 # chunked = false
 # chunk_size = 500
 
-# ── Voxtral settings ──────────────────────────────────────────────────────────
-# [voxtral]
-# voice = "neutral_female"     # default voice (20 presets available)
-# flow_steps = 3               # ODE solver steps (3=fast, 8=quality)
+# ── Voxtral-specific defaults (also settable via --flow-steps / --cfg-alpha) ──
+# flow_steps = 8               # ODE solver steps (3=fast, 8=quality)
 # cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)
 
 # ── Telegram notifications ─────────────────────────────────────────────────────

@@ -26,6 +26,8 @@ _KNOWN_DEFAULTS: dict[str, object] = {
     "emotion": str,
     "exaggeration": float,
     "cfg_weight": float,
+    "flow_steps": int,
+    "cfg_alpha": float,
     "segment_gap": int,
     "crossfade": int,
     "plain": _parse_bool,

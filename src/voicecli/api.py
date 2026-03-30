@@ -63,7 +63,7 @@ def _resolve_config(
     r_chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight"):
+    for field in ("exaggeration", "cfg_weight", "flow_steps", "cfg_alpha"):
         if field not in kw and field in cfg:
             kw[field] = cfg[field]
 
@@ -196,6 +196,10 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
             kw["exaggeration"] = doc.exaggeration
         if doc.cfg_weight is not None:
             kw["cfg_weight"] = doc.cfg_weight
+        if doc.flow_steps is not None:
+            kw["flow_steps"] = doc.flow_steps
+        if doc.cfg_alpha is not None:
+            kw["cfg_alpha"] = doc.cfg_alpha
         if doc.segments and len(doc.segments) > 1:
             kw["segments"] = doc.segments
         if resolved.get("_segment_gap_from_caller") is None and doc.segment_gap is not None:
@@ -400,6 +404,10 @@ def _generate_chunked(
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.flow_steps is not None:
+                kw["flow_steps"] = seg.flow_steps
+            if seg.cfg_alpha is not None:
+                kw["cfg_alpha"] = seg.cfg_alpha
             seg_voice = seg.voice or voice
             p = _emit_chunk(
                 eng,
@@ -470,6 +478,10 @@ def _clone_chunked(
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.flow_steps is not None:
+                kw["flow_steps"] = seg.flow_steps
+            if seg.cfg_alpha is not None:
+                kw["cfg_alpha"] = seg.cfg_alpha
             p = _emit_chunk(
                 eng,
                 "clone",

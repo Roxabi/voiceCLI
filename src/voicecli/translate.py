@@ -15,6 +15,8 @@ ENGINE_CAPS = {
         "tags": "to_instruct",  # convert [laugh] → segment with instruct
         "exaggeration": False,
         "cfg_weight": False,
+        "flow_steps": False,
+        "cfg_alpha": False,
         "language": True,
         "voice": True,
     },
@@ -24,6 +26,8 @@ ENGINE_CAPS = {
         "tags": "strip",  # remove tags, can't translate
         "exaggeration": True,
         "cfg_weight": True,
+        "flow_steps": False,
+        "cfg_alpha": False,
         "language": True,
         "voice": False,
     },
@@ -33,6 +37,8 @@ ENGINE_CAPS = {
         "tags": "native",  # keep as-is, engine handles them
         "exaggeration": True,
         "cfg_weight": True,
+        "flow_steps": False,
+        "cfg_alpha": False,
         "language": False,
         "voice": False,
     },
@@ -42,6 +48,8 @@ ENGINE_CAPS = {
         "tags": "strip",  # no tag support
         "exaggeration": False,
         "cfg_weight": False,
+        "flow_steps": True,
+        "cfg_alpha": True,
         "language": True,
         "voice": True,
     },
@@ -280,6 +288,14 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
         doc.cfg_weight = None
         for seg in doc.segments:
             seg.cfg_weight = None
+    if not caps["flow_steps"]:
+        doc.flow_steps = None
+        for seg in doc.segments:
+            seg.flow_steps = None
+    if not caps["cfg_alpha"]:
+        doc.cfg_alpha = None
+        for seg in doc.segments:
+            seg.cfg_alpha = None
 
     # ── Language / Voice ──
     if not caps["language"]:

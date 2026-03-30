@@ -80,7 +80,9 @@ class VoxtralEngine(TTSEngine):
             print("[voxtral] Model loaded.")
         return self._model
 
-    def _generate_one(self, text: str, voice: str, **kwargs) -> np.ndarray:
+    def _generate_one(
+        self, text: str, voice: str, *, flow_steps: int = 8, cfg_alpha: float = 1.2,
+    ) -> np.ndarray:
         """Generate audio for a single text chunk."""
         import torch
         from voxtral_tts import generate_speech_fast
@@ -95,8 +97,8 @@ class VoxtralEngine(TTSEngine):
                 voice_dir=self._voice_dir,
                 max_frames=500,
                 device="cuda",
-                flow_steps=3,
-                cfg_alpha=1.2,
+                flow_steps=flow_steps,
+                cfg_alpha=cfg_alpha,
             )
         return audio
 
@@ -106,6 +108,9 @@ class VoxtralEngine(TTSEngine):
         voice: str,
         default_gap: int = 0,
         default_crossfade: int = 0,
+        *,
+        flow_steps: int = 8,
+        cfg_alpha: float = 1.2,
     ) -> np.ndarray:
         """Generate audio per-segment with per-segment voice/language overrides."""
         from voicecli.utils import concat_audio
@@ -114,7 +119,9 @@ class VoxtralEngine(TTSEngine):
         for i, seg in enumerate(segments):
             print(f"  [{i + 1}/{len(segments)}] {seg.text[:60]}...")
             seg_voice = _resolve_voice(seg.voice, seg.language) if seg.voice or seg.language else voice
-            audio = self._generate_one(seg.text, seg_voice)
+            seg_flow = seg.flow_steps if seg.flow_steps is not None else flow_steps
+            seg_cfg = seg.cfg_alpha if seg.cfg_alpha is not None else cfg_alpha
+            audio = self._generate_one(seg.text, seg_voice, flow_steps=seg_flow, cfg_alpha=seg_cfg)
             all_wavs.append(audio)
 
         gaps = [
@@ -131,6 +138,8 @@ class VoxtralEngine(TTSEngine):
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
+        flow_steps = kwargs.get("flow_steps", 8)
+        cfg_alpha = kwargs.get("cfg_alpha", 1.2)
 
         resolved_voice = _resolve_voice(voice, language)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,9 +149,11 @@ class VoxtralEngine(TTSEngine):
                 segments, resolved_voice,
                 default_gap=default_gap,
                 default_crossfade=default_crossfade,
+                flow_steps=flow_steps,
+                cfg_alpha=cfg_alpha,
             )
         else:
-            audio = self._generate_one(text, resolved_voice)
+            audio = self._generate_one(text, resolved_voice, flow_steps=flow_steps, cfg_alpha=cfg_alpha)
 
         sf.write(str(output_path), audio, _SAMPLE_RATE)
         return output_path
