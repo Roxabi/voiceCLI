@@ -554,6 +554,22 @@ def generate(
         Optional[float],
         typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
     ] = None,
+    temperature: Annotated[
+        Optional[float],
+        typer.Option("--temperature", help="Sampling temperature (Qwen/Chatterbox, default 0.8)"),
+    ] = None,
+    top_p: Annotated[
+        Optional[float],
+        typer.Option("--top-p", help="Nucleus sampling top-p (Qwen/Chatterbox, default 1.0)"),
+    ] = None,
+    min_p: Annotated[
+        Optional[float],
+        typer.Option("--min-p", help="Min probability threshold (Chatterbox only, default 0.05)"),
+    ] = None,
+    repetition_penalty: Annotated[
+        Optional[float],
+        typer.Option("--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"),
+    ] = None,
     plain: Annotated[
         bool,
         typer.Option(
@@ -573,6 +589,14 @@ def generate(
         extra["flow_steps"] = flow_steps
     if cfg_alpha is not None:
         extra["cfg_alpha"] = cfg_alpha
+    if temperature is not None:
+        extra["temperature"] = temperature
+    if top_p is not None:
+        extra["top_p"] = top_p
+    if min_p is not None:
+        extra["min_p"] = min_p
+    if repetition_penalty is not None:
+        extra["repetition_penalty"] = repetition_penalty
 
     try:
         result = api_generate(
@@ -650,6 +674,22 @@ def clone(
         Optional[float],
         typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
     ] = None,
+    temperature: Annotated[
+        Optional[float],
+        typer.Option("--temperature", help="Sampling temperature (Qwen/Chatterbox, default 0.8)"),
+    ] = None,
+    top_p: Annotated[
+        Optional[float],
+        typer.Option("--top-p", help="Nucleus sampling top-p (Qwen/Chatterbox, default 1.0)"),
+    ] = None,
+    min_p: Annotated[
+        Optional[float],
+        typer.Option("--min-p", help="Min probability threshold (Chatterbox only, default 0.05)"),
+    ] = None,
+    repetition_penalty: Annotated[
+        Optional[float],
+        typer.Option("--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"),
+    ] = None,
     plain: Annotated[
         bool,
         typer.Option(
@@ -669,6 +709,14 @@ def clone(
         extra["flow_steps"] = flow_steps
     if cfg_alpha is not None:
         extra["cfg_alpha"] = cfg_alpha
+    if temperature is not None:
+        extra["temperature"] = temperature
+    if top_p is not None:
+        extra["top_p"] = top_p
+    if min_p is not None:
+        extra["min_p"] = min_p
+    if repetition_penalty is not None:
+        extra["repetition_penalty"] = repetition_penalty
 
     try:
         result = api_clone(

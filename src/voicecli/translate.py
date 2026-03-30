@@ -17,6 +17,10 @@ ENGINE_CAPS = {
         "cfg_weight": False,
         "flow_steps": False,
         "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": False,
+        "repetition_penalty": True,
         "language": True,
         "voice": True,
     },
@@ -28,6 +32,10 @@ ENGINE_CAPS = {
         "cfg_weight": True,
         "flow_steps": False,
         "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": True,
+        "repetition_penalty": True,
         "language": True,
         "voice": False,
     },
@@ -39,6 +47,10 @@ ENGINE_CAPS = {
         "cfg_weight": True,
         "flow_steps": False,
         "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": True,
+        "repetition_penalty": True,
         "language": False,
         "voice": False,
     },
@@ -50,6 +62,10 @@ ENGINE_CAPS = {
         "cfg_weight": False,
         "flow_steps": True,
         "cfg_alpha": True,
+        "temperature": False,
+        "top_p": False,
+        "min_p": False,
+        "repetition_penalty": False,
         "language": True,
         "voice": True,
     },
@@ -296,6 +312,22 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
         doc.cfg_alpha = None
         for seg in doc.segments:
             seg.cfg_alpha = None
+    if not caps["temperature"]:
+        doc.temperature = None
+        for seg in doc.segments:
+            seg.temperature = None
+    if not caps["top_p"]:
+        doc.top_p = None
+        for seg in doc.segments:
+            seg.top_p = None
+    if not caps["min_p"]:
+        doc.min_p = None
+        for seg in doc.segments:
+            seg.min_p = None
+    if not caps["repetition_penalty"]:
+        doc.repetition_penalty = None
+        for seg in doc.segments:
+            seg.repetition_penalty = None
 
     # ── Language / Voice ──
     if not caps["language"]:

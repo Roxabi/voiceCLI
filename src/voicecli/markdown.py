@@ -33,6 +33,10 @@ class Segment:
     cfg_weight: float | None = None
     flow_steps: int | None = None
     cfg_alpha: float | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
     segment_gap: int | None = None
     crossfade: int | None = None
     language: str | None = None
@@ -54,6 +58,10 @@ class TTSDocument:
     cfg_weight: float | None = None
     flow_steps: int | None = None
     cfg_alpha: float | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
     segment_gap: int | None = None
     crossfade: int | None = None
     extra: dict = field(default_factory=dict)
@@ -120,7 +128,7 @@ _COMMENT_RE = re.compile(r"<!--(.+?)-->", re.DOTALL)
 
 # Fields that can appear as <!-- key: value --> inline directives
 _STR_DIRECTIVES = {"instruct", "accent", "personality", "speed", "emotion", "language", "voice"}
-_FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight", "cfg_alpha"}
+_FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight", "cfg_alpha", "temperature", "top_p", "min_p", "repetition_penalty"}
 _INT_DIRECTIVES = {"segment_gap", "crossfade", "flow_steps"}
 _ALL_DIRECTIVES = _STR_DIRECTIVES | _FLOAT_DIRECTIVES | _INT_DIRECTIVES
 
@@ -310,6 +318,10 @@ def parse_md_file(path: Path) -> TTSDocument:
         "cfg_weight",
         "flow_steps",
         "cfg_alpha",
+        "temperature",
+        "top_p",
+        "min_p",
+        "repetition_penalty",
         "segment_gap",
         "crossfade",
     }
@@ -319,6 +331,10 @@ def parse_md_file(path: Path) -> TTSDocument:
     cfg_weight = _parse_optional_float(metadata, "cfg_weight")
     flow_steps = _parse_optional_int(metadata, "flow_steps")
     cfg_alpha = _parse_optional_float(metadata, "cfg_alpha")
+    temperature = _parse_optional_float(metadata, "temperature")
+    top_p = _parse_optional_float(metadata, "top_p")
+    min_p = _parse_optional_float(metadata, "min_p")
+    repetition_penalty = _parse_optional_float(metadata, "repetition_penalty")
     segment_gap = _parse_optional_int(metadata, "segment_gap")
     crossfade = _parse_optional_int(metadata, "crossfade")
 
@@ -341,6 +357,14 @@ def parse_md_file(path: Path) -> TTSDocument:
         seg_defaults["flow_steps"] = flow_steps
     if cfg_alpha is not None:
         seg_defaults["cfg_alpha"] = cfg_alpha
+    if temperature is not None:
+        seg_defaults["temperature"] = temperature
+    if top_p is not None:
+        seg_defaults["top_p"] = top_p
+    if min_p is not None:
+        seg_defaults["min_p"] = min_p
+    if repetition_penalty is not None:
+        seg_defaults["repetition_penalty"] = repetition_penalty
     if segment_gap is not None:
         seg_defaults["segment_gap"] = segment_gap
     if crossfade is not None:
@@ -373,6 +397,10 @@ def parse_md_file(path: Path) -> TTSDocument:
         cfg_weight=cfg_weight,
         flow_steps=flow_steps,
         cfg_alpha=cfg_alpha,
+        temperature=temperature,
+        top_p=top_p,
+        min_p=min_p,
+        repetition_penalty=repetition_penalty,
         segment_gap=segment_gap,
         crossfade=crossfade,
         extra=extra,

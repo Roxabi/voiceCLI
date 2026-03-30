@@ -58,6 +58,10 @@ Five engines with different strengths. Pick based on user intent:
 | cfg_weight (0.0–1.0) | no | no | **yes** (per-segment) | **yes** (per-segment) | no |
 | flow_steps (3=fast, 8=quality) | no | no | no | no | **yes** (per-segment) |
 | cfg_alpha (1.0–1.2) | no | no | no | no | **yes** (per-segment) |
+| temperature (0.0–2.0) | **yes** | **yes** | **yes** | **yes** | no |
+| top_p (0.0–1.0) | **yes** | **yes** | **yes** | **yes** | no |
+| min_p (0.0–1.0) | no | no | **yes** | **yes** | no |
+| repetition_penalty | **yes** | **yes** | **yes** (def 2.0) | **yes** (def 1.2) | no |
 | language (multi) | **yes** (per-segment) | **yes** (per-segment) | **yes** (per-segment) | no (EN only) | **yes** (9 langs) |
 | built-in voices | **yes** (9, per-segment) | **yes** (9, per-segment) | no | no | **yes** (20 presets) |
 | voice cloning | **yes** | **yes** | **yes** | **yes** | no |
@@ -127,8 +131,12 @@ Raw `instruct` bypasses composition. **Write instruct parts in the target langua
 
 ```toml
 # ── Voxtral-specific defaults (also settable via --flow-steps / --cfg-alpha) ──
-# flow_steps = 8               # ODE solver steps (3=fast, 8=quality)
-# cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)
+# flow_steps = 8               # ODE solver steps (3=fast, 8=quality)  [Voxtral]
+# cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)  [Voxtral]
+# temperature = 0.8            # sampling diversity  [Qwen/Chatterbox]
+# top_p = 1.0                  # nucleus sampling  [Qwen/Chatterbox]
+# min_p = 0.05                 # min probability threshold  [Chatterbox]
+# repetition_penalty = 2.0     # repeated token penalty  [Qwen/Chatterbox]
 ```
 
 Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default**
@@ -153,6 +161,10 @@ exaggeration: 0.75        # expressiveness 0.25-2.0 (Chatterbox only)
 cfg_weight: 0.3           # speaker adherence 0.0-1.0 (Chatterbox only)
 flow_steps: 8             # ODE solver steps, 3=fast 8=quality (Voxtral only)
 cfg_alpha: 1.2            # classifier-free guidance, 1.0=faster 1.2=quality (Voxtral only)
+temperature: 0.8          # sampling diversity (Qwen/Chatterbox, default 0.8)
+top_p: 1.0                # nucleus sampling (Qwen/Chatterbox, default 1.0)
+min_p: 0.05               # min probability threshold (Chatterbox only, default 0.05)
+repetition_penalty: 2.0   # repeated token penalty (Qwen/Chatterbox, default varies)
 segment_gap: 200          # ms silence between segments (default 0)
 crossfade: 50             # ms fade between segments (default 0)
 ---
@@ -166,7 +178,7 @@ Directives accumulate before a text block and apply to the text that follows.
 Each section inherits frontmatter defaults, overridden by its inline directives.
 Commas inside quoted values are safe: `<!-- emotion: "Passionnée, mais contenue" -->`.
 
-Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `flow_steps`, `cfg_alpha`, `language`, `voice`, `segment_gap`, `crossfade`
+Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeration`, `cfg_weight`, `flow_steps`, `cfg_alpha`, `temperature`, `top_p`, `min_p`, `repetition_penalty`, `language`, `voice`, `segment_gap`, `crossfade`
 
 ### Segment Transitions
 
@@ -185,6 +197,7 @@ Available: `accent`, `personality`, `speed`, `emotion`, `instruct`, `exaggeratio
 - `<!-- instruct: "Speak seriously" -->` — raw instruct bypass (Qwen)
 - `<!-- exaggeration: 0.8, cfg_weight: 0.3 -->` — per-section expressiveness (Chatterbox)
 - `<!-- flow_steps: 8, cfg_alpha: 1.2 -->` — per-section Voxtral quality tuning
+- `<!-- temperature: 0.6, repetition_penalty: 1.5 -->` — per-section sampling (Qwen/Chatterbox)
 - `<!-- language: Japanese, voice: Ono_Anna -->` — per-section language + voice switch
 - `<!-- segment_gap: 500, crossfade: 100 -->` — per-section transition control
 - `[laugh]` `[sigh]` etc. — paralinguistic tags (see tag handling above)

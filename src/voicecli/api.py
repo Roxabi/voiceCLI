@@ -63,7 +63,8 @@ def _resolve_config(
     r_chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight", "flow_steps", "cfg_alpha"):
+    for field in ("exaggeration", "cfg_weight", "flow_steps", "cfg_alpha",
+                   "temperature", "top_p", "min_p", "repetition_penalty"):
         if field not in kw and field in cfg:
             kw[field] = cfg[field]
 
@@ -200,6 +201,14 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
             kw["flow_steps"] = doc.flow_steps
         if doc.cfg_alpha is not None:
             kw["cfg_alpha"] = doc.cfg_alpha
+        if doc.temperature is not None:
+            kw["temperature"] = doc.temperature
+        if doc.top_p is not None:
+            kw["top_p"] = doc.top_p
+        if doc.min_p is not None:
+            kw["min_p"] = doc.min_p
+        if doc.repetition_penalty is not None:
+            kw["repetition_penalty"] = doc.repetition_penalty
         if doc.segments and len(doc.segments) > 1:
             kw["segments"] = doc.segments
         if resolved.get("_segment_gap_from_caller") is None and doc.segment_gap is not None:
@@ -408,6 +417,14 @@ def _generate_chunked(
                 kw["flow_steps"] = seg.flow_steps
             if seg.cfg_alpha is not None:
                 kw["cfg_alpha"] = seg.cfg_alpha
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             seg_voice = seg.voice or voice
             p = _emit_chunk(
                 eng,
@@ -482,6 +499,14 @@ def _clone_chunked(
                 kw["flow_steps"] = seg.flow_steps
             if seg.cfg_alpha is not None:
                 kw["cfg_alpha"] = seg.cfg_alpha
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             p = _emit_chunk(
                 eng,
                 "clone",

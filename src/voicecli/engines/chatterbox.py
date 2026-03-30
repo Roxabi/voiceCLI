@@ -66,6 +66,14 @@ class ChatterboxEngine(TTSEngine):
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             if seg.language is not None:
                 kw["language_id"] = _resolve_language(seg.language)
             audio = self._generate_chunked(seg.text, **kw)
@@ -84,6 +92,10 @@ class ChatterboxEngine(TTSEngine):
         language = _resolve_language(kwargs.get("language", "English"))
         exaggeration = kwargs.get("exaggeration", 0.5)
         cfg_weight = kwargs.get("cfg_weight", 0.5)
+        temperature = kwargs.get("temperature", 0.8)
+        top_p = kwargs.get("top_p", 1.0)
+        min_p = kwargs.get("min_p", 0.05)
+        repetition_penalty = kwargs.get("repetition_penalty", 2.0)
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
@@ -95,6 +107,10 @@ class ChatterboxEngine(TTSEngine):
                 language_id=language,
                 exaggeration=exaggeration,
                 cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
             )
             audio = self._generate_segmented(
                 segments,
@@ -109,6 +125,10 @@ class ChatterboxEngine(TTSEngine):
             language_id=language,
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
         )
         audio = self._generate_chunked(text, **gen_kwargs)
         sf.write(str(output_path), audio, self._load_model().sr)
@@ -121,6 +141,10 @@ class ChatterboxEngine(TTSEngine):
         exaggeration = kwargs.get("exaggeration", 0.5)
         # Default cfg_weight=0.0 for cross-language cloning to reduce accent bleed
         cfg_weight = kwargs.get("cfg_weight", 0.0)
+        temperature = kwargs.get("temperature", 0.8)
+        top_p = kwargs.get("top_p", 1.0)
+        min_p = kwargs.get("min_p", 0.05)
+        repetition_penalty = kwargs.get("repetition_penalty", 2.0)
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
@@ -133,6 +157,10 @@ class ChatterboxEngine(TTSEngine):
                 language_id=language,
                 exaggeration=exaggeration,
                 cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
             )
             audio = self._generate_segmented(
                 segments,
@@ -148,6 +176,10 @@ class ChatterboxEngine(TTSEngine):
             language_id=language,
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
         )
         audio = self._generate_chunked(text, **gen_kwargs)
         sf.write(str(output_path), audio, self._load_model().sr)
