@@ -119,6 +119,7 @@ _VRAM_REQUIRED_GB: dict[str, float] = {
     "qwen-fast": 5.0,
     "chatterbox": 2.0,
     "chatterbox-turbo": 2.0,
+    "voxtral": 4.0,
 }
 _VRAM_REQUIRED_GB_DEFAULT = 4.0
 

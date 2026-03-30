@@ -52,11 +52,15 @@ override-dependencies = [
     "onnx>=1.20",
 ]
 
+[tool.uv.sources]
+voxtral-tts = { git = "https://github.com/Roxabi/voxtral-tts.git", branch = "main" }
+
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
 
 [project.optional-dependencies]
+voxtral = ["voxtral-tts[int4]", "scipy"]
 hotkey = ["pynput>=1.7"]
 overlay = ["PyGObject>=3.42", "pycairo>=1.25"]
 

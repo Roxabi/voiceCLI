@@ -36,6 +36,15 @@ ENGINE_CAPS = {
         "language": False,
         "voice": False,
     },
+    "voxtral": {
+        "instruct": False,
+        "segments": True,
+        "tags": "strip",  # no tag support
+        "exaggeration": False,
+        "cfg_weight": False,
+        "language": True,
+        "voice": True,
+    },
 }
 ENGINE_CAPS["qwen-fast"] = ENGINE_CAPS["qwen"]
 

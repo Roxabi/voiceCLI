@@ -62,10 +62,12 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
     from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
     from voicecli.engines.qwen import QwenEngine
     from voicecli.engines.qwen_fast import QwenFastEngine
+    from voicecli.engines.voxtral import VoxtralEngine
 
     return {
         "qwen": QwenEngine,
         "qwen-fast": QwenFastEngine,
         "chatterbox": ChatterboxEngine,
         "chatterbox-turbo": ChatterboxTurboEngine,
+        "voxtral": VoxtralEngine,
     }
