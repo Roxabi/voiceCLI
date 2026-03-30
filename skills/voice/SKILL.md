@@ -1,7 +1,7 @@
 ---
 name: voice
 description: 'VoiceCLI assistant — author TTS scripts, generate speech, clone voices, transcribe audio, manage samples. Knows engine capabilities, markdown format, and all CLI commands. Triggers: "voice" | "voicecli" | "speech" | "generate speech" | "clone voice" | "transcribe" | "TTS" | "text to speech" | "voice script".'
-version: 0.5.0
+version: 0.6.0
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 ---
 
@@ -47,18 +47,20 @@ On the **first invocation** of any voice/TTS command in a session, proceed direc
 
 ## Engine Capability Matrix
 
-Four engines with different strengths. Pick based on user intent:
+Five engines with different strengths. Pick based on user intent:
 
-| Capability | Qwen | Qwen-Fast | Chatterbox Multilingual | Chatterbox Turbo |
-|------------|------|-----------|-------------------------|------------------|
-| instruct (free-form emotion) | **yes** | **yes** | no | no |
-| segments (per-section overrides) | **yes** | **yes** | **yes** | **yes** |
-| paralinguistic tags | to_instruct | to_instruct | strip | **native** |
-| exaggeration (0.25–2.0) | no | no | **yes** (per-segment) | **yes** (per-segment) |
-| cfg_weight (0.0–1.0) | no | no | **yes** (per-segment) | **yes** (per-segment) |
-| language (23 langs) | **yes** (per-segment) | **yes** (per-segment) | **yes** (per-segment) | no (EN only) |
-| built-in voices (9) | **yes** (per-segment) | **yes** (per-segment) | no | no |
-| CUDA graph acceleration | no | **yes** (5-9x speedup) | no | no |
+| Capability | Qwen | Qwen-Fast | Chatterbox Multilingual | Chatterbox Turbo | Voxtral |
+|------------|------|-----------|-------------------------|------------------|---------|
+| instruct (free-form emotion) | **yes** | **yes** | no | no | no |
+| segments (per-section overrides) | **yes** | **yes** | **yes** | **yes** | **yes** |
+| paralinguistic tags | to_instruct | to_instruct | strip | **native** | strip |
+| exaggeration (0.25–2.0) | no | no | **yes** (per-segment) | **yes** (per-segment) | no |
+| cfg_weight (0.0–1.0) | no | no | **yes** (per-segment) | **yes** (per-segment) | no |
+| language (multi) | **yes** (per-segment) | **yes** (per-segment) | **yes** (per-segment) | no (EN only) | **yes** (9 langs) |
+| built-in voices | **yes** (9, per-segment) | **yes** (9, per-segment) | no | no | **yes** (20 presets) |
+| voice cloning | **yes** | **yes** | **yes** | **yes** | no |
+| CUDA graph acceleration | no | **yes** (5-9x speedup) | no | no | no |
+| VRAM usage | ~3.5 GB | ~3.5 GB | ~1.8 GB | ~1.8 GB | ~3.7 GB (int4) |
 
 ### Engine Selection Guide
 
@@ -67,11 +69,13 @@ Four engines with different strengths. Pick based on user intent:
 | Multi-language + voice cloning | `chatterbox` |
 | English + emotion tags ([laugh], [sigh]) | `chatterbox-turbo` |
 | Free-form emotion instructions | `qwen` or `qwen-fast` |
-| Named built-in voices | `qwen` or `qwen-fast` |
+| Named built-in voices (9 Qwen) | `qwen` or `qwen-fast` |
+| Many voice presets (20, 9 languages) | `voxtral` |
 | Per-section emotion changes | `qwen` or `qwen-fast` |
 | Per-section expressiveness | `chatterbox` or `chatterbox-turbo` |
-| Bilingual content (language switching) | `qwen`, `qwen-fast`, or `chatterbox` |
+| Bilingual content (language switching) | `qwen`, `qwen-fast`, `chatterbox`, or `voxtral` |
 | Fastest generation (CUDA graph accel.) | `qwen-fast` |
+| High-quality multilingual (no cloning needed) | `voxtral` |
 
 ### Tag Handling
 
@@ -86,6 +90,14 @@ The code translator handles this automatically — write tags in the universal f
 ### Qwen Voices
 
 Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan (default), Aiden, Ono_Anna, Sohee
+
+### Voxtral Voices
+
+20 presets across 9 languages with auto-selection by language:
+
+neutral_female (default), neutral_male, cheerful_female, casual_female, casual_male, fr_male, fr_female, de_male, de_female, es_male, es_female, it_male, it_female, pt_male, pt_female, nl_male, nl_female, ar_male, hi_male, hi_female
+
+When `language` is set (e.g. `language: French`), Voxtral auto-resolves to the matching voice (e.g. `fr_female`). Explicit `voice` overrides this.
 
 ## User Config (`voicecli.toml`)
 
@@ -111,6 +123,14 @@ Raw `instruct` bypasses composition. **Write instruct parts in the target langua
 
 **Segment propagation**: toml structured parts are backfilled into `.md` segments where frontmatter didn't set them, so a script with no frontmatter still inherits instruct from voicecli.toml.
 
+```toml
+# ── Voxtral settings ──
+# [voxtral]
+# voice = "neutral_female"     # default voice (20 presets available)
+# flow_steps = 3               # ODE solver steps (3=fast, 8=quality)
+# cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)
+```
+
 Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default**
 
 ## Unified Markdown Format
@@ -123,7 +143,7 @@ One `.md` file works across all engines — the code translator adapts per engin
 ---
 language: French          # language name (Qwen + Chatterbox Multilingual)
 voice: Ryan               # built-in voice (Qwen only)
-engine: qwen              # qwen | qwen-fast | chatterbox | chatterbox-turbo
+engine: qwen              # qwen | qwen-fast | chatterbox | chatterbox-turbo | voxtral
 accent: "Provençal"       # pronunciation/origin (Qwen, composes into instruct)
 personality: "Calme"      # character traits (Qwen, composes into instruct)
 speed: "Rythme posé"      # tempo/pace (Qwen, composes into instruct)
@@ -204,6 +224,7 @@ voicecli generate "Hello world"                       # Qwen, default voice
 voicecli generate "Bonjour" -e chatterbox --lang French
 voicecli generate "text" -e chatterbox-turbo          # English + tags
 voicecli generate "text" -e qwen-fast                 # CUDA-accelerated Qwen
+voicecli generate "Bonjour" -e voxtral                # Voxtral (auto voice by lang)
 voicecli generate script.md                           # from markdown
 voicecli generate article.txt                         # from plain text file
 voicecli generate script.md --mp3                     # + MP3 output
@@ -362,12 +383,15 @@ Use `--plain` on `generate` or `clone` to strip all `[tags]` and ignore `<!-- di
 - Qwen clone does NOT support instruct — only generate does
 - Chatterbox Turbo is English-only
 - Chatterbox Multilingual strips all paralinguistic tags
+- Voxtral does NOT support voice cloning (codec encoder not released by Mistral)
+- Voxtral does NOT support instruct, exaggeration, or cfg_weight — voice character comes from preset selection
+- Voxtral (3.7 GB VRAM) cannot coexist with the Qwen daemon (8.5 GB) on 16 GB GPU — stop daemon first
 - Both Chatterbox engines have a ~40s generation cutoff (handled by auto-chunking per segment)
 - Clone falls back to active sample when `--ref` is omitted
 - `qwen-fast` has same capabilities as `qwen` but uses CUDA graph acceleration (5-9x speedup after warmup)
 - `--fast` flag uses the smaller 0.6B model (Qwen/Qwen-fast only) — faster but lower quality
 - Base instruct is preserved in tag-split segments (e.g. `[laugh]` on Qwen keeps the original instruct alongside the tag instruct)
-- Daemon (`voicecli serve`) only accelerates Qwen engines — Chatterbox always runs standalone
+- Daemon (`voicecli serve`) only accelerates Qwen engines — Chatterbox and Voxtral always run standalone
 - Daemon socket: `~/.local/share/voicecli/daemon.sock`; if absent, generate/clone fall back silently
 
 $ARGUMENTS

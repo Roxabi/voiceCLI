@@ -114,16 +114,6 @@ def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
             _vram_cleanup()
 
 
-_VRAM_REQUIRED_GB: dict[str, float] = {
-    "qwen": 5.0,
-    "qwen-fast": 5.0,
-    "chatterbox": 2.0,
-    "chatterbox-turbo": 2.0,
-    "voxtral": 4.0,
-}
-_VRAM_REQUIRED_GB_DEFAULT = 4.0
-
-
 def _vram_cleanup() -> None:
     """Release cached VRAM allocations after a job completes."""
     import gc
@@ -140,24 +130,13 @@ def _vram_cleanup() -> None:
 
 def _has_vram(eng_name: str) -> bool:
     """Return True if enough free VRAM is available to load the engine."""
-    try:
-        import torch
+    from voicecli.engine import check_vram
 
-        if not torch.cuda.is_available():
-            return True  # CPU-only: no VRAM constraint
-        free_bytes, _ = torch.cuda.mem_get_info()
-        free_gb = free_bytes / (1024**3)
-        required_gb = _VRAM_REQUIRED_GB.get(eng_name, _VRAM_REQUIRED_GB_DEFAULT)
-        if free_gb < required_gb:
-            print(
-                f"[voicecli daemon] Refusing to load '{eng_name}': "
-                f"{free_gb:.1f}GB free, need {required_gb:.1f}GB",
-                flush=True,
-            )
-            return False
+    try:
+        check_vram(eng_name)
         return True
-    except Exception:
-        return True  # if check fails, let it try (existing behavior)
+    except RuntimeError:
+        return False
 
 
 def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
