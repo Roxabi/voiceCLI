@@ -128,7 +128,15 @@ _COMMENT_RE = re.compile(r"<!--(.+?)-->", re.DOTALL)
 
 # Fields that can appear as <!-- key: value --> inline directives
 _STR_DIRECTIVES = {"instruct", "accent", "personality", "speed", "emotion", "language", "voice"}
-_FLOAT_DIRECTIVES = {"exaggeration", "cfg_weight", "cfg_alpha", "temperature", "top_p", "min_p", "repetition_penalty"}
+_FLOAT_DIRECTIVES = {
+    "exaggeration",
+    "cfg_weight",
+    "cfg_alpha",
+    "temperature",
+    "top_p",
+    "min_p",
+    "repetition_penalty",
+}
 _INT_DIRECTIVES = {"segment_gap", "crossfade", "flow_steps"}
 _ALL_DIRECTIVES = _STR_DIRECTIVES | _FLOAT_DIRECTIVES | _INT_DIRECTIVES
 

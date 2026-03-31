@@ -67,7 +67,6 @@ class VoxtralEngine(TTSEngine):
             return self._model
 
         with cuda_guard("voxtral"):
-            import torch
             from voxtral_tts import load_model_int4, TekkenTokenizer, enable_static_cache
 
             warn_if_first_download(VOXTRAL_MODEL)
@@ -81,7 +80,12 @@ class VoxtralEngine(TTSEngine):
         return self._model
 
     def _generate_one(
-        self, text: str, voice: str, *, flow_steps: int = 8, cfg_alpha: float = 1.2,
+        self,
+        text: str,
+        voice: str,
+        *,
+        flow_steps: int = 8,
+        cfg_alpha: float = 1.2,
     ) -> np.ndarray:
         """Generate audio for a single text chunk."""
         import torch
@@ -118,7 +122,9 @@ class VoxtralEngine(TTSEngine):
         all_wavs: list[np.ndarray] = []
         for i, seg in enumerate(segments):
             print(f"  [{i + 1}/{len(segments)}] {seg.text[:60]}...")
-            seg_voice = _resolve_voice(seg.voice, seg.language) if seg.voice or seg.language else voice
+            seg_voice = (
+                _resolve_voice(seg.voice, seg.language) if seg.voice or seg.language else voice
+            )
             seg_flow = seg.flow_steps if seg.flow_steps is not None else flow_steps
             seg_cfg = seg.cfg_alpha if seg.cfg_alpha is not None else cfg_alpha
             audio = self._generate_one(seg.text, seg_voice, flow_steps=seg_flow, cfg_alpha=seg_cfg)
@@ -146,14 +152,17 @@ class VoxtralEngine(TTSEngine):
 
         if segments and len(segments) > 1:
             audio = self._generate_segmented(
-                segments, resolved_voice,
+                segments,
+                resolved_voice,
                 default_gap=default_gap,
                 default_crossfade=default_crossfade,
                 flow_steps=flow_steps,
                 cfg_alpha=cfg_alpha,
             )
         else:
-            audio = self._generate_one(text, resolved_voice, flow_steps=flow_steps, cfg_alpha=cfg_alpha)
+            audio = self._generate_one(
+                text, resolved_voice, flow_steps=flow_steps, cfg_alpha=cfg_alpha
+            )
 
         sf.write(str(output_path), audio, _SAMPLE_RATE)
         return output_path
