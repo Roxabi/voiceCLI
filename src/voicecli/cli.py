@@ -552,7 +552,9 @@ def generate(
     ] = None,
     cfg_alpha: Annotated[
         Optional[float],
-        typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
+        typer.Option(
+            "--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"
+        ),
     ] = None,
     temperature: Annotated[
         Optional[float],
@@ -568,7 +570,9 @@ def generate(
     ] = None,
     repetition_penalty: Annotated[
         Optional[float],
-        typer.Option("--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"),
+        typer.Option(
+            "--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"
+        ),
     ] = None,
     plain: Annotated[
         bool,
@@ -672,7 +676,9 @@ def clone(
     ] = None,
     cfg_alpha: Annotated[
         Optional[float],
-        typer.Option("--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"),
+        typer.Option(
+            "--cfg-alpha", help="Voxtral classifier-free guidance (1.0=faster, 1.2=quality)"
+        ),
     ] = None,
     temperature: Annotated[
         Optional[float],
@@ -688,7 +694,9 @@ def clone(
     ] = None,
     repetition_penalty: Annotated[
         Optional[float],
-        typer.Option("--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"),
+        typer.Option(
+            "--repetition-penalty", help="Repetition penalty (Qwen/Chatterbox, default varies)"
+        ),
     ] = None,
     plain: Annotated[
         bool,

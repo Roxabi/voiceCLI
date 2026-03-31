@@ -95,8 +95,11 @@ class ChatterboxTurboEngine(TTSEngine):
 
         if segments and len(segments) > 1:
             base_kwargs = dict(
-                exaggeration=exaggeration, cfg_weight=cfg_weight,
-                temperature=temperature, top_p=top_p, min_p=min_p,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
             )
             audio = self._generate_segmented(
@@ -109,8 +112,11 @@ class ChatterboxTurboEngine(TTSEngine):
             return output_path
 
         gen_kwargs = dict(
-            exaggeration=exaggeration, cfg_weight=cfg_weight,
-            temperature=temperature, top_p=top_p, min_p=min_p,
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
             repetition_penalty=repetition_penalty,
         )
         audio = self._generate_chunked(text, **gen_kwargs)
@@ -135,8 +141,11 @@ class ChatterboxTurboEngine(TTSEngine):
         if segments and len(segments) > 1:
             base_kwargs = dict(
                 audio_prompt_path=str(ref_audio),
-                exaggeration=exaggeration, cfg_weight=cfg_weight,
-                temperature=temperature, top_p=top_p, min_p=min_p,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
                 repetition_penalty=repetition_penalty,
             )
             audio = self._generate_segmented(
@@ -150,8 +159,11 @@ class ChatterboxTurboEngine(TTSEngine):
 
         gen_kwargs = dict(
             audio_prompt_path=str(ref_audio),
-            exaggeration=exaggeration, cfg_weight=cfg_weight,
-            temperature=temperature, top_p=top_p, min_p=min_p,
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
             repetition_penalty=repetition_penalty,
         )
         audio = self._generate_chunked(text, **gen_kwargs)

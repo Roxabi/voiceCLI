@@ -141,8 +141,16 @@ def _resolve_config(
     r_chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight", "flow_steps", "cfg_alpha",
-                   "temperature", "top_p", "min_p", "repetition_penalty"):
+    for field in (
+        "exaggeration",
+        "cfg_weight",
+        "flow_steps",
+        "cfg_alpha",
+        "temperature",
+        "top_p",
+        "min_p",
+        "repetition_penalty",
+    ):
         if field not in kw and field in cfg:
             kw[field] = cfg[field]
 
