@@ -67,7 +67,6 @@ class VoxtralEngine(TTSEngine):
             return self._model
 
         with cuda_guard("voxtral"):
-            import torch
             from voxtral_tts import load_model_int4, TekkenTokenizer, enable_static_cache
 
             warn_if_first_download(VOXTRAL_MODEL)
