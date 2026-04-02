@@ -24,11 +24,6 @@ MUST read [code-review](docs/standards/code-review.md). Conventional Comments. B
 | API / Backend | [backend-patterns](docs/standards/backend-patterns.md) |
 | Tests | [testing](docs/standards/testing.md) |
 
-### Skills & Agents
-
-Skills: always use appropriate skill. Workflow skills → `dev-core` plugin.
-Agents: Sonnet = all agents (frontend-dev, backend-dev, devops, doc-writer, fixer, tester, architect, product-lead, security-auditor).
-
 ## Usage Reference
 
 **For CLI commands, engine capabilities, markdown format, frontmatter fields, directives, config, and workflow** → see [`skills/voice/SKILL.md`](skills/voice/SKILL.md) (single source of truth).
