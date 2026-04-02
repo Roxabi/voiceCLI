@@ -14,7 +14,7 @@ Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual, 
 
 ### Decision Protocol
 
-Never use `AskUserQuestion`. For all decisions, choices (≥2 options), approach proposals:
+For all decisions, choices (≥2 options), approach proposals:
 
 1. **Summarize** — why / root cause / current behavior / target / path to reach it
 2. **Propose** — numbered options, one marked as recommended
