@@ -1,4 +1,5 @@
 @.claude/stack.yml
+@.claude/dev-core.md
 
 # VoiceCLI
 
@@ -8,69 +9,9 @@ Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual, 
 
 - **Project:** VoiceCLI
 - **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
-- **Decisions:** summarize context → numbered options + recommendation → wait for reply (see [Decision Protocol](#decision-protocol))
+- **Decisions:** → see global patterns (@.claude/dev-core.md)
 - **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
 - **Always** use appropriate skill even without slash command
-
-### Decision Protocol
-
-For all decisions, choices (≥2 options), approach proposals:
-
-1. **Summarize** — why / root cause / current behavior / target / path to reach it
-2. **Propose** — numbered options, one marked as recommended
-3. **Explain** — why the recommended option is recommended
-
-Then wait for reply.
-
-### Git
-
-Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
-Types: feat|fix|refactor|docs|style|test|chore|ci|perf
-Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
-
-### Dev Process
-
-**Entry point: `/dev #N`** — single command that scans artifacts, shows progress, and delegates to the right phase skill.
-
-| Tier | Criteria | Phases |
-|------|----------|--------|
-| **S** | ≤3 files, no arch, no risk | triage → implement → pr → validate → review → fix* → cleanup* |
-| **F-lite** | Clear scope, single domain | Frame → spec → plan → implement → verify → ship |
-| **F-full** | New arch, unclear reqs, >2 domains | Frame → analyze → spec → plan → implement → verify → ship |
-
-`*` = conditional (runs only if applicable)
-
-Phases: **Frame** (problem) → **Shape** (spec) → **Build** (code) → **Verify** (review) → **Ship** (release).
-
-### Orchestrator Delegation
-
-Orchestrator does not modify code/docs directly. Delegate: FE→`frontend-dev` | BE→`backend-dev` | Infra→`devops` | Docs→`doc-writer` | Tests→`tester` | Fixes→`fixer`. Exception: typo/single-line. Deploy→`devops` only.
-
-### Parallel Execution
-
-≥3 complex tasks → present decision: Sequential | Parallel (Recommended).
-F-full + ≥4 independent tasks in 1 domain → multiple same-type agents on separate file groups.
-
-### Artifact Model
-
-Artifacts are the state markers `/dev` uses for progress detection and resumption.
-
-| Type | Directory | Question answered |
-|------|-----------|-------------------|
-| **Frame** | `artifacts/frames/` | What's the problem? |
-| **Analysis** | `artifacts/analyses/` | How deep is it? |
-| **Spec** | `artifacts/specs/` | What will we build? |
-| **Plan** | `artifacts/plans/` | How do we build it? |
-
-### Mandatory Worktree
-
-```bash
-git worktree add ../voiceCLI-XXX -b feat/XXX-slug staging
-cd ../voiceCLI-XXX && cp .env.example .env && uv sync
-```
-
-Exceptions: XS (present decision) | `/dev` pre-implementation artifacts (frame, analysis, spec, plan) | `/promote` release artifacts.
-**Never code on main/staging without worktree.**
 
 ### Code Review
 
@@ -87,8 +28,6 @@ MUST read [code-review](docs/standards/code-review.md). Conventional Comments. B
 
 Skills: always use appropriate skill. Workflow skills → `dev-core` plugin.
 Agents: Sonnet = all agents (frontend-dev, backend-dev, devops, doc-writer, fixer, tester, architect, product-lead, security-auditor).
-
-**Shared agent rules:** Never commit/push (lead handles git) | Never force/hard/amend | Stage specific files only | Escalate blockers → lead | Message lead on completion.
 
 ## Usage Reference
 

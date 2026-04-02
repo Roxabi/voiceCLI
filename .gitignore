@@ -28,3 +28,4 @@ voicecli.vocab
 .claude/settings.local.json
 
 .claude/dev-core.yml
+.claude/dev-core.md
