@@ -10,6 +10,6 @@
   ],
   "venvPath": ".",
   "venv": ".venv",
-  "reportMissingImports": "warning",
+  "reportMissingImports": "error",
   "reportMissingModuleSource": "none"
 }
