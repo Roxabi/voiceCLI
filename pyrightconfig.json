@@ -8,8 +8,6 @@
     "src/voicecli/overlay.py",
     "src/voicecli/engines"
   ],
-  "venvPath": ".",
-  "venv": ".venv",
   "reportMissingImports": "error",
   "reportMissingModuleSource": "none"
 }

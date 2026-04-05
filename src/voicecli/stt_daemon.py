@@ -640,7 +640,7 @@ class SttDaemon:
             elif action == "transcribe_file":
                 self._handle_transcribe_file(conn, req)
             else:
-                self._handle_unknown(conn, str(action) if action is not None else "unknown")
+                self._handle_unknown(conn, action)
         except Exception as exc:
             try:
                 _send_json(conn, {"status": "error", "message": str(exc)})
@@ -658,7 +658,7 @@ class SttDaemon:
             mode = self._current_mode or self.default_mode
         _send_json(conn, {"status": "ok", "state": state, "mode": mode})
 
-    def _handle_unknown(self, conn: socket.socket, action: str) -> None:
+    def _handle_unknown(self, conn: socket.socket, action: str | None) -> None:
         _send_json(conn, {"status": "error", "message": f"unknown action: {action}"})
 
     def _handle_transcribe_file(self, conn: socket.socket, req: dict) -> None:
