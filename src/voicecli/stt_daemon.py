@@ -640,7 +640,7 @@ class SttDaemon:
             elif action == "transcribe_file":
                 self._handle_transcribe_file(conn, req)
             else:
-                self._handle_unknown(conn, action)
+                self._handle_unknown(conn, str(action) if action is not None else "unknown")
         except Exception as exc:
             try:
                 _send_json(conn, {"status": "error", "message": str(exc)})

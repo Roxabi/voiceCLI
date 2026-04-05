@@ -61,6 +61,7 @@ def cuda_guard(engine_name: str) -> Iterator[None]:
 
 class TTSEngine(ABC):
     name: str
+    _small: bool = False
 
     @abstractmethod
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:

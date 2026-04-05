@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 MODELS = {
     "1b": "kyutai/stt-1b-en_fr-trfs",  # EN + FR, 0.5s latency
@@ -11,7 +12,7 @@ MODELS = {
 }
 DEFAULT_MODEL = "1b"
 
-_pipeline_cache: dict[str, object] = {}
+_pipeline_cache: dict[str, Any] = {}
 
 
 def _load_pipeline(model: str):

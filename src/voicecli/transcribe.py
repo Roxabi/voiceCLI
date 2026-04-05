@@ -8,6 +8,10 @@ if the daemon is unavailable.
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
 DEFAULT_MODEL = "large-v3-turbo"
@@ -33,7 +37,7 @@ VALID_MODELS = frozenset(
     }
 )
 
-_model_cache: dict[str, object] = {}
+_model_cache: "dict[str, WhisperModel]" = {}
 _model_lock = threading.Lock()
 
 
@@ -209,7 +213,7 @@ def unload_model() -> None:
     print("[stt] Models unloaded.")
 
 
-def _load_model(model: str):
+def _load_model(model: str) -> "WhisperModel":
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"

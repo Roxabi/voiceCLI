@@ -70,4 +70,5 @@ dev = [
     "pytest",
     "pre-commit>=4.5.1",
     "pip-licenses>=5.5.1",
+    "pyright>=1.1.408",
 ]
