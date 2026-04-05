@@ -1,3 +1,4 @@
+# pyright: ignore — excluded from pyrightconfig.json (heavy ML deps, no type stubs)
 """Qwen3-TTS engine with CUDA graph acceleration via faster-qwen3-tts."""
 
 from __future__ import annotations

@@ -271,10 +271,10 @@ def _run_dictate_setup() -> None:
 
     # Overlay (GTK3 + gtk-layer-shell)
     try:
-        import gi
+        import gi  # type: ignore[import-untyped]
 
         gi.require_version("Gtk", "3.0")
-        from gi.repository import Gtk  # noqa: F401
+        from gi.repository import Gtk  # type: ignore[import-untyped]  # noqa: F401
 
         typer.echo("  overlay OK")
     except (ValueError, ImportError):

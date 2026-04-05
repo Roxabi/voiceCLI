@@ -1,3 +1,4 @@
+# pyright: ignore — excluded from pyrightconfig.json (heavy ML deps, no type stubs)
 from __future__ import annotations
 
 import numpy as np

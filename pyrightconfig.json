@@ -1,0 +1,13 @@
+{
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "basic",
+  "include": ["src/voicecli"],
+  "exclude": [
+    "src/voicecli/__pycache__",
+    "src/voicecli/overlay.py",
+    "src/voicecli/engines"
+  ],
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "none"
+}

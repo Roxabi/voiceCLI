@@ -24,5 +24,7 @@ jobs:
         run: uv run ruff check .
       - name: Format check
         run: uv run ruff format --check .
+      - name: Typecheck
+        run: uv run pyright
       - name: Test
         run: uv run python -m pytest --ignore=tests/test_overlay.py
