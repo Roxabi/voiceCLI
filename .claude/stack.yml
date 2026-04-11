@@ -1,0 +1,49 @@
+# .claude/stack.yml — dev-core stack configuration
+# DO NOT commit this file. Add .claude/stack.yml to .gitignore.
+# Commit .claude/stack.yml.example instead.
+schema_version: "1.0"
+
+runtime: python
+package_manager: uv
+
+backend:
+  framework: typer
+  path: src/voicecli
+
+docs:
+  framework: none
+  path: docs
+  format: md
+
+build:
+  formatter: ruff
+  formatter_config: pyproject.toml
+  formatter_fix_cmd: "uv run ruff format . && uv run ruff check --fix ."
+
+testing:
+  unit: pytest
+
+deploy:
+  platform: none
+
+commands:
+  dev: uv run voicecli
+  test: uv run pytest
+  lint: uv run ruff check .
+  format: uv run ruff format .
+  typecheck: uv run ruff check --select=PYI .
+  install: uv sync
+
+artifacts:
+  analyses: artifacts/analyses
+  specs: artifacts/specs
+  frames: artifacts/frames
+  plans: artifacts/plans
+
+standards:
+  backend: docs/standards/backend-patterns.md
+  testing: docs/standards/testing.md
+  code_review: docs/standards/code-review.md
+  architecture: docs/architecture/
+  configuration: docs/configuration.md
+  contributing: docs/contributing.md
