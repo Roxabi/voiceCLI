@@ -1,5 +1,5 @@
 @.claude/stack.yml
-@.claude/dev-core.md
+@~/.claude/shared/global-patterns.md
 
 # VoiceCLI
 
@@ -9,8 +9,8 @@ Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual, 
 
 - **Project:** VoiceCLI
 - **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
-- **Decisions:** → see global patterns (@.claude/dev-core.md)
-- **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
+- **Decisions:** → see global patterns (@~/.claude/shared/global-patterns.md)
+- **Never** use `--force`/`--hard`/`--amend`
 - **Always** use appropriate skill even without slash command
 
 ### Code Review
@@ -133,17 +133,9 @@ src/voicecli/
 - Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
 - Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
 
-## STT / Dictate — Key Patterns
+## STT / Dictate
 
-- **AHK shortcuts** (Windows): `Alt+Shift+Space` = toggle, `Alt+Shift+Tab` = next-mode, `Alt+Shift+Esc` = cancel
-- **AHK script location**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\voicecli-dictate.ahk`
-- **Wrapper scripts**: `~/.local/bin/voicecli-dictate`, `voicecli-next-mode`, `voicecli-cancel`
-- **Auto-paste on WSL2**: daemon writes `%TEMP%\voicecli_paste_trigger` → AHK polls it every 150ms → sends `^v`
-- **Auto-paste config**: `auto_paste = true` in `[stt]` section of `voicecli.toml` (requires daemon restart)
-- **UI sounds**: start.wav played by `stt_daemon._play_ui_sound()` (zero-latency, before overlay spawns); stop.wav played by overlay on `_close()`
-- **No chimes in stt_daemon**: `_chime()` removed — overlay handles all UI sounds
-- **Overlay shortcuts are display-only**: Tab/Esc in overlay toolbar are informational; actual shortcuts go through AHK
-- **CLI commands**: `voicecli dictate cancel` | `voicecli dictate next-mode` | `voicecli dictate status`
+→ [./docs/STT-SETUP.md](./docs/STT-SETUP.md) — AHK shortcuts, WSL2 auto-paste, overlay sounds, CLI commands.
 
 ## Gotchas
 
