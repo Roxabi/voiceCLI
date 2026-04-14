@@ -1,0 +1,43 @@
+---
+title: "Mock engine + stub-hub docker-compose E2E (slice V3)"
+issue: 45
+status: approved
+tier: F-lite
+date: 2026-04-14
+---
+
+## Problem
+
+Slice V3 of ADR-044 closes the verification gap left after slices V1 (TTS satellite, #42→#43) and V2 (STT satellite, #44). The contract itself was frozen on the lyra side in lyra#688 / PR Roxabi/lyra#692 (commit `e7a890a`), and lives at `lyra/docs/architecture/adr/044-lyra-voicecli-nats-contract.mdx`; voiceCLI consumes it via the parent spec [42-nats-serve-spec.mdx](../specs/42-nats-serve-spec.mdx). The `voicecli nats-serve {tts,stt}` modes claim to honor that contract (subjects, queue groups, payload schema, heartbeat cadence), but today nothing in CI exercises it end-to-end — unit tests cover serializers and adapters in isolation, and the only round-trip proof lives on developer GPU hosts. lyra#658 Slice S3 (Machine-1 cutover, tracked in `lyra/artifacts/specs/658-voicecli-nats-decouple-spec.mdx`) cannot land without a green signal that voicecli holds up its half of the contract on every push.
+
+The constraint that makes this hard: GitHub-hosted runners have no GPU, so we cannot run a real engine. We need a way to bring up a NATS server, the satellite, and a stand-in for the lyra hub on `ubuntu-latest`, drive one TTS request and one STT request through, and assert the replies match the ADR-044 schema — all in under a couple of minutes per CI run.
+
+## Who
+
+- **Primary:** voiceCLI maintainers landing follow-up work on `nats-serve` — every push touching `src/voicecli/nats/` or the satellite entry points must go green through this E2E gate before merging to staging.
+- **Secondary:** lyra hub (lyra#658 S3 Machine-1 cutover) — blocked on this landing plus slice V2; needs the contract proof before it can flip producers from socket → NATS in production.
+
+## Constraints
+
+- Runs on `ubuntu-latest` GitHub-hosted runners — no GPU, no CUDA, no real model weights.
+- No long-lived secrets in the repo: the nkey seed is generated fresh per run by the test fixture (Ed25519 via `nkeys`), written at `0600`, and discarded with the container.
+- No dependency on lyra repo access — the stub hub lives entirely inside `tests/e2e/` in this repo.
+- E2E job must run **after** the existing `ci` job (lint/typecheck/unit) so quick gates fail first.
+- `MockEngine` must be **test-only** — not exposed via the public `--engine` CLI flag to regular users (registration gated behind a feature flag / env var).
+- Wall-clock budget: full E2E job ≤ 3 min on a cold runner (compose pull + nats startup + one TTS + one STT round-trip).
+
+## Out of Scope
+
+- Real-hub compose (booting the lyra hub as a Docker image) — tracked in slice V4.
+- GPU-runner E2E for real Qwen / Chatterbox / Whisper inference — documented as manual / nightly-only, not part of this slice.
+- Multi-worker / queue-group fan-out testing — single satellite per mode is enough to prove the contract shape.
+- Negative-path coverage beyond schema conformance (e.g. `payload_too_large`, `capacity_exceeded`) — happy path round-trip is the V3 deliverable.
+
+## Complexity
+
+**Tier: F-lite** — single domain (test infra + CI), 7 files in a known shape, parent spec ([42-nats-serve-spec.mdx](../specs/42-nats-serve-spec.mdx)) already nails the contract so there are no design unknowns. Skipping `/analyze` per F-lite policy.
+
+Signals:
+- Issue label `size:M` (1–3 days, 4–10 files).
+- Self-contained scope: new files under `tests/e2e/` + one engine + one CI job; no refactor of existing code paths.
+- Contract is frozen by ADR-044 — implementation is mechanical, not exploratory.
