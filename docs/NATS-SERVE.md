@@ -1,0 +1,201 @@
+---
+title: NATS Serve — Operator Guide
+description: Running voicecli as a NATS queue-group satellite for distributed TTS/STT.
+---
+
+## Overview
+
+`voicecli nats-serve {tts,stt}` runs voicecli as a long-lived NATS queue-group subscriber
+instead of a local Unix-socket daemon. Requests arrive over NATS subject/reply patterns;
+the satellite processes them and publishes the reply back to the hub. Multiple satellite
+instances can subscribe to the same queue group — NATS load-balances across them automatically.
+
+**When to choose this over `tts-serve` / `stt-serve`:**
+
+| Scenario | Use |
+|---|---|
+| Hub and voicecli on the same host, no network boundary | `tts-serve` / `stt-serve` (Unix socket, lower latency) |
+| Hub and voicecli on different hosts | `nats-serve` |
+| You want to add satellite capacity without changing hub config | `nats-serve` (add more queue-group members) |
+| Production deployment where hub is managed separately from GPU worker | `nats-serve` |
+
+ADR-044 in the lyra repo formalised this decoupling to remove lyra's direct Unix-socket
+dependency on voicecli, enabling each service to be deployed and restarted independently.
+
+**Startup sequence:**
+1. Validate env vars and file permissions (seed file `0600`).
+2. Run the VRAM-sequencing guard (probe local socket daemon).
+3. Connect to NATS and join the queue group (`tts-workers` / `stt-workers`).
+4. Load the TTS/STT engine model into VRAM.
+5. Begin accepting requests and publishing heartbeats.
+
+**Current status:** Slice 1 ships the **TTS path** (`nats-serve tts`) only.
+`nats-serve stt` is planned in a follow-up slice — do not rely on it yet.
+
+---
+
+## Environment variables
+
+Precedence: `CLI flag > env var > voicecli.toml > hardcoded default`
+
+All variables below are read at startup. Changes take effect only after a process restart.
+Set them in the supervisord `environment=` line (comma-separated `KEY="value"` pairs) or
+export them in the shell environment before running `voicecli nats-serve`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://nats.internal:4222` |
+| `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to the NKey seed file. **File permissions must be `0600`** — the satellite refuses to start if the file is world- or group-readable. |
+| `NATS_CA_CERT` | — (optional) | Path to a PEM CA certificate for TLS verification |
+| `VOICECLI_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, etc.) |
+| `LYRA_TTS_ENGINE` | — | Alias for `VOICECLI_ENGINE`. Provided for the lyra#658 S3 cutover so existing supervisord `environment=` lines keep working without renaming. Takes the same values; `VOICECLI_ENGINE` wins if both are set. |
+| `VOICECLI_MAX_CONCURRENT` | TTS: `1` / STT: `2` | Maximum requests processed in parallel. Keep at `1` for single-GPU hosts unless VRAM allows more. |
+| `VOICECLI_HEARTBEAT_INTERVAL` | `5.0` | Seconds between heartbeat publishes. Must stay ≤ 5 per ADR-044 — the hub declares a satellite dead after two missed beats. |
+| `VOICECLI_DRAIN_TIMEOUT` | `30` | Seconds to wait for in-flight requests to finish during graceful shutdown before exiting with code 3. |
+| `VOICECLI_REJECT_WHEN_FULL` | unset | Set to `1` to return an error reply immediately when all slots are busy, rather than queuing the request. |
+| `VOICECLI_ALLOW_COEXIST` | unset | Set to `1` to bypass the VRAM-sequencing guard on startup. See [VRAM sequencing](#vram-sequencing). |
+
+---
+
+## VRAM sequencing
+
+Running a NATS satellite alongside a socket daemon (`tts-serve` / `stt-serve`) on the same
+GPU risks CUDA OOM — both processes compete for the same VRAM budget. See the
+[VRAM contention note in CLAUDE.md](../CLAUDE.md#vram-contention-on-rtx-3080-10-gb) for
+measured numbers (TTS daemon: ~7.4 GB, STT daemon: ~2.2 GB on RTX 3080).
+
+The intended deployment model is **either** the socket daemon **or** the NATS satellite on
+a given host — not both. The guard enforces this automatically.
+
+**On startup the satellite probes the socket:**
+
+- TTS: `~/.local/share/voicecli/daemon.sock`
+- STT: `~/.local/share/voicecli/stt-daemon.sock`
+
+| Socket state | Behaviour |
+|---|---|
+| File absent | Proceed normally |
+| File exists, `connect()` returns `ECONNREFUSED` (stale) | Log at INFO, ignore, proceed |
+| File exists, daemon answers the probe (live) | **Refuse to start — exit 78** |
+
+**To resolve exit 78:** stop the socket daemon before starting the NATS satellite.
+
+```bash
+# From ~/projects/lyra (or wherever your supervisord Makefile lives)
+make tts stop                            # stop voicecli_tts (socket daemon)
+supervisorctl start voicecli_nats_tts   # start NATS satellite
+```
+
+On local-dev machines or large-VRAM boxes (e.g. RTX 5070 Ti with 16 GB) where coexistence
+is safe, bypass the guard with the flag or env var:
+
+```bash
+voicecli nats-serve tts --allow-coexist
+# or via env var (suitable for supervisord environment= lines)
+VOICECLI_ALLOW_COEXIST=1 voicecli nats-serve tts
+```
+
+Do not set `VOICECLI_ALLOW_COEXIST=1` on the RTX 3080 (10 GB) production host —
+it will allow OOM conditions during concurrent synthesis. See the
+[VRAM contention gotcha](../CLAUDE.md#vram-contention-on-rtx-3080-10-gb) for details.
+
+---
+
+## Exit codes
+
+Shutdown is triggered by `SIGTERM` or `SIGINT`. On receiving a signal the satellite stops
+accepting new requests, waits up to `VOICECLI_DRAIN_TIMEOUT` seconds for in-flight work to
+complete, then exits.
+
+| Code | Meaning | Operator action |
+|---|---|---|
+| `0` | Clean shutdown; all in-flight requests drained within `--drain-timeout` | None — safe to restart |
+| `3` | Drain timeout exceeded; at least one in-flight request did not finish within the window | Restart is safe; investigate slow synthesis if this recurs frequently — consider raising `VOICECLI_DRAIN_TIMEOUT` |
+| `78` | VRAM-sequencing guard tripped — a live socket daemon was detected on startup | Stop the socket daemon (`voicecli tts-serve` / `voicecli stt-serve`) before restarting, OR pass `--allow-coexist` |
+
+Any other non-zero exit code is an unhandled error — check `stderr_logfile` for the Python
+traceback.
+
+supervisord's default `exitcodes` is `0`, which means it treats exit 3 and exit 78 as
+unexpected and will attempt a restart. Always override with `exitcodes=0,78` as shown in
+[Required supervisord stanza](#required-supervisord-stanza).
+
+---
+
+## Required supervisord stanza
+
+`autorestart=unexpected` combined with `exitcodes=0,78` is **critical**. Without it,
+supervisord treats exit 78 as unexpected and loop-restarts the process — causing a tight
+restart loop on misconfigured hosts. Always include both exit codes together.
+
+Copy this block into your supervisord `conf.d/` directory and fill in host-specific values:
+
+```ini
+[program:voicecli_nats_tts]
+command=voicecli nats-serve tts
+environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
+autorestart=unexpected
+exitcodes=0,78
+startsecs=15
+user=lyra
+stdout_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_tts.log
+stderr_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_tts.err
+```
+
+Key fields:
+
+| Field | Guidance |
+|---|---|
+| `autorestart=unexpected` | Restart on non-zero exits not listed in `exitcodes`; do NOT use `autorestart=true` |
+| `exitcodes=0,78` | Both must be listed — exit 0 (clean) and exit 78 (guard tripped) are both intentional |
+| `startsecs=15` | GPU model load time; lower on fast NVMe + large VRAM, raise if startup OOM observed |
+| `user=lyra` | Match the user that owns the NKey seed file and log directory |
+
+**For the STT satellite** (once Slice 2 ships): mirror the block substituting `nats-serve stt`,
+queue group `stt-workers`, and the STT-specific seed path. Log file naming convention:
+`voicecli_nats_stt.{log,err}`.
+
+---
+
+## Troubleshooting
+
+### Quick reference
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon via supervisorctl, then restart; or pass `--allow-coexist` if coexistence is intentional |
+| `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 /path/to/voicecli-tts.seed` |
+| Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts-workers` (TTS) and `stt-workers` (STT) |
+| Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
+| Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
+| Satellite starts but produces no output; logs show CUDA OOM | VRAM exhausted by coexisting processes | Stop other GPU-heavy daemons, reduce `VOICECLI_MAX_CONCURRENT`, or move to a host with more VRAM |
+| supervisord keeps restarting the process in a tight loop | `autorestart=true` or `exitcodes` missing 78 | Set `autorestart=unexpected` and add `78` to `exitcodes` — see [Required supervisord stanza](#required-supervisord-stanza) |
+| TLS handshake errors connecting to NATS | Missing or wrong CA certificate | Set `NATS_CA_CERT` to the PEM file for your internal CA |
+
+### Checking liveness
+
+The satellite logs its startup sequence to stdout. A healthy start looks like:
+
+```
+INFO  vram-guard: no live socket daemon detected — proceeding
+INFO  nats: connected to nats://nats.internal:4222
+INFO  engine: model loaded in 12.3s (qwen-fast)
+INFO  nats-serve: joined queue group tts-workers — ready
+```
+
+If the process exits before the "ready" line, check `stderr_logfile` for the Python
+traceback. The most common causes are: missing env vars, seed file permission error, NATS
+unreachable, and the VRAM guard (exit 78).
+
+### Confirming requests reach the satellite
+
+Use the NATS CLI to publish a test request directly to the TTS subject and observe whether
+the satellite picks it up:
+
+```bash
+nats req tts.synthesize '{"text": "hello"}' --server nats://nats.internal:4222
+```
+
+If no reply arrives within the timeout, the satellite is either not running, not connected
+to the correct server, or stuck processing another request and `VOICECLI_REJECT_WHEN_FULL`
+is not set.
