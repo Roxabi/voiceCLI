@@ -51,6 +51,7 @@ class MockEngine(TTSEngine):
     name = "mock"
 
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(_SILENT_WAV)
         return output_path
 
@@ -62,6 +63,7 @@ class MockEngine(TTSEngine):
         ref_text: str | None = None,
         **kwargs,
     ) -> Path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(_SILENT_WAV)
         return output_path
 

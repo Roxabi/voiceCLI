@@ -7,9 +7,16 @@ written to FAIL against the current unmodified codebase (RED phase).
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
+import voicecli.transcribe  # noqa: F401 — registers submodule in sys.modules
 from voicecli.engine import available_engines, get_engine
+
+# voicecli/__init__.py overwrites the `voicecli.transcribe` attribute with the
+# `transcribe` function, so resolve the actual module via sys.modules.
+_transcribe_mod = sys.modules["voicecli.transcribe"]
 
 
 def test_env_unset_from_start(monkeypatch):
@@ -32,13 +39,15 @@ def test_env_set_then_unset(monkeypatch):
 
 
 def test_stt_fallthrough_when_unset(monkeypatch, tmp_path):
-    """With the gate off, passing model='mock' to transcribe() must raise."""
+    """With the gate off, passing model='mock' to transcribe() must raise a
+    real model-load / file error — proving the mock branch was NOT silently
+    taken. Stub _try_daemon to None so the path is forced through _load_model.
+    """
     monkeypatch.delenv("VOICECLI_ENABLE_MOCK_ENGINE", raising=False)
+    monkeypatch.setattr(_transcribe_mod, "_try_daemon", lambda *a, **kw: None)
 
     audio_file = tmp_path / "silence.wav"
     audio_file.write_bytes(b"")
 
-    import voicecli.transcribe
-
-    with pytest.raises(Exception):
-        voicecli.transcribe.transcribe(audio_file, model="mock")
+    with pytest.raises((ValueError, RuntimeError, OSError)):
+        _transcribe_mod.transcribe(audio_file, model="mock")
