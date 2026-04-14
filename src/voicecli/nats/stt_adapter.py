@@ -25,6 +25,10 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "large-v3-turbo"
 SUBJECT = "lyra.voice.stt.request"
+
+# 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
+# Safety cap to prevent memory blowup from crafted or misrouted large payloads.
+MAX_AUDIO_B64_LEN = 25 * 1024 * 1024  # 25 MB
 HEARTBEAT_SUBJECT = "lyra.voice.stt.heartbeat"
 
 _MIME_TO_EXT: dict[str, str] = {
@@ -110,6 +114,7 @@ class SttNatsAdapter(NatsAdapterBase):
         self.reject_when_full = reject_when_full
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
+        self._model_warm: bool = False
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         request_id = payload.get("request_id", "")
@@ -175,6 +180,19 @@ class SttNatsAdapter(NatsAdapterBase):
         ext = _ext_from_mime(payload.get("mime_type"))
         out_path = scoped_path(request_id, ext)
         try:
+            # Fix #2: cap payload size before decode to prevent memory blowup
+            if len(audio_b64) > MAX_AUDIO_B64_LEN:
+                log.warning(
+                    "payload_too_large",
+                    extra={"request_id": request_id, "size": len(audio_b64)},
+                )
+                await self.reply(
+                    msg,
+                    build_reply(ok=False, request_id=request_id, error="payload_too_large"),
+                )
+                cleanup(out_path)
+                return
+
             # Decode audio bytes first — isolate bad-base64 from transcription failures
             try:
                 audio_bytes = base64.b64decode(audio_b64, validate=True)
@@ -184,11 +202,29 @@ class SttNatsAdapter(NatsAdapterBase):
                     msg,
                     build_reply(ok=False, request_id=request_id, error="audio_decode_failed"),
                 )
-                cleanup(out_path)
+                # Fix #4: remove redundant cleanup(out_path) here; finally block handles it
                 return
 
             out_path.write_bytes(audio_bytes)
-            self.model_loaded = self.default_model
+
+            # Fix #1: warm up the model once; distinguish load failures from inference failures
+            if not self._model_warm:
+                try:
+                    from voicecli.transcribe import _load_model
+
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(self._executor, _load_model, self.default_model)
+                    self._model_warm = True
+                    # Fix #3: set model_loaded only after the model is actually warm
+                    self.model_loaded = self.default_model
+                except Exception:
+                    log.exception("model_load_failed", extra={"request_id": request_id})
+                    await self.reply(
+                        msg,
+                        build_reply(ok=False, request_id=request_id, error="model_load_failed"),
+                    )
+                    return
+
             from voicecli import api
 
             fn = functools.partial(

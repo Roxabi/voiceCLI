@@ -111,7 +111,12 @@ def _make_adapter(**kwargs) -> "SttNatsAdapter":
         "max_concurrent": 2,
     }
     defaults.update(kwargs)
-    return SttNatsAdapter(**defaults)
+    adapter = SttNatsAdapter(**defaults)
+    # Short-circuit the model warm-up step so tests don't pull faster_whisper/torch
+    # into sys.modules. Tests that need to exercise warm-up failure patch
+    # `voicecli.transcribe._load_model` to raise.
+    adapter._model_warm = True
+    return adapter
 
 
 def _patch_transcribe(mock_result: "TranscriptionResult"):
@@ -416,7 +421,7 @@ class TestSttNatsAdapter:
 
         # Assert call 2 did NOT leak any override keys
         kwargs2 = mock_transcribe.call_args_list[1].kwargs
-        assert "language" not in kwargs2 or kwargs2["language"] is None
+        assert "language" not in kwargs2
         assert "language_detection_threshold" not in kwargs2
         assert "language_detection_segments" not in kwargs2
         assert "language_fallback" not in kwargs2
@@ -576,3 +581,123 @@ class TestSttNatsAdapter:
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "capacity_exceeded"
+
+    # ------------------------------------------------------------------
+    # Case 17: temp file cleaned up on successful transcription
+    # ------------------------------------------------------------------
+    def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange
+        request_id = "req-clean-ok"
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=request_id)
+        temp_file = tmp_path / f"{request_id}.wav"
+
+        with _patch_transcribe(_fake_result()) as _:
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        # Assert — temp file removed after successful reply
+        assert not temp_file.exists()
+
+    # ------------------------------------------------------------------
+    # Case 18: temp file cleaned up even when api.transcribe raises
+    # ------------------------------------------------------------------
+    def test_temp_file_cleaned_up_on_failure(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange
+        request_id = "req-clean-fail"
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=request_id)
+        temp_file = tmp_path / f"{request_id}.wav"
+
+        import voicecli.nats.stt_adapter as _mod
+        import voicecli.api as _api  # noqa: F401
+
+        _mod.api = _api  # type: ignore[attr-defined]
+
+        with patch(
+            "voicecli.nats.stt_adapter.api.transcribe",
+            side_effect=RuntimeError("kaboom"),
+        ):
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        # Assert — temp file removed even when transcription fails
+        assert not temp_file.exists()
+
+    # ------------------------------------------------------------------
+    # Case 19: _resolve_model — env var VOICECLI_MODEL used when CLI is None
+    # ------------------------------------------------------------------
+    def test_resolve_model_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange
+        monkeypatch.setenv("VOICECLI_MODEL", "small")
+
+        # Act
+        resolved = _resolve_model(None)
+
+        # Assert
+        assert resolved == "small"
+
+    # ------------------------------------------------------------------
+    # Case 20: _resolve_model — DEFAULT_MODEL used when env absent and config empty
+    # ------------------------------------------------------------------
+    def test_resolve_model_default_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange
+        monkeypatch.delenv("VOICECLI_MODEL", raising=False)
+
+        with patch("voicecli.config.load_config", return_value={}):
+            # Act
+            resolved = _resolve_model(None)
+
+        # Assert
+        assert resolved == DEFAULT_MODEL
+
+    # ------------------------------------------------------------------
+    # Case 21: _resolve_model — CLI value beats env var (CLI > env)
+    # ------------------------------------------------------------------
+    def test_resolve_model_cli_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange — env var set, but CLI value should win
+        monkeypatch.setenv("VOICECLI_MODEL", "small")
+
+        # Act
+        resolved = _resolve_model("tiny")
+
+        # Assert
+        assert resolved == "tiny"
+
+    # ------------------------------------------------------------------
+    # Case 22: request_id length boundary — 127/128 accepted, 129 rejected
+    # ------------------------------------------------------------------
+    @pytest.mark.parametrize(
+        "rid_len, expected_ok",
+        [(127, True), (128, True), (129, False)],
+    )
+    def test_request_id_length_boundary(
+        self, tmp_path: Path, rid_len: int, expected_ok: bool
+    ) -> None:
+        _require_imports()
+        # Arrange
+        rid = "a" * rid_len
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=rid)
+
+        with _patch_transcribe(_fake_result()) as mock_transcribe:
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        # Assert
+        reply = msg.last_reply()
+        if expected_ok:
+            assert reply.get("error") is None
+            assert reply["ok"] is True
+        else:
+            assert reply["ok"] is False
+            assert reply["error"] == "malformed_request"
+            mock_transcribe.assert_not_called()
