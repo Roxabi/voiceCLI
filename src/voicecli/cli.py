@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import typer
 
@@ -1306,6 +1306,101 @@ def stt_serve(
         default_mode=resolved_default_mode,
         auto_paste=bool(stt_cfg.get("auto_paste", False)),
     ).serve()
+
+
+def _probe_socket_daemon(path: Path) -> Literal["live", "stale", "absent"]:
+    """Probe a Unix-socket daemon. Returns 'live' if a listener accepts,
+    'stale' if the file exists but connect() refuses, 'absent' if no file."""
+    import socket as _socket
+
+    if not path.exists():
+        return "absent"
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.settimeout(0.5)
+    try:
+        sock.connect(str(path))
+        return "live"
+    except (ConnectionRefusedError, OSError):
+        return "stale"
+    finally:
+        sock.close()
+
+
+# ── NATS serve sub-app ────────────────────────────────────────────────────────
+
+nats_app = typer.Typer(help="NATS subscriber satellites for hub-driven voice.")
+app.add_typer(nats_app, name="nats-serve")
+
+
+@nats_app.command("tts")
+def nats_serve_tts(
+    engine: Annotated[Optional[str], typer.Option("--engine", "-e")] = None,
+    max_concurrent: Annotated[
+        int, typer.Option("--max-concurrent", envvar="VOICECLI_MAX_CONCURRENT")
+    ] = 1,
+    reject_when_full: Annotated[
+        bool, typer.Option("--reject-when-full", envvar="VOICECLI_REJECT_WHEN_FULL")
+    ] = False,
+    heartbeat_interval: Annotated[
+        float, typer.Option("--heartbeat-interval", envvar="VOICECLI_HEARTBEAT_INTERVAL")
+    ] = 5.0,
+    drain_timeout: Annotated[
+        float, typer.Option("--drain-timeout", envvar="VOICECLI_DRAIN_TIMEOUT")
+    ] = 30.0,
+    allow_coexist: Annotated[
+        bool, typer.Option("--allow-coexist", envvar="VOICECLI_ALLOW_COEXIST")
+    ] = False,
+) -> None:
+    """Subscribe to lyra.voice.tts.request and reply with synthesized audio."""
+    import asyncio
+    import logging
+    import os
+
+    from voicecli.nats.base import DrainTimeoutError
+    from voicecli.nats.tts_adapter import TtsNatsAdapter, _resolve_engine
+
+    logging.basicConfig(level=logging.INFO)
+    log = logging.getLogger("voicecli.nats-serve.tts")
+
+    resolved_engine = _resolve_engine(engine)
+
+    sock_path = Path("~/.local/share/voicecli/daemon.sock").expanduser()
+    state = _probe_socket_daemon(sock_path)
+    if state == "live":
+        if allow_coexist:
+            log.warning("coexisting with live socket daemon at %s", sock_path)
+        else:
+            log.error(
+                "live socket daemon at %s — refusing to start (use --allow-coexist or stop the daemon)",
+                sock_path,
+            )
+            raise typer.Exit(78)
+    elif state == "stale":
+        log.info("stale socket file at %s ignored", sock_path)
+
+    nats_url = os.environ.get("NATS_URL")
+    if not nats_url:
+        log.error("NATS_URL env var is required")
+        raise typer.Exit(2)
+
+    nkey_seed_path: Path | None = None
+    nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
+    if nkey_seed_env:
+        nkey_seed_path = Path(nkey_seed_env).expanduser()
+
+    adapter = TtsNatsAdapter(
+        default_engine=resolved_engine,
+        max_concurrent=max_concurrent,
+        reject_when_full=reject_when_full,
+        heartbeat_interval=heartbeat_interval,
+        drain_timeout=drain_timeout,
+    )
+
+    try:
+        asyncio.run(adapter.run(nats_url=nats_url, nkey_seed_path=nkey_seed_path))
+    except DrainTimeoutError:
+        log.error("drain timeout exceeded; some requests may have been dropped")
+        raise typer.Exit(3)
 
 
 @app.command()
