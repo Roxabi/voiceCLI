@@ -29,8 +29,7 @@ dependency on voicecli, enabling each service to be deployed and restarted indep
 4. Load the TTS/STT engine model into VRAM.
 5. Begin accepting requests and publishing heartbeats.
 
-**Current status:** Slice 1 ships the **TTS path** (`nats-serve tts`) only.
-`nats-serve stt` is planned in a follow-up slice — do not rely on it yet.
+Both subcommands are now available: `nats-serve tts` (Slice 1) and `nats-serve stt` (Slice 2).
 
 ---
 
@@ -155,9 +154,7 @@ Key fields:
 | `startsecs=15` | GPU model load time; lower on fast NVMe + large VRAM, raise if startup OOM observed |
 | `user=lyra` | Match the user that owns the NKey seed file and log directory |
 
-**For the STT satellite** (once Slice 2 ships): mirror the block substituting `nats-serve stt`,
-queue group `stt-workers`, and the STT-specific seed path. Log file naming convention:
-`voicecli_nats_stt.{log,err}`.
+For the STT satellite stanza, see [STT — Required supervisord stanza](#stt--required-supervisord-stanza) below.
 
 ---
 
@@ -203,3 +200,144 @@ nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":
 If no reply arrives within the timeout, the satellite is either not running, not connected
 to the correct server, or stuck processing another request and `VOICECLI_REJECT_WHEN_FULL`
 is not set.
+
+---
+
+## STT satellite
+
+### CLI invocation
+
+```bash
+voicecli nats-serve stt [--model <model>]
+```
+
+Default model: `large-v3-turbo`. Override via `--model`, `VOICECLI_MODEL`, or `voicecli.toml [stt].model`.
+
+Precedence: `CLI flag > VOICECLI_MODEL env > voicecli.toml [stt].model > large-v3-turbo`
+
+### STT — environment variables
+
+All variables in the [Environment variables](#environment-variables) section apply unchanged
+(`NATS_URL`, `NATS_NKEY_SEED_PATH`, `NATS_CA_CERT`, `VOICECLI_MAX_CONCURRENT`,
+`VOICECLI_REJECT_WHEN_FULL`, `VOICECLI_HEARTBEAT_INTERVAL`, `VOICECLI_DRAIN_TIMEOUT`,
+`VOICECLI_ALLOW_COEXIST`). The one STT-specific variable is:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VOICECLI_MODEL` | `large-v3-turbo` | STT model name passed to faster-whisper. Replaces `VOICECLI_ENGINE` (which is TTS-only). |
+
+### STT — defaults that differ from TTS
+
+| Parameter | TTS | STT | Note |
+|---|---|---|---|
+| `--engine` / `--model` | `qwen-fast` (via `VOICECLI_ENGINE`) | `large-v3-turbo` (via `VOICECLI_MODEL`) | Different flag name; STT has no engine registry |
+| `--max-concurrent` | `1` | `2` | Transcription is faster than synthesis and uses less VRAM per slot; `2` is safe on standalone-STT hosts |
+
+All other parameters (`--heartbeat-interval`, `--drain-timeout`, `--reject-when-full`, `--allow-coexist`) share the same defaults as TTS.
+
+### STT — NATS topology
+
+| Item | Value |
+|---|---|
+| Request subject | `lyra.voice.stt.request` |
+| Heartbeat subject | `lyra.voice.stt.heartbeat` |
+| Queue group | `stt-workers` |
+| Service name (heartbeat payload) | `stt_workers` |
+
+### STT — per-request language overrides
+
+The request payload may include any of the following optional fields to override language
+detection for that single request. They do NOT mutate satellite state — each request is
+independent.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `language` | `string` | Force a specific language (e.g. `"en"`, `"fr"`). Skips detection entirely. |
+| `language_detection_threshold` | `float` | Minimum confidence to accept detected language (0–1). |
+| `language_detection_segments` | `int` | Number of audio segments used for detection. |
+| `language_fallback` | `string` | Language code to use when detection confidence is below threshold. |
+
+### STT — reply schema
+
+**Success:**
+
+```json
+{
+  "ok": true,
+  "contract_version": "1",
+  "request_id": "<id>",
+  "text": "<transcribed text>",
+  "language": "<detected or forced language code>",
+  "duration_seconds": 4.82
+}
+```
+
+**Failure:**
+
+```json
+{
+  "ok": false,
+  "contract_version": "1",
+  "request_id": "<id>",
+  "error": "<error_code>"
+}
+```
+
+Error codes:
+
+| Code | Cause |
+|---|---|
+| `malformed_request` | Missing or invalid `request_id`, missing `audio_b64`, or `request_id` fails format validation |
+| `audio_decode_failed` | `audio_b64` is not valid base64 |
+| `transcription_failed` | faster-whisper raised an exception during inference |
+| `model_load_failed` | Model could not be loaded into VRAM at startup |
+| `capacity_exceeded` | All semaphore slots busy and `VOICECLI_REJECT_WHEN_FULL=1` |
+| `payload_too_large` | Reply payload exceeds the NATS server `max_payload` limit |
+
+### STT — VRAM-sequencing guard
+
+Probe path: `~/.local/share/voicecli/stt-daemon.sock`
+
+Behaviour is identical to the TTS guard — see [VRAM sequencing](#vram-sequencing). A live
+STT socket daemon causes exit 78 unless `--allow-coexist` / `VOICECLI_ALLOW_COEXIST=1` is set.
+
+```bash
+make stt stop                            # stop voicecli_stt (socket daemon)
+supervisorctl start voicecli_nats_stt   # start NATS satellite
+```
+
+> **Co-located GPU warning — RTX 3080 (10 GB) and similar hosts**
+>
+> On hosts where TTS and STT satellites share a single GPU (e.g. `roxabituwer`:
+> TTS ~7.4 GB + STT ~2.2 GB = ~9.6 GB steady-state), set `VOICECLI_MAX_CONCURRENT=1`
+> on the STT satellite:
+>
+> ```ini
+> environment=...,VOICECLI_MAX_CONCURRENT="1"
+> ```
+>
+> or pass `--max-concurrent 1` on the command line. A second concurrent STT decode would
+> overflow the remaining VRAM headroom and OOM. The default `2` is intended for hosts
+> running the STT satellite standalone.
+
+### STT — Required supervisord stanza
+
+Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
+[Required supervisord stanza](#required-supervisord-stanza) for rationale.
+
+```ini
+[program:voicecli_nats_stt]
+command=voicecli nats-serve stt
+environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
+autorestart=unexpected
+exitcodes=0,3,78
+stopsignal=TERM
+stopwaitsecs=35
+startsecs=10
+user=lyra
+stdout_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_stt.log
+stderr_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_stt.err
+```
+
+`VOICECLI_MAX_CONCURRENT="1"` is set here because this example targets a co-located GPU
+host (TTS + STT on the same GPU). Remove or raise to `2` on standalone-STT hosts.

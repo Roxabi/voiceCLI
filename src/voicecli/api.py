@@ -959,6 +959,10 @@ def transcribe(
     model: str = "large-v3-turbo",
     language: str | None = None,
     output: str | Path | None = None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+    language_fallback: str | None = None,
+    _skip_daemon: bool = False,
 ):
     """Transcribe an audio file to text.
 
@@ -967,6 +971,10 @@ def transcribe(
         model: Whisper model name.
         language: Force language code.
         output: Save transcription text to file.
+        language_detection_threshold: Confidence threshold below which fallback language is used.
+        language_detection_segments: Number of segments to sample for language detection.
+        language_fallback: Language code to use when detection confidence is below threshold.
+        _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
 
     Returns:
         TranscriptionResult with .text, .language, .segments.
@@ -982,7 +990,15 @@ def transcribe(
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    result: TranscriptionResult = _transcribe(audio_path, model=model, language=language)
+    result: TranscriptionResult = _transcribe(
+        audio_path,
+        model=model,
+        language=language,
+        language_detection_threshold=language_detection_threshold,
+        language_detection_segments=language_detection_segments,
+        language_fallback=language_fallback,
+        _skip_daemon=_skip_daemon,
+    )
 
     if output is not None:
         out_path = Path(output)

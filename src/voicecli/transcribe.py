@@ -121,19 +121,21 @@ def transcribe(
     language_fallback: str | None = None,
     task: str = "transcribe",
     initial_prompt: str | None = None,
+    _skip_daemon: bool = False,
 ) -> TranscriptionResult:
     # Try daemon first — reuses warm model, avoids loading locally
-    daemon_result = _try_daemon(
-        audio_path,
-        language,
-        language_detection_threshold,
-        language_detection_segments,
-        language_fallback,
-        task,
-        initial_prompt,
-    )
-    if daemon_result is not None:
-        return daemon_result
+    if not _skip_daemon:
+        daemon_result = _try_daemon(
+            audio_path,
+            language,
+            language_detection_threshold,
+            language_detection_segments,
+            language_fallback,
+            task,
+            initial_prompt,
+        )
+        if daemon_result is not None:
+            return daemon_result
 
     whisper = _load_model(model)
 
