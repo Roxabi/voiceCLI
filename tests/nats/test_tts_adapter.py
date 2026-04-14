@@ -24,6 +24,7 @@ try:
     from voicecli.nats.reply import build_reply  # noqa: F401
     from voicecli.nats.tempdir import scoped_path  # noqa: F401
     from voicecli.nats.tts_adapter import TtsNatsAdapter, _resolve_engine
+
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
     _IMPORT_ERROR = _e
@@ -122,7 +123,9 @@ class TestTtsNatsAdapter:
         def _patched_scoped_path(request_id: str, ext: str) -> Path:
             return tmp_path / f"{request_id}.{ext}"
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             with patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -143,7 +146,9 @@ class TestTtsNatsAdapter:
         msg = MockMsg()
         payload = _valid_payload(engine="ghost-engine")
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             asyncio.run(adapter.handle(msg, payload))
 
         # Assert
@@ -183,7 +188,9 @@ class TestTtsNatsAdapter:
         def _patched_scoped_path(rid: str, ext: str) -> Path:
             return tmp_path / f"{rid}.{ext}"
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             with patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -199,7 +206,9 @@ class TestTtsNatsAdapter:
         msg = MockMsg()
         payload = {"text": "Hello", "engine": "mock"}
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             asyncio.run(adapter.handle(msg, payload))
 
         # Assert
@@ -238,7 +247,9 @@ class TestTtsNatsAdapter:
             finally:
                 adapter._sem.release()  # type: ignore[attr-defined]
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             asyncio.run(_run())
 
         # Assert
@@ -258,7 +269,9 @@ class TestTtsNatsAdapter:
         def _patched_scoped_path(rid: str, ext: str) -> Path:
             return tmp_path / f"{rid}.{ext}"
 
-        with patch("voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}):
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
             with patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -318,7 +331,9 @@ class TestTtsNatsAdapter:
                 "voicecli.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path, sleep_s=1.5)},
             ):
-                with patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path):
+                with patch(
+                    "voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))
                     hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
 
@@ -343,7 +358,9 @@ class TestTtsNatsAdapter:
         # Assert
         assert resolved == "qwen-fast"
 
-    def test_lyra_tts_engine_alias_works(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_lyra_tts_engine_alias_works(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _require_imports()
         # Arrange — LYRA_TTS_ENGINE set, VOICECLI_ENGINE absent
         monkeypatch.setenv("LYRA_TTS_ENGINE", "qwen")

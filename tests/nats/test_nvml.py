@@ -14,9 +14,7 @@ from voicecli.nats.nvml import read_vram
 
 
 class TestReadVram:
-    def test_read_vram_returns_nulls_when_pynvml_missing(
-        self, monkeypatch: Any
-    ) -> None:
+    def test_read_vram_returns_nulls_when_pynvml_missing(self, monkeypatch: Any) -> None:
         """read_vram returns (None, None) when _import_pynvml returns None.
 
         Simulates the pynvml package being absent from the environment.
@@ -35,6 +33,7 @@ class TestReadVram:
 
         Simulates a driver not found or incompatible NVML scenario.
         """
+
         # Arrange
         def _raise_on_init() -> None:
             raise RuntimeError("NVML driver not loaded")
