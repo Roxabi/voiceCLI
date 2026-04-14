@@ -1,0 +1,170 @@
+---
+title: "voicecli nats-serve {stt,tts} — NATS subscriber satellite"
+description: "Analysis for issue #42 — new CLI mode subscribing to lyra.voice.{stt,tts}.request per ADR-044"
+issue: 42
+tier: F-full
+status: approved
+date: 2026-04-14
+---
+
+## Source
+
+> New CLI entry point `voicecli nats-serve {stt,tts}` — subscribes to NATS request subjects and replies with transcription / synthesized audio. Sibling of Roxabi/lyra#658 (voicecli-lyra NATS-only decoupling). Implements the voicecli side of ADR-044 (frozen in Roxabi/lyra#688).
+>
+> — GitHub issue #42
+
+## Problem
+
+Today voiceCLI exposes its engines to lyra via two per-host Unix-socket daemons (`voicecli tts-serve` / `voicecli stt-serve`), coupling deployment to a single machine and to a bespoke newline-JSON protocol. ADR-044 (frozen in lyra#688) replaces that with a NATS-only bus using queue-group request/reply on `lyra.voice.{stt,tts}.request` plus liveness on `lyra.voice.{stt,tts}.heartbeat`. Until voiceCLI gains a NATS-speaking serve mode, Machine-1 cutover in lyra#689 cannot start.
+
+## Outcome
+
+A voiceCLI operator can run `voicecli nats-serve tts` or `voicecli nats-serve stt` on any GPU host; the process authenticates to NATS with an nkey seed, joins the correct queue group, answers requests with audio bytes (or text) per the ADR-044 schema, and advertises itself via heartbeats. Existing socket daemons keep running unchanged. `uv pip install voicecli --all-extras` still succeeds. A docker-compose E2E brings up NATS + a lyra hub image (pinned — see Q-OPS-1) + `nats-serve` and a voice round-trip passes.
+
+## Appetite
+
+1-week cycle (**F-full** — multi-domain with new architectural surface, requires frame→analyze→spec→plan→implement→ship). Tight but defensible; the sole delivery risk is the docker-compose E2E harness (see Q-OPS-1, Q-OPS-4). If standing up the lyra hub image in CI consumes more than ~1.5 days the adapter work gets squeezed — escalate early.
+
+## Codebase findings
+
+### voiceCLI — reusable vs divergent
+
+| Area | File | Reusable? | Note |
+|---|---|---|---|
+| Unix TTS daemon | `src/voicecli/daemon.py` | Partially | `_sanitize_request()` validation, engine loading, VRAM GC reusable; threaded socket loop is not (NATS is async). |
+| Unix STT daemon | `src/voicecli/stt_daemon.py` | Partially | Engine lifecycle + `_frames_to_wav()` / `_wav_duration_s()` helpers worth lifting. |
+| CLI registration | `src/voicecli/cli.py` (`serve` @1240, `stt-serve` @1265) | Yes | Add a Typer subcommand group `nats-serve` with `stt` / `tts` children. |
+| Public API | `src/voicecli/api.py` (`generate` @637, `clone` @794, `transcribe` @956) | Yes, with gap | All three write to disk and return `TTSResult.wav_path` / `TranscriptionResult.text` — satellite reads the file then base64-encodes. |
+| Extras | `pyproject.toml` `[project.optional-dependencies]` | Yes | Current extras: `voxtral`, `hotkey`, `overlay`. **No `all` extra exists**; `uv pip install --all-extras` is a uv flag that auto-includes every declared extra, so adding `nats = [...]` is sufficient. |
+| CI | `.github/workflows/{ci,auto-merge,pr-title}.yml` | Partial | No Docker / NATS / GPU job today. See Q-OPS-4. |
+| Deploy config | n/a | — | No `deploy/` in this repo; supervisord lives in `~/projects/lyra-stack`. Docs-only update here. |
+
+### ADR-044 schema (verbatim, from lyra#688)
+
+**Subjects:** `lyra.voice.stt.request`, `lyra.voice.tts.request`, `lyra.voice.{stt,tts}.heartbeat`
+**Queue groups (pinned to `lyra/src/lyra/nats/queue_groups.py`):** `STT_WORKERS = "stt-workers"`, `TTS_WORKERS = "tts-workers"`. Hyphen form is canonical; spec copies these constants verbatim.
+**`contract_version: "1"` on every message.**
+
+STT request: `{contract_version, request_id, audio_b64, mime_type, model, language_detection_threshold?, language_detection_segments?, language_fallback?}`
+STT reply ok: `{contract_version, request_id, ok: true, text, language, duration_seconds}`
+STT reply err: `{contract_version, request_id, ok: false, error}`
+TTS request: `{contract_version, request_id, text, language?, voice?, fallback_language?, chunked, engine?, accent?, personality?, speed?, emotion?, exaggeration?, cfg_weight?, segment_gap?, crossfade?, chunk_size?}`
+TTS reply ok: `{contract_version, request_id, ok: true, audio_b64, mime_type, duration_ms?, waveform_b64?}`
+TTS reply err: `{contract_version, request_id, ok: false, error}`
+Heartbeat: `{contract_version, worker_id, service, host, subject, queue_group, ts, model_loaded?, vram_used_mb?, vram_total_mb?, active_requests?}` — cadence ≤ 5 s.
+
+### Lyra plumbing to mirror
+
+| Helper | Path | Role |
+|---|---|---|
+| `NatsAdapterBase` | `lyra/src/lyra/nats/adapter_base.py` | `run()` connect/subscribe + heartbeat loop; `handle()` override point. |
+| `nats_connect` + `_read_nkey_seed` + `_build_tls_context` | `lyra/src/lyra/nats/connect.py` | `NATS_URL`, `NATS_NKEY_SEED_PATH`, `NATS_CA_CERT` — same env-var contract. |
+| `STT_WORKERS` / `TTS_WORKERS` | `lyra/src/lyra/nats/queue_groups.py` | Queue-group constants. |
+| `_validate.py`, `_version_check.py`, `readiness.py` | `lyra/src/lyra/nats/` | Internal deps of `adapter_base` — must be ported or explicitly dropped (see Q-RT-5). |
+| `bootstrap/stt_adapter_standalone.py` | `lyra/src/lyra/` | Concrete satellite template: subclass, parse base64, call service, base64 back, reply. |
+
+## Shapes
+
+All three shapes share the goal: voiceCLI process that binds to `lyra.voice.{stt,tts}.request`, replies per ADR-044, emits heartbeats. They differ in where the adapter code lives and whether it wraps the existing daemon.
+
+### Shape 1 — Port lyra's NATS mini-framework into `voicecli/nats/` (recommended)
+
+Copy lyra's adapter base + its internal deps (`_validate`, `_version_check`, `readiness`, `connect`, `queue_groups`) into a new `src/voicecli/nats/` package. Build two concrete adapters (`TtsNatsAdapter`, `SttNatsAdapter`) that call `voicecli.api.generate() / clone() / transcribe()`, read the output file, base64-encode, reply. Heartbeat loop from the base. New Typer subcommand group `nats-serve {tts,stt}` in `cli.py`. `nats-py` + `nkeys` land in a new `[project.optional-dependencies] nats` extra.
+
+**Trade-offs:**
+- Pro: no cross-project runtime dep — avoids a lyra↔voicecli cycle (lyra already depends on voicecli via `uv.sources`).
+- Pro: voiceCLI controls its own async surface, error codes, and release cadence.
+- Con: **larger port surface than it first appears** — `adapter_base.py` alone is ~150 LOC but its three internal deps (`_validate`, `_version_check`, `readiness`) add ~150–200 LOC of non-trivial logic (rate-limited drop counter, schema-version check, hub-readiness probe). Real port is ~350–400 LOC across 4–5 files.
+- Con: two copies of the mini-framework to keep in sync when ADR-044 evolves. Mitigate via CI grep that diffs the two trees and fails on drift (follow-up issue).
+
+**Rough scope:** M.
+
+### Shape 2 — NATS shim forwards to existing Unix daemon
+
+Keep `tts-serve` / `stt-serve` as the single engine process; `nats-serve` is a thin async shim that subscribes to NATS and forwards each job over the Unix socket, then replies.
+
+**Trade-offs:**
+- Pro: zero change to engine lifecycle, validation, or VRAM behavior — the daemon stays source-of-truth.
+- Con: **double queueing.** The Unix daemon has a serial worker queue; the NATS shim adds a second async queue in front of it. A single slow synthesis (5–30 s) blocks the whole shim, and both layers each need their own timeout budget (harder to tune).
+- Con: async-to-sync bridging per request (asyncio ↔ blocking socket write) adds failure modes — partial writes, socket-level timeouts masked as NATS timeouts.
+- Con: two processes per host per mode (shim + daemon); ~100–200 MB extra RSS (not VRAM — VRAM is unchanged).
+
+**Rough scope:** M (similar size, more moving parts).
+
+### Shape 3 — Extract `roxabi-nats` shared library
+
+Pull `NatsAdapterBase` + connect helpers into a new repo; lyra and voicecli both depend on it via `uv.sources`.
+
+**Trade-offs:**
+- Pro: single source of truth; schema drift becomes impossible.
+- Con: three-repo change (voicecli + lyra + new lib), new release cadence, CI overhead for ~150 LOC shared code.
+- Con: exceeds the 1-week appetite and is not needed to unblock lyra#689.
+
+**Rough scope:** L.
+
+## Fit Check
+
+**Shape 1 wins** on appetite, dep-graph safety (no lyra↔voicecli runtime cycle), single-process-per-mode footprint, and async-native code path. Shape 2 loses on double-queueing latency and operational complexity (two-process-per-mode bookkeeping). Shape 3 is the right long-term move but exceeds the 1-week appetite — capture as a follow-up issue.
+
+**Constraint alignment:**
+
+| Constraint | S1 | S2 | S3 |
+|---|:---:|:---:|:---:|
+| ADR-044 frozen schema | ✓ | ✓ | ✓ |
+| Coexist with socket daemons | ✓ | ✓ | ✓ |
+| `uv pip install --all-extras` still works | ✓ (new `nats` extra) | ✓ | ✓ |
+| RTX 3080 10 GB budget | ✓ | ✓ (same VRAM, different process count) | ✓ |
+| No double-queue latency | ✓ | ✗ | ✓ |
+| 1-week appetite | ✓ | ✓ | ✗ |
+| No runtime lyra→voicecli→lyra cycle | ✓ | ✓ | ✓ |
+
+## Open questions / risks to resolve in spec
+
+### Schema & contract
+
+- **Q-SC-1 — `contract_version` stamping on every reply.** Must appear on success AND error paths. Add a `build_reply(ok, **fields)` helper to prevent drift.
+- **Q-SC-2 — Error-code vocabulary.** ADR shows `error: "<string>"` without enumeration. Spec ratifies voicecli-emitted values: `model_load_failed | audio_decode_failed | transcription_failed | synthesis_failed | engine_unavailable | payload_too_large | capacity_exceeded`.
+- **Q-SC-3 — Language-detection overrides applied per-request.** STT request may carry `language_detection_threshold`, `language_detection_segments`, `language_fallback`. Satellite MUST apply these (pattern: `STTService(cfg.model_copy(update=overrides))` from lyra's `stt_adapter_standalone.py:84`). Missing this silently breaks per-request tuning.
+
+### Runtime behavior
+
+- **Q-RT-1 — Concurrency model (load-bearing).** `NatsAdapterBase._dispatch` fires on the asyncio event loop. If `handle()` calls the blocking `api.generate()` directly, synthesis (5–30 s) stalls the event loop → heartbeats stop → NATS declares the connection dead. The adapter MUST run engine calls in a thread-pool executor (`loop.run_in_executor`). Spec locks this in.
+- **Q-RT-2 — In-flight cap / backpressure.** Each in-flight request holds a thread and VRAM. Unbounded concurrency OOMs the 10 GB 3080. Pick: semaphore cap to 1 per mode on constrained hardware, or explicit `capacity_exceeded` rejection when cap is hit.
+- **Q-RT-3 — Temp-file uniqueness under concurrency.** `api.generate()` writes to a default output path; two simultaneous requests would race. Each request needs a unique temp path keyed on `request_id` (e.g., `/tmp/voicecli-nats/<request_id>.wav`) with post-reply cleanup.
+- **Q-RT-4 — Engine override precedence.** TTS request carries `engine`; satellite was started with `--engine qwen-fast`. Decide: request overrides (lazy-load target engine, fail with `engine_unavailable` if not installed in this extras profile), or `--engine` is advisory. Document in `SKILL.md`.
+- **Q-RT-5 — `readiness.wait_for_hub` in voicecli.** Lyra's adapter base probes `lyra.system.ready` and waits up to 30 s for the hub. In a voicecli-only deploy (satellite started before hub) it always warns and proceeds. Decide: keep with a `--no-wait-hub` flag, or drop for voicecli entirely (reduces port surface).
+- **Q-RT-6 — Audio bytes without disk round-trip (follow-up).** Keep the read-from-disk + base64 flow for this cycle; file an in-memory `generate_bytes()` variant as a separate issue.
+- **Q-RT-7 — Graceful shutdown.** Adapter base exposes a `stop` event. Wire SIGTERM/SIGINT to it so supervisord restarts don't drop in-flight requests.
+
+### Install & ops
+
+- **Q-OPS-1 — Lyra hub image in E2E (blocker).** Docker-compose needs the lyra hub. Options: (a) pinned `ghcr.io/roxabi/lyra:<digest>` image with documented rotation procedure + CI secret for auth; (b) a stub NATS responder that mimics the hub contract (no repo auth, no rolling target). Recommend **(b) stub responder** for CI to remove the cross-repo auth dependency; keep (a) as an optional local-dev compose file. Spec must pick.
+- **Q-OPS-2 — VRAM sequencing safety check.** If an operator starts `nats-serve tts` while `tts-serve` is still running, the host OOMs. Satellite should detect the existing socket on startup (`~/.local/share/voicecli/daemon.sock`) and abort with a clear message. Document in `docs/NATS-SERVE.md`.
+- **Q-OPS-3 — `nats` extra wiring.** Add `[project.optional-dependencies] nats = ["nats-py>=2.6", "nkeys>=0.1"]`. `uv pip install --all-extras` picks it up automatically (no `all` extra needed). Verify CI install matrix still green.
+- **Q-OPS-4 — CI runner for E2E.** GitHub `ubuntu-latest` has no GPU. Real inference E2E is infeasible there. Pick: run E2E on a self-hosted GPU runner, or mock the engine layer in the satellite for the CI E2E (real models only in the manual / nightly job). Stub responder (Q-OPS-1) pairs naturally with mocked engines for CI.
+- **Q-OPS-5 — Payload-size ceiling.** NATS default `max_payload ≈ 1 MB`. Long base64 audio can exceed it. Satellite emits `payload_too_large` on overflow; operators tune NATS `max_payload` if needed.
+
+## Files impacted (preliminary — spec will finalize)
+
+| Change class | File | New/Edit |
+|---|---|:---:|
+| Adapter framework (ported) | `src/voicecli/nats/__init__.py` | new |
+| " | `src/voicecli/nats/base.py` (port of `adapter_base.py`) | new |
+| " | `src/voicecli/nats/connect.py` | new |
+| " | `src/voicecli/nats/queue_groups.py` | new |
+| " | `src/voicecli/nats/_validate.py` | new |
+| " | `src/voicecli/nats/_version_check.py` | new |
+| " | `src/voicecli/nats/readiness.py` | new (conditional — see Q-RT-5) |
+| Concrete adapters | `src/voicecli/nats/tts_adapter.py` | new |
+| " | `src/voicecli/nats/stt_adapter.py` | new |
+| CLI | `src/voicecli/cli.py` — `nats-serve` Typer group | edit |
+| Install | `pyproject.toml` — add `nats` extra | edit |
+| Unit tests | `tests/nats/test_tts_adapter.py` | new |
+| " | `tests/nats/test_stt_adapter.py` | new |
+| " | `tests/nats/test_reply_builder.py` (Q-SC-1 helper) | new |
+| E2E | `tests/e2e/docker-compose.nats.yml` | new |
+| " | `tests/e2e/test_nats_roundtrip.py` | new |
+| CI | `.github/workflows/ci.yml` — new E2E job (Q-OPS-4) | edit |
+| Operator docs | `docs/NATS-SERVE.md` | new |
+| Skill doc | `skills/voice/SKILL.md` — note `nats-serve` mode | edit |
+| Operational notes (not code) | `CLAUDE.md` — VRAM sequencing gotcha | edit |
