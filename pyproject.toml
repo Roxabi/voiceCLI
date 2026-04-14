@@ -58,6 +58,7 @@ voxtral-tts = { git = "https://github.com/Roxabi/voxtral-tts.git", branch = "mai
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
+testpaths = ["tests"]
 
 [project.optional-dependencies]
 voxtral = ["voxtral-tts[int4]", "scipy"]

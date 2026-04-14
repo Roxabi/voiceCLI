@@ -93,16 +93,23 @@ def available_engines() -> list[str]:
 
 
 def _get_registry() -> dict[str, type[TTSEngine]]:
+    import os
+
     from voicecli.engines.chatterbox import ChatterboxEngine
     from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
     from voicecli.engines.qwen import QwenEngine
     from voicecli.engines.qwen_fast import QwenFastEngine
     from voicecli.engines.voxtral import VoxtralEngine
 
-    return {
+    registry: dict[str, type[TTSEngine]] = {
         "qwen": QwenEngine,
         "qwen-fast": QwenFastEngine,
         "chatterbox": ChatterboxEngine,
         "chatterbox-turbo": ChatterboxTurboEngine,
         "voxtral": VoxtralEngine,
     }
+    if os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
+        from voicecli.engines.mock import MockEngine
+
+        registry["mock"] = MockEngine
+    return registry
