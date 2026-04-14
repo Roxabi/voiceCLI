@@ -16,6 +16,30 @@ import pytest
 from voicecli.nats.connect import _read_nkey_seed
 
 
+class TestNkeyEnvVarResolution:
+    def test_nats_nkey_seed_path_env_var_resolved_to_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NATS_NKEY_SEED_PATH env var is converted to a Path and expanduser'd.
+
+        This tests the CLI-level resolver logic in isolation: given the env var,
+        the path object must point at the expected location.
+        """
+        import os
+
+        seed_file = tmp_path / "test.seed"
+        seed_file.write_text("SUAXXX123FAKESEEDFORTEST")
+        seed_file.chmod(0o600)
+        monkeypatch.setenv("NATS_NKEY_SEED_PATH", str(seed_file))
+
+        # Replicate the resolution logic from cli.py nats_serve_tts
+        nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
+        assert nkey_seed_env is not None
+        resolved = Path(nkey_seed_env).expanduser()
+        assert resolved == seed_file
+        assert resolved.exists()
+
+
 class TestReadNkeySeed:
     def test_nkey_seed_permission_check(self, tmp_path: Path) -> None:
         """_read_nkey_seed raises PermissionError for group/world-readable files.

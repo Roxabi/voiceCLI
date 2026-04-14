@@ -346,6 +346,62 @@ class TestTtsNatsAdapter:
         # Assert — heartbeat fired at least once during the inference window
         assert len(heartbeat_calls) >= 1
 
+    def test_path_traversal_request_id_returns_malformed_request(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange — request_id contains path traversal
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="../escape")
+
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_missing_text_returns_malformed_request(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange — no text in payload
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = {"contract_version": "1", "request_id": "req-notext", "engine": "mock"}
+
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_non_string_text_returns_malformed_request(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange — text is not a string
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = {
+            "contract_version": "1",
+            "request_id": "req-badtext",
+            "text": 42,
+            "engine": "mock",
+        }
+
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
     def test_engine_env_var_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _require_imports()
         # Arrange

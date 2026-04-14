@@ -7,6 +7,7 @@ import base64
 import functools
 import logging
 import os
+import re
 import socket
 import time
 import wave
@@ -100,6 +101,26 @@ class TtsNatsAdapter(NatsAdapterBase):
             await self.reply(msg, build_reply(ok=False, request_id="", error="malformed_request"))
             return
 
+        # Reject path-traversal or oversized request IDs at ingestion (Fix 2)
+        if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
+            await self.reply(
+                msg,
+                build_reply(
+                    ok=False,
+                    request_id=request_id[:64] if request_id else "",
+                    error="malformed_request",
+                ),
+            )
+            return
+
+        # Validate text field early to avoid KeyError being masked as synthesis_failed (Fix 8)
+        text = payload.get("text")
+        if not text or not isinstance(text, str):
+            await self.reply(
+                msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+            )
+            return
+
         engine = payload.get("engine") or self.default_engine
         if not _engine_available(engine):
             await self.reply(
@@ -107,54 +128,67 @@ class TtsNatsAdapter(NatsAdapterBase):
             )
             return
 
-        if self.reject_when_full and self._sem.locked():
-            await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
-            )
-            return
-
-        async with self._sem:
-            out_path = scoped_path(request_id, "wav")
+        if self.reject_when_full:
+            # Non-blocking acquire: avoid the race in _sem.locked() (Fix 7)
             try:
-                self.model_loaded = engine
-                from voicecli import api
-
-                optional_kwargs = {
-                    k: v
-                    for k, v in {
-                        "language": payload.get("language"),
-                        "voice": payload.get("voice"),
-                        "speed": payload.get("speed"),
-                        "exaggeration": payload.get("exaggeration"),
-                        "cfg_weight": payload.get("cfg_weight"),
-                    }.items()
-                    if v is not None
-                }
-                fn = functools.partial(
-                    api.generate,
-                    payload["text"],
-                    engine=engine,
-                    output=out_path,
-                    **optional_kwargs,
-                )
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(self._executor, fn)
-                audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
-                duration_ms = _wav_duration_ms(out_path)
+                await asyncio.wait_for(self._sem.acquire(), timeout=0)
+            except asyncio.TimeoutError:
                 await self.reply(
-                    msg,
-                    build_reply(
-                        ok=True,
-                        request_id=request_id,
-                        audio_b64=audio_b64,
-                        mime_type="audio/wav",
-                        duration_ms=duration_ms,
-                    ),
+                    msg, build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
                 )
-            except Exception:
-                log.exception("synthesis_failed", extra={"request_id": request_id})
-                await self.reply(
-                    msg, build_reply(ok=False, request_id=request_id, error="synthesis_failed")
-                )
+                return
+            try:
+                await self._run_synthesis(msg, payload, request_id, text, engine)
             finally:
-                cleanup(out_path)
+                self._sem.release()
+        else:
+            async with self._sem:
+                await self._run_synthesis(msg, payload, request_id, text, engine)
+
+    async def _run_synthesis(
+        self, msg: Any, payload: dict, request_id: str, text: str, engine: str
+    ) -> None:
+        out_path = scoped_path(request_id, "wav")
+        try:
+            self.model_loaded = engine
+            from voicecli import api
+
+            optional_kwargs = {
+                k: v
+                for k, v in {
+                    "language": payload.get("language"),
+                    "voice": payload.get("voice"),
+                    "speed": payload.get("speed"),
+                    "exaggeration": payload.get("exaggeration"),
+                    "cfg_weight": payload.get("cfg_weight"),
+                }.items()
+                if v is not None
+            }
+            fn = functools.partial(
+                api.generate,
+                text,
+                engine=engine,
+                output=out_path,
+                **optional_kwargs,
+            )
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(self._executor, fn)
+            audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
+            duration_ms = _wav_duration_ms(out_path)
+            await self.reply(
+                msg,
+                build_reply(
+                    ok=True,
+                    request_id=request_id,
+                    audio_b64=audio_b64,
+                    mime_type="audio/wav",
+                    duration_ms=duration_ms,
+                ),
+            )
+        except Exception:
+            log.exception("synthesis_failed", extra={"request_id": request_id})
+            await self.reply(
+                msg, build_reply(ok=False, request_id=request_id, error="synthesis_failed")
+            )
+        finally:
+            cleanup(out_path)

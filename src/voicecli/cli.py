@@ -1335,11 +1335,21 @@ app.add_typer(nats_app, name="nats-serve")
 @nats_app.command("tts")
 def nats_serve_tts(
     engine: Annotated[Optional[str], typer.Option("--engine", "-e")] = None,
-    max_concurrent: Annotated[int, typer.Option("--max-concurrent")] = 1,
-    reject_when_full: Annotated[bool, typer.Option("--reject-when-full")] = False,
-    heartbeat_interval: Annotated[float, typer.Option("--heartbeat-interval")] = 5.0,
-    drain_timeout: Annotated[float, typer.Option("--drain-timeout")] = 30.0,
-    allow_coexist: Annotated[bool, typer.Option("--allow-coexist")] = False,
+    max_concurrent: Annotated[
+        int, typer.Option("--max-concurrent", envvar="VOICECLI_MAX_CONCURRENT")
+    ] = 1,
+    reject_when_full: Annotated[
+        bool, typer.Option("--reject-when-full", envvar="VOICECLI_REJECT_WHEN_FULL")
+    ] = False,
+    heartbeat_interval: Annotated[
+        float, typer.Option("--heartbeat-interval", envvar="VOICECLI_HEARTBEAT_INTERVAL")
+    ] = 5.0,
+    drain_timeout: Annotated[
+        float, typer.Option("--drain-timeout", envvar="VOICECLI_DRAIN_TIMEOUT")
+    ] = 30.0,
+    allow_coexist: Annotated[
+        bool, typer.Option("--allow-coexist", envvar="VOICECLI_ALLOW_COEXIST")
+    ] = False,
 ) -> None:
     """Subscribe to lyra.voice.tts.request and reply with synthesized audio."""
     import asyncio
@@ -1351,17 +1361,6 @@ def nats_serve_tts(
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
-
-    if not reject_when_full and os.environ.get("VOICECLI_REJECT_WHEN_FULL") == "1":
-        reject_when_full = True
-    if not allow_coexist and os.environ.get("VOICECLI_ALLOW_COEXIST") == "1":
-        allow_coexist = True
-    if max_concurrent == 1 and "VOICECLI_MAX_CONCURRENT" in os.environ:
-        max_concurrent = int(os.environ["VOICECLI_MAX_CONCURRENT"])
-    if heartbeat_interval == 5.0 and "VOICECLI_HEARTBEAT_INTERVAL" in os.environ:
-        heartbeat_interval = float(os.environ["VOICECLI_HEARTBEAT_INTERVAL"])
-    if drain_timeout == 30.0 and "VOICECLI_DRAIN_TIMEOUT" in os.environ:
-        drain_timeout = float(os.environ["VOICECLI_DRAIN_TIMEOUT"])
 
     resolved_engine = _resolve_engine(engine)
 
@@ -1384,6 +1383,11 @@ def nats_serve_tts(
         log.error("NATS_URL env var is required")
         raise typer.Exit(2)
 
+    nkey_seed_path: Path | None = None
+    nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
+    if nkey_seed_env:
+        nkey_seed_path = Path(nkey_seed_env).expanduser()
+
     adapter = TtsNatsAdapter(
         default_engine=resolved_engine,
         max_concurrent=max_concurrent,
@@ -1393,7 +1397,7 @@ def nats_serve_tts(
     )
 
     try:
-        asyncio.run(adapter.run(nats_url=nats_url))
+        asyncio.run(adapter.run(nats_url=nats_url, nkey_seed_path=nkey_seed_path))
     except DrainTimeoutError:
         log.error("drain timeout exceeded; some requests may have been dropped")
         raise typer.Exit(3)

@@ -117,16 +117,16 @@ Any other non-zero exit code is an unhandled error — check `stderr_logfile` fo
 traceback.
 
 supervisord's default `exitcodes` is `0`, which means it treats exit 3 and exit 78 as
-unexpected and will attempt a restart. Always override with `exitcodes=0,78` as shown in
+unexpected and will attempt a restart. Always override with `exitcodes=0,3,78` as shown in
 [Required supervisord stanza](#required-supervisord-stanza).
 
 ---
 
 ## Required supervisord stanza
 
-`autorestart=unexpected` combined with `exitcodes=0,78` is **critical**. Without it,
+`autorestart=unexpected` combined with `exitcodes=0,3,78` is **critical**. Without it,
 supervisord treats exit 78 as unexpected and loop-restarts the process — causing a tight
-restart loop on misconfigured hosts. Always include both exit codes together.
+restart loop on misconfigured hosts. Always include all three exit codes together.
 
 Copy this block into your supervisord `conf.d/` directory and fill in host-specific values:
 
@@ -135,7 +135,9 @@ Copy this block into your supervisord `conf.d/` directory and fill in host-speci
 command=voicecli nats-serve tts
 environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
-exitcodes=0,78
+exitcodes=0,3,78
+stopsignal=TERM
+stopwaitsecs=35
 startsecs=15
 user=lyra
 stdout_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_tts.log
@@ -147,7 +149,9 @@ Key fields:
 | Field | Guidance |
 |---|---|
 | `autorestart=unexpected` | Restart on non-zero exits not listed in `exitcodes`; do NOT use `autorestart=true` |
-| `exitcodes=0,78` | Both must be listed — exit 0 (clean) and exit 78 (guard tripped) are both intentional |
+| `exitcodes=0,3,78` | All three intentional exits: 0 (clean), 3 (drain timeout exceeded), 78 (VRAM guard tripped) — without 3, supervisord loop-restarts the process whenever the drain window is exceeded during shutdown |
+| `stopsignal=TERM` | Sends SIGTERM on `supervisorctl stop`, triggering graceful drain before exit |
+| `stopwaitsecs=35` | Must exceed `VOICECLI_DRAIN_TIMEOUT` (default 30 s) by a margin; 35 s gives the satellite time to drain before supervisord sends SIGKILL |
 | `startsecs=15` | GPU model load time; lower on fast NVMe + large VRAM, raise if startup OOM observed |
 | `user=lyra` | Match the user that owns the NKey seed file and log directory |
 
@@ -169,7 +173,7 @@ queue group `stt-workers`, and the STT-specific seed path. Log file naming conve
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
 | Satellite starts but produces no output; logs show CUDA OOM | VRAM exhausted by coexisting processes | Stop other GPU-heavy daemons, reduce `VOICECLI_MAX_CONCURRENT`, or move to a host with more VRAM |
-| supervisord keeps restarting the process in a tight loop | `autorestart=true` or `exitcodes` missing 78 | Set `autorestart=unexpected` and add `78` to `exitcodes` — see [Required supervisord stanza](#required-supervisord-stanza) |
+| supervisord keeps restarting the process in a tight loop | `autorestart=true` or `exitcodes` missing 78 or 3 | Set `autorestart=unexpected` and use `exitcodes=0,3,78` — see [Required supervisord stanza](#required-supervisord-stanza) |
 | TLS handshake errors connecting to NATS | Missing or wrong CA certificate | Set `NATS_CA_CERT` to the PEM file for your internal CA |
 
 ### Checking liveness
@@ -193,7 +197,7 @@ Use the NATS CLI to publish a test request directly to the TTS subject and obser
 the satellite picks it up:
 
 ```bash
-nats req tts.synthesize '{"text": "hello"}' --server nats://nats.internal:4222
+nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":"qwen-fast"}' --server nats://nats.internal:4222
 ```
 
 If no reply arrives within the timeout, the satellite is either not running, not connected

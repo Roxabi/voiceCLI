@@ -33,6 +33,22 @@ class TestScopedPath:
         assert "/voicecli-nats/" in str(path)
 
 
+class TestScopedPathSecurity:
+    def test_path_traversal_raises_value_error(self) -> None:
+        """scoped_path raises ValueError when request_id escapes TEMP_ROOT."""
+        import pytest
+
+        with pytest.raises(ValueError, match="escapes temp root"):
+            scoped_path("../../etc/passwd", "wav")
+
+    def test_dotdot_request_id_raises_value_error(self) -> None:
+        """request_id with .. components must be rejected."""
+        import pytest
+
+        with pytest.raises(ValueError, match="escapes temp root"):
+            scoped_path("../foo", "wav")
+
+
 class TestCleanup:
     def test_cleanup_removes_file(self, tmp_path: Path) -> None:
         """cleanup deletes an existing file without raising."""

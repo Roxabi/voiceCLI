@@ -9,9 +9,12 @@ import logging
 import signal
 import socket
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from nats.aio.client import Client as NATS  # type: ignore[import-untyped]
-from nats.aio.msg import Msg  # type: ignore[import-untyped]
+if TYPE_CHECKING:
+    from nats.aio.client import Client as NATS  # type: ignore[import-untyped]
+    from nats.aio.msg import Msg  # type: ignore[import-untyped]
 
 from voicecli.nats.connect import nats_connect
 from voicecli.nats.nvml import read_vram
@@ -48,8 +51,17 @@ class NatsAdapterBase:
         self.model_loaded: str | None = None
         self._contract_version_warned: bool = False
 
-    async def run(self, nats_url: str, stop: asyncio.Event | None = None) -> None:
-        nc = await nats_connect(nats_url)
+    async def run(
+        self,
+        nats_url: str,
+        stop: asyncio.Event | None = None,
+        nkey_seed_path: Path | None = None,
+    ) -> None:
+        if nkey_seed_path is not None:
+            log.info("authenticated to NATS with nkey seed at %s", nkey_seed_path)
+        else:
+            log.info("anonymous NATS connection; set NATS_NKEY_SEED_PATH to enable nkey auth")
+        nc = await nats_connect(nats_url, nkey_seed_path=nkey_seed_path)
         self._nc = nc
 
         # voicecli satellites do NOT probe lyra hub readiness — the satellite
