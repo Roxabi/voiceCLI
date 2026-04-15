@@ -203,6 +203,45 @@ is not set.
 
 ---
 
+## TTS request field coverage
+
+ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-contract-adr-plan.mdx`. The satellite handles every field in that schema — either by forwarding it to `api.generate`, applying it as control flow, or stamping it into the reply.
+
+| Field | Type | Handling |
+|---|---|---|
+| `contract_version` | string | Defensive read — logged at WARN once per worker if ≠ `"1"`, request still processed. Outgoing replies always stamp `"1"`. |
+| `request_id` | string | Required. Rejected with `malformed_request` if missing or not matching `^[A-Za-z0-9_-]{1,128}$`. Echoed in every reply. |
+| `text` | string | Required. Rejected with `malformed_request` if missing, empty, or not a string. Forwarded as the first positional arg of `api.generate`. |
+| `engine` | string | Optional; falls back to `default_engine` from satellite startup. Validated via `validate_nats_token`; unknown engine → `engine_unavailable`. |
+| `language` | string | Forwarded to `api.generate(language=…)`. |
+| `voice` | string | Forwarded to `api.generate(voice=…)`. |
+| `speed` | float | Forwarded through `**kwargs`; `translate.py` strips for engines that do not consume it. |
+| `exaggeration` | float | Forwarded through `**kwargs`. |
+| `cfg_weight` | float | Forwarded through `**kwargs`. |
+| `accent` | string | Forwarded through `**kwargs`; recomposed into an `instruct` string by `api._apply_config_defaults`. |
+| `personality` | string | Forwarded through `**kwargs`; recomposed into the `instruct` string. |
+| `emotion` | string | Forwarded through `**kwargs`; recomposed into the `instruct` string. |
+| `chunked` | bool | Forwarded as a named `api.generate(chunked=…)` argument. Explicit `False` is preserved (not dropped). |
+| `chunk_size` | int | Forwarded as `api.generate(chunk_size=…)`. Bounded 1–10 000 by `api._validate_tts_params`. |
+| `segment_gap` | int (ms) | Forwarded as `api.generate(segment_gap=…)`. Bounded 0–30 000 ms. |
+| `crossfade` | int (ms) | Forwarded as `api.generate(crossfade=…)`. Bounded 0–10 000 ms. |
+| `fallback_language` | string | Control flow only. If primary synthesis raises `ValueError` and `fallback_language ≠ language`, the satellite retries once with `language = fallback_language` before returning `synthesis_failed`. Lyra normally resolves `fallback_language` client-side before dispatch; this branch is a defensive backstop. |
+
+### Reply fields
+
+| Field | Condition |
+|---|---|
+| `ok` | Always present. `true` on successful synthesis. |
+| `contract_version` | Always `"1"`. |
+| `request_id` | Echoed from the request. |
+| `audio_b64` | Base64-encoded WAV bytes on success. |
+| `mime_type` | `audio/wav` on success. |
+| `duration_ms` | Computed from the WAV header; `0` if unreadable. |
+| `waveform_b64` | Optional. 256-byte amplitude array (base64), computed from the generated WAV for Discord voice-message rendering. Omitted when the WAV is unreadable or the sample width is unsupported. |
+| `error` | Error code on failure (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `synthesis_failed`). |
+
+---
+
 ## STT satellite
 
 ### CLI invocation

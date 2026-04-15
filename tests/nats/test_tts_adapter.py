@@ -604,3 +604,271 @@ class TestTtsNatsAdapter:
 
         # Assert
         assert resolved == "qwen"
+
+    # ------------------------------------------------------------------
+    # Issue #47 — Full ADR-044 TTS field coverage
+    # ------------------------------------------------------------------
+
+    def _run_with_capture(self, tmp_path: Path, payload: dict) -> tuple[dict, list, dict]:
+        """Invoke handle() with api.generate patched; return (reply, args, kwargs)."""
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        captured: dict = {}
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            # Write a 1-byte stub so base64 + waveform steps succeed.
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        return msg.last_reply(), captured.get("args", ()), captured.get("kwargs", {})
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("accent", "british"),
+            ("personality", "cheerful"),
+            ("emotion", "excited"),
+        ],
+    )
+    def test_forwards_instruct_parts(self, tmp_path: Path, field: str, value: str) -> None:
+        _require_imports()
+        payload = _valid_payload() | {field: value}
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        assert kwargs.get(field) == value
+
+    def test_forwards_chunked_true(self, tmp_path: Path) -> None:
+        _require_imports()
+        payload = _valid_payload() | {"chunked": True}
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        assert kwargs.get("chunked") is True
+
+    def test_forwards_chunked_false(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Explicit False must still be forwarded (covers the `is not None` guard).
+        payload = _valid_payload() | {"chunked": False}
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        assert kwargs.get("chunked") is False
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("chunk_size", 500),
+            ("segment_gap", 250),
+            ("crossfade", 100),
+        ],
+    )
+    def test_forwards_named_chunking_fields(self, tmp_path: Path, field: str, value: int) -> None:
+        _require_imports()
+        payload = _valid_payload() | {field: value}
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        assert kwargs.get(field) == value
+
+    def test_omits_unset_fields(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Minimal payload — none of the optional engine kwargs should be forwarded.
+        payload = _valid_payload()
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        for field in (
+            "accent",
+            "personality",
+            "emotion",
+            "chunked",
+            "chunk_size",
+            "segment_gap",
+            "crossfade",
+            "language",
+            "voice",
+        ):
+            assert field not in kwargs, f"{field} should not be forwarded when unset"
+
+    def test_fallback_language_retry_on_value_error(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="req-fb") | {
+            "language": "zz",
+            "fallback_language": "en",
+        }
+
+        call_languages: list[str | None] = []
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            lang = kwargs.get("language")
+            call_languages.append(lang)
+            if lang == "zz":
+                raise ValueError("unsupported language: zz")
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        # Asserted: primary fails, fallback succeeds, reply is ok.
+        assert call_languages == ["zz", "en"]
+        assert msg.last_reply()["ok"] is True
+
+    def test_fallback_language_no_retry_when_absent(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        # No fallback_language provided → ValueError bubbles up as synthesis_failed.
+        payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
+
+        calls = 0
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            raise ValueError("unsupported language: zz")
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        assert calls == 1
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "synthesis_failed"
+
+    def test_fallback_language_skipped_when_matches_primary(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        # fallback == primary → no retry, error is surfaced immediately.
+        payload = _valid_payload(request_id="req-same") | {
+            "language": "en",
+            "fallback_language": "en",
+        }
+        calls = 0
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            raise ValueError("unsupported language: en")
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        assert calls == 1
+        assert msg.last_reply()["ok"] is False
+
+    def test_waveform_b64_populated_on_success(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Real WAV so the waveform helper can decode frames.
+        import wave as _wave
+
+        wav_path = tmp_path / "req-wf.wav"
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            out = Path(kwargs["output"])
+            with _wave.open(str(out), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(8000)
+                # 400 ms of silence is enough to fill 256 amplitude buckets.
+                wf.writeframes(b"\x00\x00" * 3200)
+            return None
+
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="req-wf")
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert "waveform_b64" in reply
+        assert len(base64.b64decode(reply["waveform_b64"])) == 256
+        assert not wav_path.exists()  # cleanup still runs
+
+    def test_waveform_b64_omitted_when_wav_unreadable(self, tmp_path: Path) -> None:
+        _require_imports()
+        # 1-byte stub is not a valid WAV → helper returns None → field omitted.
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="req-no-wf")
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            Path(kwargs["output"]).write_bytes(b"\x00")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert "waveform_b64" not in reply
+
+    def test_existing_five_fields_still_forwarded(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Regression check — the V1 field set must keep flowing after #47.
+        payload = _valid_payload() | {
+            "language": "en",
+            "voice": "alice",
+            "speed": 1.1,
+            "exaggeration": 0.7,
+            "cfg_weight": 0.5,
+        }
+        reply, _args, kwargs = self._run_with_capture(tmp_path, payload)
+        assert reply["ok"] is True
+        assert kwargs.get("language") == "en"
+        assert kwargs.get("voice") == "alice"
+        assert kwargs.get("speed") == 1.1
+        assert kwargs.get("exaggeration") == 0.7
+        assert kwargs.get("cfg_weight") == 0.5
