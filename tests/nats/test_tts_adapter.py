@@ -965,6 +965,7 @@ class TestTtsNatsAdapter:
         request_id = "req-chunk1"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         wav_bytes = self._make_silent_wav_bytes()
 
@@ -1006,6 +1007,7 @@ class TestTtsNatsAdapter:
         request_id = "req-chunk2"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         chunk_frames = 2205  # 100 ms of silence per chunk @ 22050 Hz
         wav_bytes = self._make_silent_wav_bytes(chunk_frames)
@@ -1046,6 +1048,7 @@ class TestTtsNatsAdapter:
         request_id = "req-nochunk"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         wav_bytes = self._make_silent_wav_bytes()
 
