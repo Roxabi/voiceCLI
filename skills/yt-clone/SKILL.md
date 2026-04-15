@@ -3,7 +3,7 @@ name: yt-clone
 argument-hint: '<youtube-url> [--start <sec>] [--duration <sec>] [--slug <name>] [--test "<phrase>"]'
 description: 'Clone a voice from a YouTube video — download audio, trim a clean sample, import it into voicecli, manage VRAM, and generate a test clone. Triggers: "clone from youtube" | "voice from youtube" | "yt clone" | "clone youtube voice" | "extract voice from video".'
 version: 1.0.0
-allowed-tools: Bash, Read, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Glob
 ---
 
 # yt-clone — Voice Cloning from YouTube
@@ -18,7 +18,7 @@ Extract a voice from any YouTube video and set it as the active sample for `voic
 /yt-clone https://youtu.be/XYZ --slug my-voice --test "Bonjour, ceci est un test."
 ```
 
-If no URL is provided → `AskUserQuestion` to get one.
+If no URL is provided → ask the user for one (plain text) and wait for reply.
 
 ## Arguments
 

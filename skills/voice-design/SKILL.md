@@ -1,15 +1,16 @@
 ---
 name: voice-design
-description: 'Design and optimize a TTS voice personality through evolutionary optimization with Telegram feedback. Fully autonomous — sends audio to Telegram, polls for user replies, runs multiple cycles until convergence. Triggers: "design a voice" | "voice design" | "tune voice personality" | "voice personality" | "/voice-design".'
-version: 1.0.0
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
+description: 'Design and optimize a TTS voice personality through evolutionary optimization. Generates batches of profile variants, waits for ranking feedback, iterates until convergence, then writes the winning profile to voicecli.toml. Triggers: "design a voice" | "voice design" | "tune voice personality" | "voice personality" | "/voice-design".'
+version: 2.0.0
+allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 ---
 
 # Voice Design Skill
 
-Design a TTS voice personality through autonomous evolutionary optimization.
-Send audio variants to Telegram, collect ranking feedback, iterate until convergence,
-then write the winning profile to `voicecli.toml`.
+Design a TTS voice personality through evolutionary optimization.
+Generate batches of profile variants, wait for ranking feedback between batches, iterate until convergence, then write the winning profile to `~/.voicecli/voicecli.toml`.
+
+Audio delivery (listening, sharing) is out of scope — the skill produces MP3 files on disk and returns their paths. Playback is the user's concern.
 
 ---
 
@@ -17,49 +18,57 @@ then write the winning profile to `voicecli.toml`.
 
 | Variable | Type | Description |
 |---|---|---|
-| `last_update_id` | int | Prevents re-reading old Telegram messages. Start at 0. |
 | `current_winner` | dict | Winning attrs from last cycle: `accent`, `personality`, `speed`, `emotion`. |
 | `runner_up` | dict | Second-best attrs from last cycle. |
 | `cycle_winners` | list[str] | Position label of winner per convergence cycle ("a"/"b"/"c"). For plateau detection. |
-| `VOICECLI_DIR` | str | `/home/mickael/projects/voiceCLI` — prefix all commands with `cd $VOICECLI_DIR &&`. |
+| `VOICECLI` | str | Command to invoke voicecli (see Phase 0 auto-discovery). |
+| `VOICES_OUT` | str | Output dir — default `~/.voicecli/TTS/voices_out` (expand `~` to absolute). |
+| `CONFIG` | str | Config file — default `~/.voicecli/voicecli.toml` (expand `~` to absolute). |
 
 ---
 
 ## Phase 0 — Setup
 
-1. Verify `tg.py` works:
-   ```bash
-   cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg message "Voice design session starting..."
-   ```
-   If this fails, stop and report the error to the user. Do not proceed until Telegram is reachable.
+Auto-discover `voicecli` and resolve paths:
 
-2. Read current `voicecli.toml` defaults for reference (so you know the baseline voice).
+```bash
+# 1. voicecli command
+if command -v voicecli &>/dev/null; then
+  VOICECLI="voicecli"
+else
+  for d in . .. ../voiceCLI ~/projects/voiceCLI; do
+    test -f "$d/src/voicecli/cli.py" && VOICECLI_DIR="$(cd "$d" && pwd)" && break
+  done
+  [ -z "$VOICECLI_DIR" ] && echo "ERROR: voicecli not found" && exit 1
+  VOICECLI="cd $VOICECLI_DIR && uv run voicecli"
+fi
+
+# 2. Resolve paths (expand ~ explicitly)
+VOICES_OUT="$HOME/.voicecli/TTS/voices_out"
+CONFIG="$HOME/.voicecli/voicecli.toml"
+
+# 3. Sanity checks
+[ -f "$CONFIG" ] && echo "OK — config: $CONFIG" || echo "WARN — no $CONFIG (will be created on first save)"
+mkdir -p "$VOICES_OUT"
+```
+
+Read `$CONFIG` (if present) to know the baseline voice.
 
 ---
 
 ## Phase 1 — Brief
 
-Use `AskUserQuestion` to gather the following (one question, present as a form with 4 fields):
+Ask the user (plain text prompt, wait for reply):
 
 ```
-- Language: (default: French)
-- Use case: (e.g. "AI assistant", "podcast host", "audiobook narrator")
-- Vibe keywords: 3–5 adjectives that describe the ideal voice (e.g. "warm, precise, calm")
-- Anti-keywords: adjectives to avoid (e.g. "robotic, cold, monotone")
+Brief — please provide:
+1. Language (default: French)
+2. Use case (e.g. AI assistant, podcast host, audiobook narrator)
+3. Vibe keywords — 3–5 adjectives (e.g. warm, precise, calm)
+4. Anti-keywords — adjectives to avoid (e.g. robotic, cold, monotone)
 ```
 
 Store as: `LANGUAGE`, `USE_CASE`, `VIBES` (list), `ANTI_VIBES` (list).
-
-After the user answers, send a Telegram message summarizing the brief:
-```
-Voice design brief:
-- Language: {LANGUAGE}
-- Use case: {USE_CASE}
-- Vibes: {VIBES joined with ", "}
-- Avoid: {ANTI_VIBES joined with ", "}
-
-Starting exploration — 2 rounds of 5 profiles. Stand by...
-```
 
 ---
 
@@ -114,39 +123,29 @@ For each profile P1–P5:
 
 2. Generate audio:
    ```bash
-   cd /home/mickael/projects/voiceCLI && uv run voicecli generate /tmp/vd_e{E}_{N}.md --mp3
+   $VOICECLI generate /tmp/vd_e${E}_${N}.md --mp3
    ```
-   The output MP3 is at `/home/mickael/projects/voiceCLI/TTS/voices_out/vd_e{E}_{N}.mp3`.
+   Output: `$VOICES_OUT/vd_e{E}_{N}.mp3`
 
-3. Send to Telegram:
-   ```bash
-   cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg send \
-     TTS/voices_out/vd_e{E}_{N}.mp3 \
-     "[Explore {E}/2] P{N} — {one-line vibe summary}"
-   ```
-   The one-line vibe summary is a 5–8 word distillation of the profile's character.
+After generating all 5 for the cycle, list the outputs and wait for the user's ranking (plain text reply):
 
-After sending all 5 for the cycle:
+```
+Cycle {E}/2 — 5 profiles generated:
 
-```bash
-cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg message \
-  "Cycle {E}/2 done. Reply with ranking best→worst (e.g. 3>1>5>2>4)"
+P1 — {one-line vibe} → $VOICES_OUT/vd_e{E}_1.mp3
+P2 — {one-line vibe} → $VOICES_OUT/vd_e{E}_2.mp3
+P3 — {one-line vibe} → $VOICES_OUT/vd_e{E}_3.mp3
+P4 — {one-line vibe} → $VOICES_OUT/vd_e{E}_4.mp3
+P5 — {one-line vibe} → $VOICES_OUT/vd_e{E}_5.mp3
+
+Reply with ranking best→worst (e.g. 3>1>5>2>4).
 ```
 
-Then poll for the user's reply:
-```bash
-cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg poll 300 {last_update_id}
-```
-
-Parse the response:
-```bash
-cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg parse "{reply_text}"
-```
+Parse the ranking (simple `>`-separated list, e.g. `3>1>5>2>4`):
 
 From the parsed list:
 - `current_winner` = profile at position [0]
 - `runner_up` = profile at position [1]
-- Update `last_update_id` from the poll result.
 
 After cycle 1, move to cycle 2 with winner/runner-up seeding.
 After cycle 2, move to Phase 3.
@@ -175,33 +174,25 @@ For each variant a/b/c:
 
 2. Generate audio:
    ```bash
-   cd /home/mickael/projects/voiceCLI && uv run voicecli generate /tmp/vd_c{C}_{V}.md --mp3
+   $VOICECLI generate /tmp/vd_c${C}_${V}.md --mp3
    ```
-   Output: `TTS/voices_out/vd_c{C}_{V}.mp3`
+   Output: `$VOICES_OUT/vd_c{C}_{V}.mp3`
 
-3. Send to Telegram:
-   ```bash
-   cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg send \
-     TTS/voices_out/vd_c{C}_{V}.mp3 \
-     "[Converge {C}] V{V-label} — {one-line vibe}"
-   ```
+After generating all 3, list outputs and wait for the user's pick (plain text):
 
-After sending all 3:
-```bash
-cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg message \
-  "Round {C} done. Reply with winner (1/2/3 or a/b/c), or 'done' to finalize."
 ```
+Round {C} — 3 variants generated:
 
-Poll reply:
-```bash
-cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg poll 300 {last_update_id}
+a — {one-line vibe} → $VOICES_OUT/vd_c{C}_a.mp3
+b — {one-line vibe} → $VOICES_OUT/vd_c{C}_b.mp3
+c — {one-line vibe} → $VOICES_OUT/vd_c{C}_c.mp3
+
+Reply with winner (1/2/3 or a/b/c), or 'done' to finalize.
 ```
-
-Update `last_update_id`.
 
 ### Early stop
 
-If the user replies with any of: `done`, `ok`, `save`, `finalize`, `stop` → skip remaining convergence cycles, go directly to Phase 4 with `current_winner`.
+If the reply is any of: `done`, `ok`, `save`, `finalize`, `stop` → skip remaining convergence cycles, go directly to Phase 4 with `current_winner`.
 
 ### Update winner
 
@@ -221,12 +212,12 @@ After updating `cycle_winners`:
 - **Same position wins twice in a row** (e.g. `["a", "a"]`): Apply bold mutations next cycle.
   Bold mutation means: exaggerate attrs beyond normal range, try a contrasting sub-style for V2, use very concrete sensory language for V3.
 
-- **Same position wins three times in a row** (e.g. `["a", "a", "a"]`): Send Telegram message:
+- **Same position wins three times in a row** (e.g. `["a", "a", "a"]`): Ask the user (plain text):
   ```
   The same variant keeps winning — we may have converged.
   Reply 'done' to finalize, or 'continue' for more cycles.
   ```
-  Poll the reply. If "done" / "ok" / "finalize" → Phase 4. If "continue" → continue with bold mutations.
+  If "done" / "ok" / "finalize" → Phase 4. If "continue" → continue with bold mutations.
 
 - **5 cycles completed without early stop** → go to Phase 4.
 
@@ -234,7 +225,7 @@ After updating `cycle_winners`:
 
 ## Phase 4 — Finalize
 
-1. Display the winning profile in a clear format using `AskUserQuestion`:
+1. Display the winning profile as plain text and wait for reply:
 
    ```
    Winning voice profile:
@@ -244,46 +235,43 @@ After updating `cycle_winners`:
    speed:       {value}
    emotion:     {value}
 
-   Options:
+   Reply:
    A) Save this profile to voicecli.toml
    B) Adjust one or more fields before saving
    C) Discard and keep current voicecli.toml
    ```
 
-2. If B: ask which field(s) to adjust and take the new values. Re-display and confirm.
+2. If B: ask which field(s) to adjust and take the new values (plain text). Re-display and confirm.
 
 3. If A or after adjustment confirmed:
 
-   Edit `voicecli.toml` `[defaults]` section. Update the four fields:
+   Edit `$CONFIG` `[defaults]` section. Update the four fields:
    - `accent`
    - `personality`
    - `speed`
    - `emotion`
 
+   If `$CONFIG` does not exist, copy `voicecli.example.toml` from the voicecli repo (or `$VOICECLI_DIR/voicecli.example.toml`) to `$CONFIG` first, then edit.
+
    Use `Read` then `Edit` to make precise replacements. Do not touch any other field.
 
-4. Send Telegram confirmation:
-   ```bash
-   cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg message \
-     "Voice profile saved to voicecli.toml!"
+4. Ask (plain text, wait for reply):
    ```
-
-5. Use `AskUserQuestion`:
-   ```
-   Profile saved. Would you like to commit the updated voicecli.toml?
+   Profile saved. Commit the updated voicecli.toml?
    A) Yes — commit with message "chore(config): update voice personality via voice-design"
    B) No — leave uncommitted
    ```
 
-   If A: run `git add voicecli.toml` then `git commit` with the message above plus the standard co-author footer.
+   Note: `$CONFIG` lives in `~/.voicecli/` (user config — typically not tracked by a repo). Default to B unless the user deliberately versions their voicecli config.
+
+   If A: run `git add` on `$CONFIG` (from whichever repo tracks it) then `git commit` with the message above plus the standard co-author footer.
 
 ---
 
 ## Error handling
 
-- If `voicecli generate` fails for a profile: skip that profile, send Telegram "⚠️ Profile {N} failed to generate — skipping.", continue with the rest.
-- If `tg poll` returns `{"text": null, ...}` (timeout): send Telegram "Still waiting for your reply..." and poll again once more. After two timeouts, use `AskUserQuestion` as fallback.
-- If a curl / Telegram error occurs: report to user immediately via `AskUserQuestion` and pause.
+- If `voicecli generate` fails for a profile: skip that profile, report "⚠️ Profile {N} failed to generate — skipping.", continue with the rest.
+- If the user's ranking reply is malformed: ask once for clarification, then proceed with best-effort parse.
 
 ---
 
@@ -291,6 +279,5 @@ After updating `cycle_winners`:
 
 - All instruct attrs (`accent`, `personality`, `speed`, `emotion`) MUST be written in the target language. French voice → French attrs. English voice → English attrs.
 - Never use `--engine` flag when generating — let `voicecli.toml` defaults pick the engine.
-- Never modify voicecli.toml until Phase 4 is confirmed by the user.
-- Always use absolute paths for file operations: `/home/mickael/projects/voiceCLI/...`.
-- The `tg` commands must be run from the voiceCLI directory (`cd /home/mickael/projects/voiceCLI && uv run python -m voicecli.tg ...`).
+- Never modify `voicecli.toml` until Phase 4 is confirmed by the user.
+- The skill produces MP3 files and file paths only — integrations (Telegram, gallery, browser, etc.) are out of scope.
