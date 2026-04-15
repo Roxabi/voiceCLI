@@ -21,23 +21,21 @@ import pytest
 # ---------------------------------------------------------------------------
 
 try:
+    from voicecli.nats.config import DEFAULT_MODEL
+    from voicecli.nats.queue_groups import STT_WORKERS
     from voicecli.nats.stt_adapter import (
-        DEFAULT_MODEL,
         HEARTBEAT_SUBJECT,
         SUBJECT,
         SttNatsAdapter,
         _duration_from_segments,
         _ext_from_mime,
-        _resolve_model,
     )
-    from voicecli.nats.queue_groups import STT_WORKERS
     from voicecli.transcribe import TranscriptionResult
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
     _IMPORT_ERROR = _e
     SttNatsAdapter = None  # type: ignore[assignment,misc]
-    _resolve_model = None  # type: ignore[assignment]
     _duration_from_segments = None  # type: ignore[assignment]
     _ext_from_mime = None  # type: ignore[assignment]
     TranscriptionResult = None  # type: ignore[assignment]
@@ -627,49 +625,6 @@ class TestSttNatsAdapter:
 
         # Assert — temp file removed even when transcription fails
         assert not temp_file.exists()
-
-    # ------------------------------------------------------------------
-    # Case 19: _resolve_model — env var VOICECLI_MODEL used when CLI is None
-    # ------------------------------------------------------------------
-    def test_resolve_model_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _require_imports()
-        # Arrange
-        monkeypatch.setenv("VOICECLI_MODEL", "small")
-
-        # Act
-        resolved = _resolve_model(None)
-
-        # Assert
-        assert resolved == "small"
-
-    # ------------------------------------------------------------------
-    # Case 20: _resolve_model — DEFAULT_MODEL used when env absent and config empty
-    # ------------------------------------------------------------------
-    def test_resolve_model_default_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _require_imports()
-        # Arrange
-        monkeypatch.delenv("VOICECLI_MODEL", raising=False)
-
-        with patch("voicecli.config.load_config", return_value={}):
-            # Act
-            resolved = _resolve_model(None)
-
-        # Assert
-        assert resolved == DEFAULT_MODEL
-
-    # ------------------------------------------------------------------
-    # Case 21: _resolve_model — CLI value beats env var (CLI > env)
-    # ------------------------------------------------------------------
-    def test_resolve_model_cli_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _require_imports()
-        # Arrange — env var set, but CLI value should win
-        monkeypatch.setenv("VOICECLI_MODEL", "small")
-
-        # Act
-        resolved = _resolve_model("tiny")
-
-        # Assert
-        assert resolved == "tiny"
 
     # ------------------------------------------------------------------
     # Case 22 (F12): heartbeat continues firing while inference is in-flight

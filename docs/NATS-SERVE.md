@@ -132,6 +132,9 @@ Copy this block into your supervisord `conf.d/` directory and fill in host-speci
 ```ini
 [program:voicecli_nats_tts]
 command=voicecli nats-serve tts
+; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
+; hosts (e.g. RTX 3080 10 GB). Setting it bypasses the VRAM-sequencing guard and
+; will cause CUDA OOM under concurrent synthesis. See VRAM sequencing section above.
 environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
 exitcodes=0,3,78
@@ -367,6 +370,8 @@ Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
 ```ini
 [program:voicecli_nats_stt]
 command=voicecli nats-serve stt
+; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
+; hosts. Bypasses the VRAM-sequencing guard and risks OOM. See VRAM sequencing above.
 environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
 autorestart=unexpected
 exitcodes=0,3,78
@@ -380,3 +385,54 @@ stderr_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_stt.err
 
 `VOICECLI_MAX_CONCURRENT="1"` is set here because this example targets a co-located GPU
 host (TTS + STT on the same GPU). Remove or raise to `2` on standalone-STT hosts.
+
+---
+
+## Local real-hub E2E
+
+The [`tests/e2e/docker-compose.nats.yml`](../tests/e2e/docker-compose.nats.yml) compose file
+runs the satellite against a **stub hub** — fast, deterministic, no external dependencies,
+and the fixture CI relies on. For a richer local smoke test against a real lyra hub image,
+use the sibling file:
+
+```
+tests/e2e/docker-compose.real-hub.yml
+```
+
+This file is **not run in CI** (the lyra image is private and requires GHCR auth) — it is
+provided for local operators who want an end-to-end sanity check with the actual hub
+before deploying. The hub image is injected via env var so no credentials are baked into
+the compose file:
+
+```bash
+# Pull the lyra hub image once (requires GHCR login)
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin
+docker pull ghcr.io/roxabi/lyra:<digest>
+
+# Render the NATS server config from its template
+# (PUBKEY = the nkey public key derived from your seed file)
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+PUBKEY=$(nk -inkey "$REPO_ROOT/tests/e2e/fixtures/test.seed" -pubout) \
+  envsubst < "$REPO_ROOT/tests/e2e/nats-server.conf.template" \
+  > "$REPO_ROOT/tests/e2e/nats-server.conf"
+
+# Lock down the seed file — required by the satellite (refuses to start otherwise)
+# and by any well-behaved hub image. Editor defaults of 0644 will leak the seed.
+chmod 600 "$REPO_ROOT/tests/e2e/fixtures/test.seed"
+
+# Point the compose file at it and bring up the stack
+export LYRA_HUB_IMAGE="ghcr.io/roxabi/lyra:<digest>"
+export NATS_CONF_PATH="$REPO_ROOT/tests/e2e/nats-server.conf"
+export SEED_PATH="$REPO_ROOT/tests/e2e/fixtures/test.seed"
+docker compose -f tests/e2e/docker-compose.real-hub.yml up --abort-on-container-exit
+```
+
+The stack starts a NATS server, the lyra hub at `$LYRA_HUB_IMAGE`, and both voicecli
+satellites (`nats-serve tts` + `nats-serve stt`) using the `mock` engine so no GPU is
+required. The hub exercises the same request/reply contract as production, which makes
+this useful for catching contract drift after lyra or voicecli changes.
+
+If the hub image is not reachable (wrong tag, no GHCR auth, private image gated) the
+compose stack will fail to pull — that is the expected failure mode and the reason this
+file is out of scope for CI. Adding CI support would require private-image auth that is
+tracked separately.

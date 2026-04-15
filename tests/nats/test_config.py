@@ -1,7 +1,10 @@
-"""RED-phase tests for voicecli.nats.config._resolve_engine (issue #49 T11).
+"""Tests for voicecli.nats.config resolvers (issues #49, #61).
 
-Covers: CLI arg wins; VOICECLI_ENGINE > LYRA_TTS_ENGINE > toml > DEFAULT_ENGINE;
-load_config exception is swallowed.
+Covers:
+  * _resolve_engine — CLI arg wins; VOICECLI_ENGINE > LYRA_TTS_ENGINE > toml > DEFAULT_ENGINE;
+    load_config exception is swallowed.
+  * _resolve_model — CLI arg wins; VOICECLI_MODEL > toml [stt].model > DEFAULT_MODEL;
+    load_config exception is swallowed.
 """
 
 from __future__ import annotations
@@ -9,13 +12,20 @@ from __future__ import annotations
 import pytest
 
 try:
-    from voicecli.nats.config import DEFAULT_ENGINE, _resolve_engine
+    from voicecli.nats.config import (
+        DEFAULT_ENGINE,
+        DEFAULT_MODEL,
+        _resolve_engine,
+        _resolve_model,
+    )
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
     _IMPORT_ERROR = _e
     _resolve_engine = None  # type: ignore[assignment]
+    _resolve_model = None  # type: ignore[assignment]
     DEFAULT_ENGINE = None  # type: ignore[assignment]
+    DEFAULT_MODEL = None  # type: ignore[assignment]
 
 
 def _require_imports() -> None:
@@ -112,3 +122,75 @@ class TestResolveEngine:
 
         # Assert
         assert result == DEFAULT_ENGINE
+
+
+class TestResolveModel:
+    def test_cli_arg_wins_over_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange — env var set, CLI arg should win
+        monkeypatch.setenv("VOICECLI_MODEL", "small")
+
+        # Act
+        result = _resolve_model("tiny")
+
+        # Assert
+        assert result == "tiny"
+
+    def test_env_var_used_when_cli_is_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange
+        monkeypatch.setenv("VOICECLI_MODEL", "small")
+
+        # Act
+        result = _resolve_model(None)
+
+        # Assert
+        assert result == "small"
+
+    def test_toml_model_fallback_when_no_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange — no env var; load_config returns stt.model
+        monkeypatch.delenv("VOICECLI_MODEL", raising=False)
+        monkeypatch.setattr(
+            "voicecli.config.load_config",
+            lambda: {"stt": {"model": "toml-model"}},
+        )
+
+        # Act
+        result = _resolve_model(None)
+
+        # Assert
+        assert result == "toml-model"
+
+    def test_default_model_when_all_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _require_imports()
+        # Arrange — no env var; toml has no stt.model entry
+        monkeypatch.delenv("VOICECLI_MODEL", raising=False)
+        monkeypatch.setattr(
+            "voicecli.config.load_config",
+            lambda: {},
+        )
+
+        # Act
+        result = _resolve_model(None)
+
+        # Assert
+        assert result == DEFAULT_MODEL
+
+    def test_load_config_exception_falls_through_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _require_imports()
+        # Arrange — no env var; load_config raises
+        monkeypatch.delenv("VOICECLI_MODEL", raising=False)
+
+        def _raise():
+            raise RuntimeError("config file not found")
+
+        monkeypatch.setattr("voicecli.config.load_config", _raise)
+
+        # Act — must not raise; exception is swallowed
+        result = _resolve_model(None)
+
+        # Assert
+        assert result == DEFAULT_MODEL
