@@ -24,7 +24,3 @@ def mock_engine(monkeypatch):
 
     monkeypatch.setattr("voicecli.engine._get_registry", _patched_registry)
     yield
-
-    # Cleanup: remove mock from registry
-    if "mock" in registry:
-        del registry["mock"]
