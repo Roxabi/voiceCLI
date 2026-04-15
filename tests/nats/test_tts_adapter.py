@@ -895,3 +895,132 @@ class TestTtsNatsAdapter:
         assert kwargs.get("speed") == 1.1
         assert kwargs.get("exaggeration") == 0.7
         assert kwargs.get("cfg_weight") == 0.5
+
+    # ------------------------------------------------------------------
+    # Chunked output — chatterbox writes {stem}_NNN.wav + .done
+    # ------------------------------------------------------------------
+
+    def _make_silent_wav_bytes(self, n_frames: int = 2205) -> bytes:
+        """Build a minimal silent WAV (22050 Hz, 16-bit, mono)."""
+        import struct as _struct
+        import wave as _wave
+        import io
+
+        buf = io.BytesIO()
+        with _wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(22050)
+            wf.writeframes(b"\x00\x00" * n_frames)
+        return buf.getvalue()
+
+    def test_chunked_output_single_chunk_succeeds(self, tmp_path: Path) -> None:
+        """Engine writes {stem}_001.wav + {stem}.done — adapter concatenates and encodes."""
+        _require_imports()
+        request_id = "req-chunk1"
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=request_id)
+        wav_bytes = self._make_silent_wav_bytes()
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            out = Path(kwargs["output"])
+            # Write chunk file and done marker (mimics api._generate_chunked behaviour)
+            chunk = out.parent / f"{out.stem}_001.wav"
+            chunk.write_bytes(wav_bytes)
+            done = out.with_suffix(".done")
+            done.write_text("done\n")
+            # out_path itself ({stem}.wav) is intentionally NOT written
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True, f"expected ok=True, got: {reply}"
+        assert reply["mime_type"] == "audio/wav"
+        assert "audio_b64" in reply
+        decoded = base64.b64decode(reply["audio_b64"])
+        # Decoded bytes must be a valid WAV (RIFF header)
+        assert decoded[:4] == b"RIFF"
+        # Chunk files and .done sentinel must be cleaned up
+        assert not (tmp_path / f"{request_id}_001.wav").exists()
+        assert not (tmp_path / f"{request_id}.done").exists()
+
+    def test_chunked_output_multiple_chunks_concatenated(self, tmp_path: Path) -> None:
+        """Engine writes {stem}_001.wav + {stem}_002.wav + {stem}.done — adapter
+        concatenates all chunks and the resulting audio is longer than a single chunk."""
+        _require_imports()
+        request_id = "req-chunk2"
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=request_id)
+        chunk_frames = 2205  # 100 ms of silence per chunk @ 22050 Hz
+        wav_bytes = self._make_silent_wav_bytes(chunk_frames)
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            out = Path(kwargs["output"])
+            for i in (1, 2):
+                chunk = out.parent / f"{out.stem}_{i:03d}.wav"
+                chunk.write_bytes(wav_bytes)
+            done = out.with_suffix(".done")
+            done.write_text("done\n")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True, f"expected ok=True, got: {reply}"
+        # duration_ms must reflect both chunks (≥ 200 ms of silence)
+        assert reply["duration_ms"] >= 200
+        decoded = base64.b64decode(reply["audio_b64"])
+        assert decoded[:4] == b"RIFF"
+        # All chunk files and .done must be cleaned up
+        for i in (1, 2):
+            assert not (tmp_path / f"{request_id}_{i:03d}.wav").exists()
+        assert not (tmp_path / f"{request_id}.done").exists()
+
+    def test_non_chunked_output_unaffected(self, tmp_path: Path) -> None:
+        """Engine writes {stem}.wav directly (no .done) — existing path unchanged."""
+        _require_imports()
+        request_id = "req-nochunk"
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id=request_id)
+        wav_bytes = self._make_silent_wav_bytes()
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            # Standard non-chunked: write directly to out_path
+            out = Path(kwargs["output"])
+            out.write_bytes(wav_bytes)
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        decoded = base64.b64decode(reply["audio_b64"])
+        assert decoded[:4] == b"RIFF"

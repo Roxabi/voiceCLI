@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import os
 import re
@@ -34,6 +35,62 @@ def _engine_available(engine: str) -> bool:
     from voicecli.engine import _get_registry
 
     return engine in _get_registry()
+
+
+def _collect_chunked_output(out_path: Path) -> list[Path]:
+    """Return sorted chunk paths if a .done marker exists, else empty list.
+
+    When api.generate() runs in chunked mode it writes:
+        {stem}_001.wav, {stem}_002.wav, … {stem}_NNN.wav
+        {stem}.done  (sentinel written after all chunks)
+
+    The adapter expects a single file at *out_path* ({stem}.wav). If the
+    engine wrote chunks instead, this function returns them in order so the
+    caller can concatenate them.
+    """
+    done_path = out_path.with_suffix(".done")
+    if not done_path.exists():
+        return []
+    stem = out_path.stem
+    parent = out_path.parent
+    chunks = sorted(parent.glob(f"{stem}_*.wav"))
+    return chunks
+
+
+def _concat_wav_chunks(chunks: list[Path], out_path: Path) -> None:
+    """Concatenate WAV chunk files into *out_path* using the stdlib wave module.
+
+    All chunks must share the same format (channels, sample width, frame rate).
+    Raises ValueError if the chunk list is empty or format is inconsistent.
+    """
+    if not chunks:
+        raise ValueError("concat_wav_chunks: chunk list is empty")
+
+    with wave.open(str(chunks[0]), "rb") as first:
+        params = first.getparams()
+
+    with wave.open(str(out_path), "wb") as out_wav:
+        out_wav.setparams(params)
+        for chunk_path in chunks:
+            with wave.open(str(chunk_path), "rb") as chunk_wav:
+                if (
+                    chunk_wav.getnchannels() != params.nchannels
+                    or chunk_wav.getsampwidth() != params.sampwidth
+                    or chunk_wav.getframerate() != params.framerate
+                ):
+                    raise ValueError(
+                        f"chunk format mismatch in {chunk_path}: "
+                        f"expected {params.nchannels}ch/{params.sampwidth}sw/{params.framerate}Hz"
+                    )
+                out_wav.writeframes(chunk_wav.readframes(chunk_wav.getnframes()))
+
+
+def _cleanup_chunks(out_path: Path, chunks: list[Path]) -> None:
+    """Remove chunk files and the .done sentinel. Idempotent."""
+    done_path = out_path.with_suffix(".done")
+    for p in [*chunks, done_path]:
+        with contextlib.suppress(FileNotFoundError):
+            p.unlink()
 
 
 def _wav_duration_ms(path: Path) -> int:
@@ -235,6 +292,14 @@ class TtsNatsAdapter(NatsAdapterBase):
                     await loop.run_in_executor(self._executor, _synthesize, fallback_language)
                 else:
                     raise
+
+            # If the engine ran in chunked mode it writes {stem}_NNN.wav files
+            # plus a {stem}.done sentinel instead of {stem}.wav directly.
+            # Detect and concatenate chunks into out_path before encoding.
+            chunks = _collect_chunked_output(out_path)
+            if chunks:
+                _concat_wav_chunks(chunks, out_path)
+                _cleanup_chunks(out_path, chunks)
 
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
             duration_ms = _wav_duration_ms(out_path)
