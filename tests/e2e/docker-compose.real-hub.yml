@@ -9,7 +9,12 @@
 # Usage:
 #   export LYRA_HUB_IMAGE=ghcr.io/roxabi/lyra:<digest>
 #   export REPO_ROOT=$(git rev-parse --show-toplevel)
+#   # Render the NATS server config from its template (PUBKEY = nkey public key derived from your seed)
+#   PUBKEY=$(nk -inkey "$REPO_ROOT/tests/e2e/fixtures/test.seed" -pubout) \
+#     envsubst < "$REPO_ROOT/tests/e2e/nats-server.conf.template" > "$REPO_ROOT/tests/e2e/nats-server.conf"
 #   export NATS_CONF_PATH=$REPO_ROOT/tests/e2e/nats-server.conf
+#   # Seed file MUST be 0600 — the satellite refuses to start otherwise, and the lyra hub may also enforce it
+#   chmod 600 "$REPO_ROOT/tests/e2e/fixtures/test.seed"
 #   export SEED_PATH=$REPO_ROOT/tests/e2e/fixtures/test.seed
 #   docker compose -f tests/e2e/docker-compose.real-hub.yml up --abort-on-container-exit
 #
@@ -52,6 +57,7 @@ services:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"
       NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
+    restart: on-failure
     volumes:
       - ${REPO_ROOT}:/src:ro
       - ${SEED_PATH}:/run/secrets/nkey.seed:ro
@@ -76,6 +82,7 @@ services:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"
       NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
+    restart: on-failure
     volumes:
       - ${REPO_ROOT}:/src:ro
       - ${SEED_PATH}:/run/secrets/nkey.seed:ro

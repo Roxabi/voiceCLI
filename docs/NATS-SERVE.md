@@ -132,6 +132,9 @@ Copy this block into your supervisord `conf.d/` directory and fill in host-speci
 ```ini
 [program:voicecli_nats_tts]
 command=voicecli nats-serve tts
+; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
+; hosts (e.g. RTX 3080 10 GB). Setting it bypasses the VRAM-sequencing guard and
+; will cause CUDA OOM under concurrent synthesis. See VRAM sequencing section above.
 environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
 exitcodes=0,3,78
@@ -367,6 +370,8 @@ Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
 ```ini
 [program:voicecli_nats_stt]
 command=voicecli nats-serve stt
+; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
+; hosts. Bypasses the VRAM-sequencing guard and risks OOM. See VRAM sequencing above.
 environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
 autorestart=unexpected
 exitcodes=0,3,78
@@ -404,9 +409,19 @@ the compose file:
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin
 docker pull ghcr.io/roxabi/lyra:<digest>
 
+# Render the NATS server config from its template
+# (PUBKEY = the nkey public key derived from your seed file)
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+PUBKEY=$(nk -inkey "$REPO_ROOT/tests/e2e/fixtures/test.seed" -pubout) \
+  envsubst < "$REPO_ROOT/tests/e2e/nats-server.conf.template" \
+  > "$REPO_ROOT/tests/e2e/nats-server.conf"
+
+# Lock down the seed file — required by the satellite (refuses to start otherwise)
+# and by any well-behaved hub image. Editor defaults of 0644 will leak the seed.
+chmod 600 "$REPO_ROOT/tests/e2e/fixtures/test.seed"
+
 # Point the compose file at it and bring up the stack
 export LYRA_HUB_IMAGE="ghcr.io/roxabi/lyra:<digest>"
-export REPO_ROOT="$(git rev-parse --show-toplevel)"
 export NATS_CONF_PATH="$REPO_ROOT/tests/e2e/nats-server.conf"
 export SEED_PATH="$REPO_ROOT/tests/e2e/fixtures/test.seed"
 docker compose -f tests/e2e/docker-compose.real-hub.yml up --abort-on-container-exit
