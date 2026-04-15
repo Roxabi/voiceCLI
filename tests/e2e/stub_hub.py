@@ -66,13 +66,13 @@ async def _round_trip(nc: Any, subject: str, payload: dict) -> dict:
     `uv sync` and hasn't subscribed yet (cold-start, ~30-60s).
     """
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    deadline = asyncio.get_event_loop().time() + SUBSCRIBER_WAIT
+    deadline = asyncio.get_running_loop().time() + SUBSCRIBER_WAIT
     while True:
         try:
             msg = await nc.request(subject, raw, timeout=REPLY_TIMEOUT)
             return json.loads(msg.data)
         except NoRespondersError:
-            if asyncio.get_event_loop().time() >= deadline:
+            if asyncio.get_running_loop().time() >= deadline:
                 raise
             await asyncio.sleep(SUBSCRIBER_POLL_INTERVAL)
 
