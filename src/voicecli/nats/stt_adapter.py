@@ -23,7 +23,6 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "large-v3-turbo"
 SUBJECT = "lyra.voice.stt.request"
 
 # 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
@@ -40,25 +39,6 @@ _MIME_TO_EXT: dict[str, str] = {
     "audio/flac": "flac",
     "audio/webm": "webm",
 }
-
-
-def _resolve_model(cli_value: str | None = None) -> str:
-    """Resolve STT model: CLI arg > VOICECLI_MODEL env > voicecli.toml [stt].model > DEFAULT_MODEL."""
-    if cli_value:
-        return cli_value
-    v = os.environ.get("VOICECLI_MODEL")
-    if v:
-        return v
-    try:
-        from voicecli.config import load_config
-
-        cfg = load_config()
-        toml_model = cfg.get("stt", {}).get("model")
-        if toml_model:
-            return toml_model
-    except Exception:
-        pass
-    return DEFAULT_MODEL
 
 
 def _duration_from_segments(segments: list[dict]) -> float:
