@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -96,10 +95,8 @@ def available_engines() -> list[str]:
 def _get_registry() -> dict[str, type[TTSEngine]]:
     """Build the engine registry.
 
-    Deliberately NOT cached: the env-var gate for ``MockEngine`` is re-read on
-    every call so test suites can toggle ``VOICECLI_ENABLE_MOCK_ENGINE`` mid-run
-    without module reloads. Per-process overhead is negligible (5 lazy imports
-    + 1 dict literal); revisit only if profiling shows it hot in a daemon loop.
+    Returns a dict mapping engine names to engine classes. MockEngine is not
+    included — it is only available in test scope via pytest fixture.
     """
     from voicecli.engines.chatterbox import ChatterboxEngine
     from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
@@ -114,8 +111,4 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
         "chatterbox-turbo": ChatterboxTurboEngine,
         "voxtral": VoxtralEngine,
     }
-    if os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
-        from voicecli.engines.mock import MockEngine
-
-        registry["mock"] = MockEngine
     return registry

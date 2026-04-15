@@ -7,7 +7,6 @@ if the daemon is unavailable.
 
 from __future__ import annotations
 
-import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -125,9 +124,6 @@ def transcribe(
     initial_prompt: str | None = None,
     _skip_daemon: bool = False,
 ) -> TranscriptionResult:
-    if model == "mock" and os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
-        return TranscriptionResult(text="", language="en", segments=[])
-
     # Try daemon first — reuses warm model, avoids loading locally
     if not _skip_daemon:
         daemon_result = _try_daemon(
@@ -143,9 +139,6 @@ def transcribe(
             return daemon_result
 
     whisper = _load_model(model)
-    # Mock-path guard in _load_model returns None — but transcribe() short-circuits
-    # for mock at the top of the function, so whisper is guaranteed non-None here.
-    assert whisper is not None
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -225,12 +218,8 @@ def unload_model() -> None:
     print("[stt] Models unloaded.")
 
 
-def _load_model(model: str) -> WhisperModel | None:
-    # Mock path: short-circuit when env gate is set. Mirrors the guard at the top
-    # of transcribe() so adapter warmup stays engine-agnostic. Returns None —
-    # callers only reach this branch from warmup paths that discard the result.
-    if model == "mock" and os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
-        return None
+def _load_model(model: str) -> WhisperModel:
+    """Load a faster-whisper model, caching for reuse."""
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"

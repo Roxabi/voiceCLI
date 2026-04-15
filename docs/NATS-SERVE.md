@@ -436,3 +436,20 @@ If the hub image is not reachable (wrong tag, no GHCR auth, private image gated)
 compose stack will fail to pull — that is the expected failure mode and the reason this
 file is out of scope for CI. Adding CI support would require private-image auth that is
 tracked separately.
+
+## CI Hygiene for Mock Engine
+
+The `VOICECLI_ENABLE_MOCK_ENGINE` env var must **never** be present in a production
+Docker build context. To prevent accidental leakage:
+
+1. **Explicit unset before build:**
+   ```bash
+   unset VOICECLI_ENABLE_MOCK_ENGINE
+   docker build -t voicecli:prod .
+   ```
+
+2. **Separate build stage:** Use a dedicated CI job for production builds that
+   never runs E2E tests (which export the env var).
+
+The mock engine is isolated to test scope via the `tests/engines/mock.py` location
+and pytest fixture activation. Production code has no reference to `MockEngine`.
