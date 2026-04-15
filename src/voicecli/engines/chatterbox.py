@@ -101,8 +101,6 @@ class ChatterboxEngine(TTSEngine):
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         if segments and len(segments) > 1:
             base_kwargs = dict(
                 language_id=language,
@@ -149,8 +147,6 @@ class ChatterboxEngine(TTSEngine):
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if segments and len(segments) > 1:
             base_kwargs = dict(

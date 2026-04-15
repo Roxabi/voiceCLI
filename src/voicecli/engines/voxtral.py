@@ -149,7 +149,6 @@ class VoxtralEngine(TTSEngine):
         cfg_alpha = kwargs.get("cfg_alpha", 1.2)
 
         resolved_voice = _resolve_voice(voice, language)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if segments and len(segments) > 1:
             audio = self._generate_segmented(

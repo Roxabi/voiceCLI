@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from voicecli.utils import OUTPUT_DIR
+
 log = logging.getLogger(__name__)
 
 
@@ -92,6 +94,41 @@ def _validate_tts_params(
             _check_str(field, extra_kwargs.get(field))
         _check_float("exaggeration", extra_kwargs.get("exaggeration"), 0.0, 2.0)
         _check_float("cfg_weight", extra_kwargs.get("cfg_weight"), 0.0, 1.0)
+
+
+def _validate_output_path(
+    output_path: Path,
+    *,
+    allowed_base: Path | None = None,
+    cli_bypass: bool = False,
+) -> Path:
+    """Validate output path stays within allowed_base, create parent dirs.
+
+    Args:
+        output_path: Target output path.
+        allowed_base: Base directory for validation (default: OUTPUT_DIR).
+        cli_bypass: Skip validation for CLI --output override.
+
+    Returns:
+        Resolved absolute path.
+
+    Raises:
+        ValueError: If path escapes allowed_base and cli_bypass is False.
+    """
+    resolved = output_path.expanduser().resolve()
+    base = (allowed_base or OUTPUT_DIR).expanduser().resolve()
+
+    if not cli_bypass:
+        try:
+            resolved.relative_to(base)
+        except ValueError:
+            raise ValueError(
+                f"Output path escapes allowed directory: {resolved} "
+                f"is outside {base}. Use --output for explicit override."
+            )
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
 
 
 @dataclass
@@ -348,7 +385,6 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 # ── Daemon helpers ───────────────────────────────────────────────────────────
 
-
 _DAEMON_WAIT_SECS = 60.0
 _DAEMON_POLL_INTERVAL = 2.0
 
@@ -485,8 +521,6 @@ def _generate_chunked(
 ) -> list[Path]:
     """Generate speech in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
-
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -564,8 +598,6 @@ def _clone_chunked(
 ) -> list[Path]:
     """Clone voice in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
-
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -649,6 +681,7 @@ def generate(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    _cli_bypass: bool = False,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -725,12 +758,16 @@ def generate(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
+    if output is not None:
+        out = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
+    else:
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -807,6 +844,7 @@ def clone(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    _cli_bypass: bool = False,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -884,12 +922,16 @@ def clone(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
+    if output is not None:
+        out = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
+    else:
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -1001,8 +1043,7 @@ def transcribe(
     )
 
     if output is not None:
-        out_path = Path(output)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = _validate_output_path(Path(output))
         out_path.write_text(result.text, encoding="utf-8")
 
     return result

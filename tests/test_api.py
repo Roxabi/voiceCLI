@@ -39,7 +39,7 @@ def test_generate_returns_tts_result(tmp_path):
         patch("voicecli.engine.get_engine", return_value=mock_engine),
         patch("voicecli.config.load_defaults", return_value={}),
     ):
-        result = generate("Hello world", output=out_path, engine="chatterbox")
+        result = generate("Hello world", output=out_path, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     assert result.wav_path == out_path
@@ -61,7 +61,7 @@ def test_generate_md_input(tmp_path):
         patch("voicecli.engine.get_engine", return_value=mock_engine),
         patch("voicecli.config.load_defaults", return_value={}),
     ):
-        result = generate(str(md_file), output=out_path, engine="chatterbox")
+        result = generate(str(md_file), output=out_path, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     mock_engine.generate.assert_called_once()
@@ -111,11 +111,11 @@ def test_path_params_accept_str_and_path(tmp_path):
         patch("voicecli.config.load_defaults", return_value={}),
     ):
         # str output
-        result = generate("Hello", output=str(out_path), engine="chatterbox")
+        result = generate("Hello", output=str(out_path), engine="chatterbox", _cli_bypass=True)
         assert isinstance(result, TTSResult)
 
         # Path output
-        result = generate("Hello", output=out_path, engine="chatterbox")
+        result = generate("Hello", output=out_path, engine="chatterbox", _cli_bypass=True)
         assert isinstance(result, TTSResult)
 
 
@@ -171,7 +171,7 @@ def test_clone_happy_path(tmp_path):
         patch("voicecli.engine.get_engine", return_value=mock_engine),
         patch("voicecli.config.load_defaults", return_value={}),
     ):
-        result = clone("Hello world", ref=str(ref_file), output=out_path, engine="chatterbox")
+        result = clone("Hello world", ref=str(ref_file), output=out_path, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     assert result.wav_path == out_path
@@ -205,10 +205,12 @@ def test_transcribe_file_not_found():
 def test_transcribe_writes_output(tmp_path):
     """transcribe() with output should write text to file."""
     from voicecli.api import transcribe
+    from voicecli.utils import OUTPUT_DIR
 
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 100)
-    out_file = tmp_path / "result.txt"
+    # Use a path inside OUTPUT_DIR to pass validation
+    out_file = OUTPUT_DIR / "test_result.txt"
 
     mock_result = MagicMock()
     mock_result.text = "Transcribed text"
@@ -219,6 +221,8 @@ def test_transcribe_writes_output(tmp_path):
         transcribe(str(audio_file), output=str(out_file))
 
     assert out_file.read_text() == "Transcribed text"
+    # Cleanup
+    out_file.unlink(missing_ok=True)
 
 
 def test_generate_chunked_returns_chunk_paths(tmp_path):
@@ -237,7 +241,7 @@ def test_generate_chunked_returns_chunk_paths(tmp_path):
         patch("voicecli.config.load_defaults", return_value={}),
         patch("voicecli.utils.smart_chunk", return_value=["Hello world"]),
     ):
-        result = generate("Hello world", output=out_path, chunked=True, engine="chatterbox")
+        result = generate("Hello world", output=out_path, chunked=True, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     assert result.chunk_paths is not None
@@ -259,7 +263,7 @@ def test_generate_mp3(tmp_path):
         patch("voicecli.config.load_defaults", return_value={}),
         patch("voicecli.utils.wav_to_mp3", return_value=mp3_path),
     ):
-        result = generate("Hello world", output=out_path, mp3=True, engine="chatterbox")
+        result = generate("Hello world", output=out_path, mp3=True, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     assert result.mp3_path == mp3_path
@@ -280,7 +284,7 @@ def test_generate_plain_strips_tags(tmp_path):
         patch("voicecli.engine.get_engine", return_value=mock_engine),
         patch("voicecli.config.load_defaults", return_value={}),
     ):
-        result = generate(str(md_file), output=out_path, plain=True, engine="chatterbox")
+        result = generate(str(md_file), output=out_path, plain=True, engine="chatterbox", _cli_bypass=True)
 
     assert isinstance(result, TTSResult)
     call_text = mock_engine.generate.call_args[0][0]
@@ -299,7 +303,7 @@ def test_generate_async_returns_tts_result(tmp_path):
         patch("voicecli.engine.get_engine", return_value=mock_engine),
         patch("voicecli.config.load_defaults", return_value={}),
     ):
-        result = asyncio.run(generate_async("Hello", output=out_path, engine="chatterbox"))
+        result = asyncio.run(generate_async("Hello", output=out_path, engine="chatterbox", _cli_bypass=True))
 
     assert isinstance(result, TTSResult)
     assert result.wav_path == out_path
