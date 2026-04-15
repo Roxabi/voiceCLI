@@ -1439,7 +1439,8 @@ def nats_serve_stt(
     import os
 
     from voicecli.nats.base import DrainTimeoutError
-    from voicecli.nats.stt_adapter import SttNatsAdapter, _resolve_model
+    from voicecli.nats.config import _resolve_model
+    from voicecli.nats.stt_adapter import SttNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.stt")
