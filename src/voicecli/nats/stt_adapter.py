@@ -236,7 +236,8 @@ class SttNatsAdapter(NatsAdapterBase):
 
             out_path.write_bytes(audio_bytes)
 
-            # Fix #1: warm up the model once; distinguish load failures from inference failures
+            # Fix #1: warm up the model once; distinguish load failures from inference failures.
+            # _load_model() handles the mock env-gate short-circuit internally.
             if not self._model_warm:
                 try:
                     from voicecli.transcribe import _load_model

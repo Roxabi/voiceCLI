@@ -1,0 +1,6 @@
+port: 4222
+authorization {
+  users: [
+    { nkey: "{{PUBKEY}}" }
+  ]
+}

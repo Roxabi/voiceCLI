@@ -143,6 +143,9 @@ def transcribe(
             return daemon_result
 
     whisper = _load_model(model)
+    # Mock-path guard in _load_model returns None — but transcribe() short-circuits
+    # for mock at the top of the function, so whisper is guaranteed non-None here.
+    assert whisper is not None
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -222,7 +225,12 @@ def unload_model() -> None:
     print("[stt] Models unloaded.")
 
 
-def _load_model(model: str) -> WhisperModel:
+def _load_model(model: str) -> WhisperModel | None:
+    # Mock path: short-circuit when env gate is set. Mirrors the guard at the top
+    # of transcribe() so adapter warmup stays engine-agnostic. Returns None —
+    # callers only reach this branch from warmup paths that discard the result.
+    if model == "mock" and os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
+        return None
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"
