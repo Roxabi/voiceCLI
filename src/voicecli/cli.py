@@ -617,6 +617,7 @@ def generate(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            _cli_bypass=output is not None,
             **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")
@@ -742,6 +743,7 @@ def clone(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            _cli_bypass=output is not None,
             **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")

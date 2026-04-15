@@ -1,10 +1,11 @@
 """Tests for output path validation (#57)."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.api import _validate_output_path
+from voicecli.api import _validate_output_path, clone, generate
 
 
 class TestValidateOutputPath:
@@ -74,14 +75,12 @@ class TestGenerateOutputValidation:
 
     def test_generate_rejects_escape_path(self, tmp_path):
         """generate() rejects path escaping base."""
-        from unittest.mock import MagicMock, patch
-
-        from voicecli.api import generate
-
+        # Arrange
         base = tmp_path / "base"
         base.mkdir()
         evil = base / ".." / "escape.wav"
 
+        # Act + Assert
         with (
             patch("voicecli.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", side_effect=Exception("should not reach")),
@@ -91,21 +90,20 @@ class TestGenerateOutputValidation:
 
     def test_generate_bypass_with_cli_flag(self, tmp_path):
         """generate() allows outside path with _cli_bypass=True."""
-        from unittest.mock import MagicMock, patch
-
-        from voicecli.api import generate
-
+        # Arrange
         outside = tmp_path / "outside" / "test.wav"
         mock_engine = MagicMock()
         mock_engine.generate.return_value = outside
 
+        # Act
         with (
             patch("voicecli.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", return_value=mock_engine),
         ):
-            # Should NOT raise - bypass active
-            # Use chatterbox engine to avoid daemon path
-            generate("test", output=outside, _cli_bypass=True, engine="chatterbox")
+            result = generate("test", output=outside, _cli_bypass=True, engine="chatterbox")
+
+        # Assert
+        assert result.wav_path == outside.resolve()
 
 
 class TestCloneOutputValidation:
@@ -113,16 +111,14 @@ class TestCloneOutputValidation:
 
     def test_clone_rejects_escape_path(self, tmp_path):
         """clone() rejects path escaping base."""
-        from unittest.mock import patch
-
-        from voicecli.api import clone
-
+        # Arrange
         base = tmp_path / "base"
         base.mkdir()
         evil = base / ".." / "escape.wav"
         ref = tmp_path / "ref.wav"
         ref.write_bytes(b"fake audio")
 
+        # Act + Assert
         with (
             patch("voicecli.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", side_effect=Exception("should not reach")),
@@ -130,21 +126,76 @@ class TestCloneOutputValidation:
         ):
             clone("test", ref=ref, output=evil)
 
+    def test_clone_bypass_with_cli_flag(self, tmp_path):
+        """clone() allows outside path with _cli_bypass=True (mirror of generate)."""
+        # Arrange
+        outside = tmp_path / "outside" / "test.wav"
+        ref = tmp_path / "ref.wav"
+        ref.write_bytes(b"fake audio")
+        mock_engine = MagicMock()
+        mock_engine.clone.return_value = outside
+
+        # Act
+        with (
+            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.engine.get_engine", return_value=mock_engine),
+        ):
+            result = clone("test", ref=ref, output=outside, _cli_bypass=True, engine="chatterbox")
+
+        # Assert
+        assert result.wav_path == outside.resolve()
+
 
 class TestCLIBypass:
-    """Tests for CLI bypass functionality."""
+    """Tests that CLI commands forward _cli_bypass=True when --output is set."""
 
-    @pytest.mark.skip(reason="Requires CLI _cli_bypass integration (V4-T16)")
-    def test_cli_output_flag_bypasses_validation(self, tmp_path, monkeypatch):
-        """CLI --output flag should bypass validation for outside paths."""
-        import subprocess
+    def test_generate_cli_forwards_cli_bypass_when_output_set(self, tmp_path):
+        """`voicecli generate --output X` must pass _cli_bypass=True to api.generate."""
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
 
         outside = tmp_path / "outside" / "test.wav"
-        # This would fail without bypass
-        result = subprocess.run(
-            ["uv", "run", "voicecli", "generate", "test", "--output", str(outside)],
-            capture_output=True,
-            text=True,
-        )
-        # Should NOT contain "escapes" error
-        assert "escapes" not in result.stderr
+        fake_result = MagicMock(wav_path=outside, mp3_path=None)
+
+        with patch("voicecli.api.generate", return_value=fake_result) as mock_gen:
+            runner = CliRunner()
+            result = runner.invoke(app, ["generate", "hello", "--output", str(outside)])
+
+        assert result.exit_code == 0, result.output
+        assert mock_gen.call_args.kwargs.get("_cli_bypass") is True
+
+    def test_generate_cli_does_not_bypass_without_output(self):
+        """`voicecli generate` (no --output) must pass _cli_bypass=False."""
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        fake_result = MagicMock(wav_path=Path("/tmp/out.wav"), mp3_path=None)
+
+        with patch("voicecli.api.generate", return_value=fake_result) as mock_gen:
+            runner = CliRunner()
+            result = runner.invoke(app, ["generate", "hello"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_gen.call_args.kwargs.get("_cli_bypass") is False
+
+    def test_clone_cli_forwards_cli_bypass_when_output_set(self, tmp_path):
+        """`voicecli clone --output X` must pass _cli_bypass=True to api.clone."""
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        ref = tmp_path / "ref.wav"
+        ref.write_bytes(b"fake audio")
+        outside = tmp_path / "outside" / "test.wav"
+        fake_result = MagicMock(wav_path=outside, mp3_path=None)
+
+        with patch("voicecli.api.clone", return_value=fake_result) as mock_clone:
+            runner = CliRunner()
+            result = runner.invoke(
+                app, ["clone", "hello", "--ref", str(ref), "--output", str(outside)]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert mock_clone.call_args.kwargs.get("_cli_bypass") is True

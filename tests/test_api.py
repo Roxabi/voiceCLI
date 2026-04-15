@@ -207,12 +207,10 @@ def test_transcribe_file_not_found():
 def test_transcribe_writes_output(tmp_path):
     """transcribe() with output should write text to file."""
     from voicecli.api import transcribe
-    from voicecli.utils import OUTPUT_DIR
 
     audio_file = tmp_path / "audio.wav"
     audio_file.write_bytes(b"RIFF" + b"\x00" * 100)
-    # Use a path inside OUTPUT_DIR to pass validation
-    out_file = OUTPUT_DIR / "test_result.txt"
+    out_file = tmp_path / "result.txt"
 
     mock_result = MagicMock()
     mock_result.text = "Transcribed text"
@@ -220,11 +218,9 @@ def test_transcribe_writes_output(tmp_path):
     with (
         patch("voicecli.transcribe.transcribe", return_value=mock_result),
     ):
-        transcribe(str(audio_file), output=str(out_file))
+        transcribe(str(audio_file), output=str(out_file), _cli_bypass=True)
 
     assert out_file.read_text() == "Transcribed text"
-    # Cleanup
-    out_file.unlink(missing_ok=True)
 
 
 def test_generate_chunked_returns_chunk_paths(tmp_path):

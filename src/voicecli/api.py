@@ -1007,6 +1007,7 @@ def transcribe(
     language_detection_segments: int | None = None,
     language_fallback: str | None = None,
     _skip_daemon: bool = False,
+    _cli_bypass: bool = False,
 ):
     """Transcribe an audio file to text.
 
@@ -1019,6 +1020,8 @@ def transcribe(
         language_detection_segments: Number of segments to sample for language detection.
         language_fallback: Language code to use when detection confidence is below threshold.
         _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
+        _cli_bypass: Skip output-path base-directory check — set by trusted CLI
+            callers who have already vetted *output* (private).
 
     Returns:
         TranscriptionResult with .text, .language, .segments.
@@ -1045,7 +1048,7 @@ def transcribe(
     )
 
     if output is not None:
-        out_path = _validate_output_path(Path(output))
+        out_path = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
         out_path.write_text(result.text, encoding="utf-8")
 
     return result
