@@ -270,7 +270,9 @@ class TtsNatsAdapter(NatsAdapterBase):
                 kw = dict(optional_kwargs)
                 if language is not None:
                     kw["language"] = language
-                api.generate(text, engine=engine, output=out_path, _cli_bypass=True, **kw, **named_kwargs)
+                api.generate(
+                    text, engine=engine, output=out_path, _cli_bypass=True, **kw, **named_kwargs
+                )
 
             try:
                 await loop.run_in_executor(self._executor, _synthesize, None)

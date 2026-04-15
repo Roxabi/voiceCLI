@@ -1,4 +1,5 @@
 """Tests for output path validation (#57)."""
+
 from pathlib import Path
 
 import pytest

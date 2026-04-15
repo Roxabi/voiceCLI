@@ -521,6 +521,7 @@ def _generate_chunked(
 ) -> list[Path]:
     """Generate speech in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
+
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -598,6 +599,7 @@ def _clone_chunked(
 ) -> list[Path]:
     """Clone voice in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
+
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
