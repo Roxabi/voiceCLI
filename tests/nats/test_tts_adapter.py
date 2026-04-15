@@ -485,6 +485,55 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
 
+    @pytest.mark.parametrize(
+        "bad_engine",
+        [" qwen", "qwen ", " ", "\tqwen", "a b c"],
+        ids=["leading_space", "trailing_space", "single_space", "leading_tab", "inner_spaces"],
+    )
+    def test_handle_rejects_whitespace_in_engine(self, tmp_path: Path, bad_engine: str) -> None:
+        _require_imports()
+        # Arrange — any whitespace fails validate_nats_token (re.fullmatch on [A-Za-z0-9_.\-]+)
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="req-ws", engine=bad_engine)
+
+        with (
+            patch("voicecli.nats.tts_adapter._engine_available") as mock_avail,
+            patch(
+                "voicecli.engine._get_registry",
+                return_value={"mock": _stub_engine_factory(tmp_path)},
+            ),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+            mock_avail.assert_not_called()
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_handle_accepts_dotted_engine_name(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange — dots are allowed by [A-Za-z0-9_.\-]+; must reach _engine_available
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        payload = _valid_payload(request_id="req-dotted", engine="engine.with.dots")
+
+        with (
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=False) as mock_avail,
+            patch(
+                "voicecli.engine._get_registry",
+                return_value={"mock": _stub_engine_factory(tmp_path)},
+            ),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+            # Must have passed the format gate and reached the registry check
+            mock_avail.assert_called_once_with("engine.with.dots")
+
+        reply = msg.last_reply()
+        # Registry rejects it → engine_unavailable, NOT malformed_request
+        assert reply["ok"] is False
+        assert reply["error"] == "engine_unavailable"
+
     def test_handle_default_engine_when_engine_missing(self, tmp_path: Path) -> None:
         _require_imports()
         # Arrange — payload has no engine key; falls back to self.default_engine
@@ -506,9 +555,10 @@ class TestTtsNatsAdapter:
             asyncio.run(adapter.handle(msg, payload))
             mock_avail.assert_called_once_with("mock")
 
-        # Assert — no malformed_request error
+        # Assert — synthesis succeeded using the default engine; no error of any kind
         reply = msg.last_reply()
-        assert reply.get("error") != "malformed_request"
+        assert reply["ok"] is True
+        assert "error" not in reply
 
     def test_handle_default_engine_when_engine_empty(self, tmp_path: Path) -> None:
         _require_imports()
@@ -536,9 +586,10 @@ class TestTtsNatsAdapter:
             asyncio.run(adapter.handle(msg, payload))
             mock_avail.assert_called_once_with("mock")
 
-        # Assert — no malformed_request
+        # Assert — synthesis succeeded using the default engine; no error of any kind
         reply = msg.last_reply()
-        assert reply.get("error") != "malformed_request"
+        assert reply["ok"] is True
+        assert "error" not in reply
 
     def test_lyra_tts_engine_alias_works(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

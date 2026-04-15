@@ -83,39 +83,49 @@ class TestHeartbeatLoopNoCoroutineLeak:
         The old code used asyncio.shield(stop.wait()) inside asyncio.wait_for() — each
         timeout left the inner stop.wait() coroutine running, so N iterations accumulated
         N live waiters. The fix uses asyncio.sleep(interval) instead.
+
+        Probe: compare the total live-task count at two points ~20 iterations apart.
+        The fix keeps exactly one task alive (the heartbeat loop itself) while a leaking
+        implementation would monotonically grow the count by ~1 per iteration.
         """
 
         async def _run() -> None:
             # Arrange
             adapter = _make_adapter(heartbeat_interval=0.01)
             adapter._nats_publish = AsyncMock()  # type: ignore[method-assign]
+            publish_calls_before = adapter._nats_publish.await_count
 
             stop = asyncio.Event()
             hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))
 
             # Act — let the loop run for ~20 iterations
             await asyncio.sleep(0.2)
-
-            # Snapshot 1: count tasks whose repr mentions "wait" (stop.wait() coroutines)
-            def _count_wait_tasks() -> int:
-                return len([t for t in asyncio.all_tasks() if "wait" in repr(t.get_coro())])
-
-            snapshot_1 = _count_wait_tasks()
+            snapshot_1 = len(asyncio.all_tasks())
+            publish_calls_mid = adapter._nats_publish.await_count
 
             # Let it run ~20 more iterations
             await asyncio.sleep(0.2)
-            snapshot_2 = _count_wait_tasks()
+            snapshot_2 = len(asyncio.all_tasks())
+            publish_calls_end = adapter._nats_publish.await_count
 
-            # Assert — count must not grow (leak would cause snapshot_2 > snapshot_1)
-            assert snapshot_2 == snapshot_1, (
-                f"Coroutine leak detected: snapshot_1={snapshot_1}, snapshot_2={snapshot_2}. "
-                "Each iteration of _heartbeat_loop is accumulating a pending waiter."
-            )
-
-            # Cleanup
+            # Cleanup must happen before assertions so a failure doesn't leak hb_task
             stop.set()
             hb_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await hb_task
+
+            # Assert — total task count must not grow (leak would cause ~20 per window)
+            assert snapshot_2 - snapshot_1 <= 1, (
+                f"Coroutine leak detected: snapshot_1={snapshot_1}, snapshot_2={snapshot_2}. "
+                "Each iteration of _heartbeat_loop is accumulating a pending waiter."
+            )
+
+            # Sanity — the loop must have actually iterated between snapshots; otherwise
+            # a stalled loop would falsely satisfy the leak assertion
+            assert publish_calls_mid > publish_calls_before, "loop never iterated before snapshot_1"
+            assert publish_calls_end > publish_calls_mid, (
+                "loop never iterated between snapshots — "
+                "test is not exercising the per-iteration path"
+            )
 
         asyncio.run(_run())

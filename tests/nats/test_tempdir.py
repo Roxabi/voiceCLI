@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from voicecli.nats.tempdir import cleanup, scoped_path
 
 
@@ -36,15 +38,11 @@ class TestScopedPath:
 class TestScopedPathSecurity:
     def test_path_traversal_raises_value_error(self) -> None:
         """scoped_path raises ValueError when request_id escapes TEMP_ROOT."""
-        import pytest
-
         with pytest.raises(ValueError, match="escapes temp root"):
             scoped_path("../../etc/passwd", "wav")
 
     def test_dotdot_request_id_raises_value_error(self) -> None:
         """request_id with .. components must be rejected."""
-        import pytest
-
         with pytest.raises(ValueError, match="escapes temp root"):
             scoped_path("../foo", "wav")
 
@@ -72,19 +70,52 @@ class TestCleanup:
 
 
 class TestTempRootMode:
-    def test_temp_root_created_with_mode_0o700(self) -> None:
-        """TEMP_ROOT is created with mode 0o700 (owner-only rwx) after first scoped_path call."""
+    def test_temp_root_created_with_mode_0o700(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """TEMP_ROOT is created with mode 0o700 after first scoped_path call.
+
+        Uses tmp_path so the real /tmp/voicecli-nats is never touched — avoids racing
+        with live adapter processes or pytest-xdist workers.
+        """
         import os
-        import shutil
         import stat
 
-        from voicecli.nats.tempdir import TEMP_ROOT
+        import voicecli.nats.tempdir as tempdir_mod
 
-        # Arrange — remove any pre-existing dir so mode is freshly set
-        shutil.rmtree(TEMP_ROOT, ignore_errors=True)
+        # Arrange — redirect TEMP_ROOT to an isolated tmp_path subdir that does NOT
+        # yet exist, so scoped_path's mkdir actually runs
+        sandbox = tmp_path / "voicecli-nats"
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", sandbox)
 
         # Act
         scoped_path("req-v1", "wav")
 
         # Assert
-        assert stat.S_IMODE(os.stat(TEMP_ROOT).st_mode) == 0o700
+        assert stat.S_IMODE(os.stat(sandbox).st_mode) == 0o700
+
+    def test_temp_root_chmod_enforces_mode_on_existing_dir(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """If TEMP_ROOT already exists with looser perms, scoped_path enforces 0o700.
+
+        Guards the gap where mkdir(mode=..., exist_ok=True) is a no-op on the OS
+        syscall for existing dirs — without the explicit chmod, a prior install or
+        attacker-created dir could silently grant broader read access.
+        """
+        import os
+        import stat
+
+        import voicecli.nats.tempdir as tempdir_mod
+
+        # Arrange — pre-create the sandbox with world-readable perms
+        sandbox = tmp_path / "voicecli-nats"
+        sandbox.mkdir(mode=0o755)
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", sandbox)
+        assert stat.S_IMODE(os.stat(sandbox).st_mode) == 0o755
+
+        # Act
+        scoped_path("req-v1", "wav")
+
+        # Assert — mode must be corrected to 0o700
+        assert stat.S_IMODE(os.stat(sandbox).st_mode) == 0o700

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
+
+log = logging.getLogger(__name__)
 
 DEFAULT_ENGINE = "qwen-fast"
 
@@ -22,6 +25,9 @@ def _resolve_engine(cli_value: str | None = None) -> str:
         toml_engine = cfg.get("defaults", {}).get("engine")
         if toml_engine:
             return toml_engine
-    except Exception:
-        pass
+    except Exception as e:
+        # Broken install, missing config, or unparseable TOML — fall back to the
+        # default engine but surface the failure for debugging. A silent pass
+        # would mask ImportError / PermissionError as "config absent".
+        log.debug("config fallback during _resolve_engine: %s: %s", type(e).__name__, e)
     return DEFAULT_ENGINE
