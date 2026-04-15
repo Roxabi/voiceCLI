@@ -2,6 +2,29 @@ from datetime import datetime
 from pathlib import Path
 
 OUTPUT_DIR = Path.home() / ".voicecli" / "TTS" / "voices_out"
+STT_OUTPUT_DIR = Path.home() / ".voicecli" / "STT" / "texts_out"
+
+
+class _Unrestricted:
+    """Sentinel for output-path trust boundary owned by the caller.
+
+    When passed as `allowed_base`, `_validate_output_path` skips both the
+    containment check and parent-dir auto-creation. Intended for CLI `--output`
+    and server-controlled scratch paths (NATS satellite).
+    """
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "UNRESTRICTED"
+
+
+UNRESTRICTED = _Unrestricted()
 
 # Map full language names to ISO 639-1 codes (shared across engines and utils)
 LANG_MAP = {

@@ -6,6 +6,7 @@ import typer
 
 from voicecli import __version__
 from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
+from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
 
 
 def _version_callback(value: bool) -> None:
@@ -617,6 +618,7 @@ def generate(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            allowed_base=UNRESTRICTED if output is not None else OUTPUT_DIR,
             **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")
@@ -742,6 +744,7 @@ def clone(
             segment_gap=segment_gap,
             crossfade=crossfade,
             plain=plain,
+            allowed_base=UNRESTRICTED if output is not None else OUTPUT_DIR,
             **extra,
         )
         typer.echo(f"Saved to {result.wav_path}")

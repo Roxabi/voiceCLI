@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
+
 log = logging.getLogger(__name__)
 
 
@@ -92,6 +94,45 @@ def _validate_tts_params(
             _check_str(field, extra_kwargs.get(field))
         _check_float("exaggeration", extra_kwargs.get("exaggeration"), 0.0, 2.0)
         _check_float("cfg_weight", extra_kwargs.get("cfg_weight"), 0.0, 1.0)
+
+
+def _validate_output_path(
+    output_path: Path,
+    *,
+    allowed_base: Path | _Unrestricted,
+) -> Path:
+    """Validate output path stays within allowed_base; create parent dirs.
+
+    Args:
+        output_path: Target output path.
+        allowed_base: Base directory the path must stay within, or
+            ``UNRESTRICTED`` when the caller owns the trust boundary (CLI
+            ``--output`` override, server-controlled scratch path). Pass
+            ``UNRESTRICTED`` explicitly — there is no implicit default, so
+            each caller declares its trust model.
+
+    Returns:
+        Resolved absolute path. For ``UNRESTRICTED`` no parent dirs are
+        created (caller is responsible).
+
+    Raises:
+        ValueError: If ``output_path`` escapes ``allowed_base``.
+    """
+    resolved = output_path.expanduser().resolve()
+
+    if isinstance(allowed_base, _Unrestricted):
+        return resolved
+
+    base = allowed_base.expanduser().resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError:
+        raise ValueError(
+            f"Output path is outside the allowed directory {allowed_base}. "
+            "Pass an explicit --output to override."
+        )
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
 
 
 @dataclass
@@ -348,7 +389,6 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 # ── Daemon helpers ───────────────────────────────────────────────────────────
 
-
 _DAEMON_WAIT_SECS = 60.0
 _DAEMON_POLL_INTERVAL = 2.0
 
@@ -486,7 +526,6 @@ def _generate_chunked(
     """Generate speech in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -565,7 +604,6 @@ def _clone_chunked(
     """Clone voice in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -649,6 +687,7 @@ def generate(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -667,6 +706,9 @@ def generate(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path (CLI ``--output``, server scratch dir).
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -725,12 +767,17 @@ def generate(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
+    if output is not None:
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
+    else:
+        # default_output_path writes inside OUTPUT_DIR by construction
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -807,6 +854,7 @@ def clone(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -826,6 +874,9 @@ def clone(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path.
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -884,12 +935,17 @@ def clone(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
+    if output is not None:
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
+    else:
+        # default_output_path writes inside OUTPUT_DIR by construction
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -963,6 +1019,7 @@ def transcribe(
     language_detection_segments: int | None = None,
     language_fallback: str | None = None,
     _skip_daemon: bool = False,
+    allowed_base: Path | _Unrestricted = STT_OUTPUT_DIR,
 ):
     """Transcribe an audio file to text.
 
@@ -975,6 +1032,9 @@ def transcribe(
         language_detection_segments: Number of segments to sample for language detection.
         language_fallback: Language code to use when detection confidence is below threshold.
         _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``STT_OUTPUT_DIR``). Pass ``UNRESTRICTED`` for an
+            explicit caller-provided path.
 
     Returns:
         TranscriptionResult with .text, .language, .segments.
@@ -1001,8 +1061,7 @@ def transcribe(
     )
 
     if output is not None:
-        out_path = Path(output)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = _validate_output_path(Path(output), allowed_base=allowed_base)
         out_path.write_text(result.text, encoding="utf-8")
 
     return result

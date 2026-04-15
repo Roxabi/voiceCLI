@@ -130,8 +130,6 @@ class QwenFastEngine(QwenEngine):
         if not ref_text:
             base_kwargs["xvec_only"] = True
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Multi-segment mode
         if segments and len(segments) > 1:
             audio, sr = self._generate_segmented(
