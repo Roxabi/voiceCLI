@@ -163,3 +163,15 @@ make -C ~/projects/lyra-stack stt stop
 voicecli clone "text" -e qwen-fast
 make -C ~/projects/lyra-stack stt start
 ```
+
+### NATS satellite vs socket daemon — pick one mode per host
+
+`voicecli nats-serve` and `voicecli serve` / `stt-serve` compete for the same GPU. The VRAM-sequencing guard refuses to start a satellite if a live socket daemon is detected (exit 78). Three coexistence modes:
+
+| Mode | When to use | How |
+|---|---|---|
+| **socket-only** | Hub and voicecli on the same host (low-latency local dev) | Run `voicecli serve` / `stt-serve`, do NOT start the NATS satellite |
+| **nats-only** (default) | Production — hub on a different host | Stop the socket daemon, run `voicecli nats-serve tts` / `stt` |
+| **allow-coexist** | Large-VRAM dev boxes (RTX 5070 Ti 16 GB, etc.) only | Pass `--allow-coexist` or set `VOICECLI_ALLOW_COEXIST=1` |
+
+Do NOT enable allow-coexist on the RTX 3080 (10 GB) production host — it will OOM under concurrent synthesis. Full guard behavior + exit codes: [docs/NATS-SERVE.md#vram-sequencing](docs/NATS-SERVE.md#vram-sequencing).

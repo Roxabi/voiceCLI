@@ -308,6 +308,43 @@ voicecli serve --engine qwen --fast                   # preload smaller 0.6B mod
 
 `generate` and `clone` automatically route to the daemon when it's running — no extra flags. Falls back silently to standalone if the socket isn't present.
 
+### NATS Serve (distributed queue-group satellite)
+
+`voicecli nats-serve {tts,stt}` runs voicecli as a long-lived NATS queue-group subscriber instead of a local Unix-socket daemon — the hub and voicecli talk over NATS subjects rather than a local socket, so they can live on different hosts and be restarted independently.
+
+```bash
+voicecli nats-serve tts                               # TTS satellite (queue group: tts-workers)
+voicecli nats-serve stt                               # STT satellite (queue group: stt-workers)
+voicecli nats-serve tts --allow-coexist               # bypass VRAM guard (large-VRAM hosts only)
+voicecli nats-serve stt --model large-v3-turbo        # override STT model
+```
+
+**When to prefer NATS vs Unix socket:**
+
+| Scenario | Use |
+|---|---|
+| Hub and voicecli on the same host, no network boundary | `voicecli serve` / `stt-serve` (Unix socket) |
+| Hub and voicecli on different hosts | `voicecli nats-serve tts` / `nats-serve stt` |
+| Add satellite capacity without changing hub config | `nats-serve` (add queue-group members) |
+| Production with hub managed separately from GPU worker | `nats-serve` |
+
+**Environment variables (read at startup — restart to apply):**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://nats.internal:4222` |
+| `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to NKey seed file — must be `0600` |
+| `NATS_CA_CERT` | — (optional) | PEM CA certificate for TLS verification |
+| `VOICECLI_ENGINE` / `LYRA_TTS_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, …) |
+| `VOICECLI_MODEL` | `large-v3-turbo` | STT model name (STT-only) |
+| `VOICECLI_MAX_CONCURRENT` | TTS `1` / STT `2` | Parallel request slots — keep at `1` on single-GPU hosts |
+| `VOICECLI_HEARTBEAT_INTERVAL` | `5.0` | Seconds between heartbeats (must stay ≤ 5) |
+| `VOICECLI_DRAIN_TIMEOUT` | `30` | Graceful-shutdown drain window (exit 3 if exceeded) |
+| `VOICECLI_REJECT_WHEN_FULL` | unset | `1` → reject new requests when all slots busy |
+| `VOICECLI_ALLOW_COEXIST` | unset | `1` → bypass VRAM-sequencing guard (dev/large-VRAM hosts) |
+
+Full operator reference: [`docs/NATS-SERVE.md`](../../docs/NATS-SERVE.md).
+
 ### Dictate (STT daemon + overlay)
 
 ```bash
