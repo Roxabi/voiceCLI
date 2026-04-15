@@ -1,11 +1,12 @@
 """Direct tests for NatsAdapterBase._dispatch (issue #48).
 
 These exercise the _dispatch path directly — malformed-JSON recovery,
-contract_version defensive read (warn once then proceed), and the
-active-requests counter balance when handle() raises.
+contract_version defensive read (warn once then proceed), the active-requests
+counter balance across success / error / None-return paths, and the contract
+that ``handle() -> None`` skips the reply step.
 
-The existing adapter test suites call adapter.handle() directly, which
-bypasses _dispatch; these tests close that gap.
+Adapter-state invariants are pinned via ``assert_dispatch_outcome`` (see
+``tests/nats/_fakes.py``): handled?, replied?, counter balance.
 """
 
 from __future__ import annotations
@@ -13,8 +14,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 
 import pytest
+from _fakes import FakeMsg, assert_dispatch_outcome
 
 from voicecli.nats.base import NatsAdapterBase
 from voicecli.nats.reply import CONTRACT_VERSION
@@ -32,27 +35,28 @@ class _RecordingAdapter(NatsAdapterBase):
         return {"ok": True, "request_id": payload.get("request_id", "")}
 
 
-class _RaisingAdapter(NatsAdapterBase):
-    """handle() always raises — exercises the counter-balance finally."""
+class _NoReplyAdapter(NatsAdapterBase):
+    """handle() records the call and returns None — base must NOT reply."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.handle_calls: list[dict] = []
 
     async def handle(self, msg, payload):  # type: ignore[override]
+        self.handle_calls.append(payload)
+        return None
+
+
+class _RaisingAdapter(NatsAdapterBase):
+    """handle() records the call then raises — exercises the counter balance."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.handle_calls: list[dict] = []
+
+    async def handle(self, msg, payload):  # type: ignore[override]
+        self.handle_calls.append(payload)
         raise RuntimeError("boom")
-
-
-class _MockMsg:
-    """Minimal NATS message stand-in — captures responses."""
-
-    def __init__(self, data: bytes, reply_subject: str = "_INBOX.test") -> None:
-        self.data = data
-        self.reply = reply_subject
-        self.responses: list[bytes] = []
-
-    async def respond(self, data: bytes) -> None:
-        self.responses.append(data)
-
-    def last_reply(self) -> dict:
-        assert self.responses, "No reply captured"
-        return json.loads(self.responses[-1])
 
 
 def _make_adapter(cls: type[NatsAdapterBase] = _RecordingAdapter, **kwargs) -> NatsAdapterBase:
@@ -67,36 +71,53 @@ def _make_adapter(cls: type[NatsAdapterBase] = _RecordingAdapter, **kwargs) -> N
     return cls(**defaults)
 
 
+def _encode(payload: dict) -> bytes:
+    return json.dumps(payload).encode()
+
+
+def _run(coro_factory: Callable[[], Awaitable[None]]) -> None:
+    """Single-entry asyncio.run wrapper — enforces one loop per test."""
+    asyncio.run(coro_factory())  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Malformed JSON / UTF-8
+# ---------------------------------------------------------------------------
+
+
 class TestDispatchMalformedJson:
     def test_dispatch_malformed_json_returns_malformed_request_error(self) -> None:
         """_dispatch replies malformed_request and skips handle() on invalid JSON."""
         # Arrange
         adapter = _make_adapter()
-        msg = _MockMsg(data=b"not-json{")
+        msg = FakeMsg(data=b"not-json{")
 
         # Act
-        asyncio.run(adapter._dispatch(msg))
+        _run(lambda: adapter._dispatch(msg))
 
-        # Assert — error reply sent, handle() never invoked
-        reply = msg.last_reply()
-        assert reply["ok"] is False
-        assert reply["error"] == "malformed_request"
-        assert adapter.handle_calls == []  # type: ignore[attr-defined]
+        # Assert
+        assert_dispatch_outcome(adapter, msg, handled=False, replied=True, counter=0)
+        assert msg.last_reply()["ok"] is False
+        assert msg.last_reply()["error"] == "malformed_request"
 
     def test_dispatch_malformed_utf8_returns_malformed_request_error(self) -> None:
         """Invalid UTF-8 bytes are caught by the same branch as bad JSON."""
-        # Arrange — lone continuation byte is invalid UTF-8
+        # Arrange — lone continuation bytes are invalid UTF-8
         adapter = _make_adapter()
-        msg = _MockMsg(data=b"\xff\xfe\x00")
+        msg = FakeMsg(data=b"\xff\xfe\x00")
 
         # Act
-        asyncio.run(adapter._dispatch(msg))
+        _run(lambda: adapter._dispatch(msg))
 
         # Assert
-        reply = msg.last_reply()
-        assert reply["ok"] is False
-        assert reply["error"] == "malformed_request"
-        assert adapter.handle_calls == []  # type: ignore[attr-defined]
+        assert_dispatch_outcome(adapter, msg, handled=False, replied=True, counter=0)
+        assert msg.last_reply()["ok"] is False
+        assert msg.last_reply()["error"] == "malformed_request"
+
+
+# ---------------------------------------------------------------------------
+# contract_version warn-once
+# ---------------------------------------------------------------------------
 
 
 class TestDispatchContractVersion:
@@ -105,21 +126,29 @@ class TestDispatchContractVersion:
     ) -> None:
         """Unexpected contract_version logs WARN exactly once then proceeds.
 
-        Mirrors lyra#688 T7 but via the real _dispatch path (previous coverage
-        asserted the behavior without going through _dispatch).
+        Driven through a single asyncio.run so both dispatches share one event
+        loop, one caplog window, and one adapter instance (the warn-once flag
+        is sticky on the adapter — that's what we're pinning).
+
+        Mirrors lyra#688 T7 but via the real _dispatch path.
         """
         # Arrange
         adapter = _make_adapter()
         payload = {"contract_version": "999", "request_id": "req-cv"}
-        data = json.dumps(payload).encode()
+        msg1 = FakeMsg(data=_encode(payload))
+        msg2 = FakeMsg(data=_encode(payload))
 
-        # Act — dispatch twice with the same mismatched version
+        async def _sequence() -> None:
+            await adapter._dispatch(msg1)
+            await adapter._dispatch(msg2)
+
+        # Act
         with caplog.at_level(logging.WARNING, logger="voicecli.nats.base"):
-            asyncio.run(adapter._dispatch(_MockMsg(data=data)))
-            asyncio.run(adapter._dispatch(_MockMsg(data=data)))
+            _run(_sequence)
 
-        # Assert — handle() ran twice despite the mismatch
+        # Assert — handle() ran twice despite the mismatch, replies sent
         assert len(adapter.handle_calls) == 2  # type: ignore[attr-defined]
+        assert_dispatch_outcome(adapter, msg1, handled=True, replied=True, counter=0)
 
         # Assert — exactly one WARN about contract_version
         contract_warnings = [
@@ -132,20 +161,21 @@ class TestDispatchContractVersion:
         )
         assert "999" in contract_warnings[0].getMessage()
 
-    def test_dispatch_matching_contract_version_does_not_warn(
+    def test_dispatch_matching_contract_version_runs_handle_and_does_not_warn(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Matching contract_version emits no warning."""
+        """Matching contract_version runs handle() and emits no warning."""
         # Arrange
         adapter = _make_adapter()
         payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-ok"}
-        data = json.dumps(payload).encode()
+        msg = FakeMsg(data=_encode(payload))
 
         # Act
         with caplog.at_level(logging.WARNING, logger="voicecli.nats.base"):
-            asyncio.run(adapter._dispatch(_MockMsg(data=data)))
+            _run(lambda: adapter._dispatch(msg))
 
-        # Assert
+        # Assert — handle() ran, reply sent, no contract warning emitted
+        assert_dispatch_outcome(adapter, msg, handled=True, replied=True, counter=0)
         contract_warnings = [
             r
             for r in caplog.records
@@ -154,33 +184,118 @@ class TestDispatchContractVersion:
         assert contract_warnings == []
 
 
+# ---------------------------------------------------------------------------
+# Counter balance — decoupled from exception propagation
+# ---------------------------------------------------------------------------
+
+
 class TestDispatchActiveRequestsCounter:
-    def test_dispatch_active_requests_counter_balanced_on_error(self) -> None:
-        """Counter must return to zero even when handle() raises."""
-        # Arrange
-        adapter = _make_adapter(cls=_RaisingAdapter)
-        payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-raise"}
-        data = json.dumps(payload).encode()
+    """The counter contract is: every dispatch that increments must decrement.
 
-        # Sanity
-        assert adapter._active_requests == 0
+    Decoupled from exception propagation: a future change to _dispatch that
+    swallows handle() exceptions would still be required to balance the
+    counter, and these tests would still pass. The separate
+    TestDispatchExceptionPropagation class pins the re-raise contract so the
+    two concerns can evolve independently.
+    """
 
-        # Act — _dispatch re-raises handle()'s exception; we catch it
-        with pytest.raises(RuntimeError, match="boom"):
-            asyncio.run(adapter._dispatch(_MockMsg(data=data)))
-
-        # Assert — finally block decremented the counter
-        assert adapter._active_requests == 0
-
-    def test_dispatch_active_requests_counter_balanced_on_success(self) -> None:
-        """Counter returns to zero on normal completion."""
-        # Arrange
+    def test_counter_balanced_on_success(self) -> None:
+        """Counter returns to zero after a normal handle()."""
         adapter = _make_adapter()
         payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-ok"}
-        data = json.dumps(payload).encode()
+        msg = FakeMsg(data=_encode(payload))
 
-        # Act
-        asyncio.run(adapter._dispatch(_MockMsg(data=data)))
+        _run(lambda: adapter._dispatch(msg))
 
-        # Assert
         assert adapter._active_requests == 0
+
+    def test_counter_balanced_on_handle_returning_none(self) -> None:
+        """Counter returns to zero even when handle() returns None (no reply)."""
+        adapter = _make_adapter(cls=_NoReplyAdapter)
+        payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-none"}
+        msg = FakeMsg(data=_encode(payload))
+
+        _run(lambda: adapter._dispatch(msg))
+
+        # handle() ran but no reply was sent; counter still balances
+        assert_dispatch_outcome(adapter, msg, handled=True, replied=False, counter=0)
+
+    def test_counter_balanced_on_handle_error(self) -> None:
+        """Counter returns to zero even when handle() raises.
+
+        Asserts the counter directly — does not rely on pytest.raises catching
+        the propagated exception. The coroutine itself wraps the _dispatch
+        call in try/finally so the assertion is independent of whether
+        _dispatch re-raises or swallows.
+        """
+        adapter = _make_adapter(cls=_RaisingAdapter)
+        payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-raise"}
+        msg = FakeMsg(data=_encode(payload))
+
+        async def _dispatch_swallow() -> None:
+            try:
+                await adapter._dispatch(msg)
+            except RuntimeError:
+                pass
+
+        _run(_dispatch_swallow)
+
+        assert adapter._active_requests == 0
+        # handle() was called before raising; no reply was sent
+        assert len(adapter.handle_calls) == 1  # type: ignore[attr-defined]
+        assert msg.responses == []
+
+    def test_counter_balanced_on_malformed_json(self) -> None:
+        """Counter never increments when the payload fails to parse."""
+        adapter = _make_adapter()
+        msg = FakeMsg(data=b"nope{")
+
+        _run(lambda: adapter._dispatch(msg))
+
+        # Never entered the handle() guarded region — counter was never
+        # incremented so "balanced" is trivially satisfied
+        assert adapter._active_requests == 0
+        assert adapter.handle_calls == []  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Exception propagation contract — separate concern from counter balance
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchExceptionPropagation:
+    def test_dispatch_propagates_handle_exceptions_to_caller(self) -> None:
+        """_dispatch currently re-raises handle() exceptions.
+
+        Production NATS callbacks catch these upstream. Pinning the contract
+        separately from the counter test so a future "swallow exceptions
+        inside _dispatch" change is flagged explicitly rather than as a
+        spurious counter regression.
+        """
+        adapter = _make_adapter(cls=_RaisingAdapter)
+        payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-raise"}
+        msg = FakeMsg(data=_encode(payload))
+
+        with pytest.raises(RuntimeError, match="boom"):
+            _run(lambda: adapter._dispatch(msg))
+
+
+# ---------------------------------------------------------------------------
+# handle() → None contract (no reply sent by base)
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchNoneReply:
+    def test_dispatch_skips_reply_when_handle_returns_none(self) -> None:
+        """Base must NOT call reply() when handle() returns None.
+
+        Documents the documented contract: subclasses that respond directly
+        via msg.respond() return None to tell the base to stay out of the way.
+        """
+        adapter = _make_adapter(cls=_NoReplyAdapter)
+        payload = {"contract_version": CONTRACT_VERSION, "request_id": "req-none"}
+        msg = FakeMsg(data=_encode(payload))
+
+        _run(lambda: adapter._dispatch(msg))
+
+        assert_dispatch_outcome(adapter, msg, handled=True, replied=False, counter=0)

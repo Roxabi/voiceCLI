@@ -137,13 +137,42 @@ class NatsAdapterBase:
         if self._nc is not None:
             await self._nc.publish(subject, data)
 
-    async def handle(self, msg: Msg, payload: dict) -> dict:
+    async def handle(self, msg: Msg, payload: dict) -> dict | None:
+        """Process a dispatch payload and return an optional reply dict.
+
+        Contract for subclasses:
+          * Return a dict → base calls ``self.reply(msg, dict)`` with the
+            standard encoder.
+          * Return ``None`` → the subclass is responsible for replying via
+            ``msg.respond()`` directly, or for deliberately not replying
+            (e.g. fire-and-forget variants). ``_dispatch`` skips the reply
+            step in this case.
+
+        The active-requests counter is balanced by ``_dispatch`` regardless
+        of the return value or any exception raised here.
+        """
         raise NotImplementedError
 
     async def reply(self, msg: Msg, payload: dict) -> None:
         """Encode payload and respond to msg."""
         data = encode_reply(payload)
         await msg.respond(data)
+
+    @contextlib.asynccontextmanager
+    async def _track_active_request(self):
+        """Increment the active-requests counter for the scope of a dispatch.
+
+        Balancing the counter in a reusable context manager keeps the
+        invariant ("every started request is eventually decremented") in one
+        place, and makes tests able to assert the balance directly without
+        relying on whether ``_dispatch`` swallows or re-raises exceptions
+        from ``handle()``.
+        """
+        self._active_requests += 1
+        try:
+            yield
+        finally:
+            self._active_requests -= 1
 
     def heartbeat_payload(self) -> dict:
         vram_used, vram_total = read_vram()
@@ -198,10 +227,7 @@ class NatsAdapterBase:
                     CONTRACT_VERSION,
                 )
 
-        self._active_requests += 1
-        try:
+        async with self._track_active_request():
             result = await self.handle(msg, payload)
             if result is not None:
                 await self.reply(msg, result)
-        finally:
-            self._active_requests -= 1
