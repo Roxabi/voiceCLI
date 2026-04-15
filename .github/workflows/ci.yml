@@ -59,7 +59,10 @@ jobs:
         run: uv run pytest tests/e2e/ -v
       - name: Dump compose logs on failure
         if: failure()
-        run: docker compose -f tests/e2e/docker-compose.nats.yml logs
+        # Use -p (project name) instead of -f (compose file) so the step
+        # doesn't fail on unset fixture env vars (REPO_ROOT/SEED_PATH/etc).
+        # The fixture's teardown may have already removed containers — tolerate.
+        run: docker compose -p e2e logs || true
       - name: Tear down compose
         if: always()
-        run: docker compose -f tests/e2e/docker-compose.nats.yml down -v
+        run: docker compose -p e2e down -v || true
