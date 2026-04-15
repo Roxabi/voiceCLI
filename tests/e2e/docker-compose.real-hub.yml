@@ -1,0 +1,85 @@
+# Local real-hub E2E — NOT run in CI.
+#
+# Runs the voicecli NATS satellites against a real lyra hub image instead of
+# the stub hub used by docker-compose.nats.yml. The hub image is injected via
+# $LYRA_HUB_IMAGE (e.g. ghcr.io/roxabi/lyra:<digest>) so no credentials are
+# baked into this file — operators must `docker login ghcr.io` + `docker pull`
+# the image themselves.
+#
+# Usage:
+#   export LYRA_HUB_IMAGE=ghcr.io/roxabi/lyra:<digest>
+#   export REPO_ROOT=$(git rev-parse --show-toplevel)
+#   export NATS_CONF_PATH=$REPO_ROOT/tests/e2e/nats-server.conf
+#   export SEED_PATH=$REPO_ROOT/tests/e2e/fixtures/test.seed
+#   docker compose -f tests/e2e/docker-compose.real-hub.yml up --abort-on-container-exit
+#
+# See docs/NATS-SERVE.md#local-real-hub-e2e for the rationale.
+
+services:
+  nats:
+    image: nats:2-alpine
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    ports:
+      - "4222:4222"
+    volumes:
+      - ${NATS_CONF_PATH}:/etc/nats/nats-server.conf:ro
+
+  lyra-hub:
+    image: ${LYRA_HUB_IMAGE:?set LYRA_HUB_IMAGE to a pulled lyra image, e.g. ghcr.io/roxabi/lyra:<digest>}
+    depends_on: [nats]
+    environment:
+      NATS_URL: "nats://nats:4222"
+      NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
+    volumes:
+      - ${SEED_PATH}:/run/secrets/nkey.seed:ro
+
+  voicecli-tts:
+    image: python:3.12
+    depends_on: [nats, lyra-hub]
+    working_dir: /app
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >-
+        apt-get update -qq
+        && apt-get install -y -qq --no-install-recommends portaudio19-dev libportaudio2
+        && cp -r /src/. /app
+        && pip install uv -q
+        && uv sync --extra nats --frozen
+        --no-install-package torch
+        --no-install-package torchaudio -q
+        && uv run voicecli nats-serve tts --engine mock
+    environment:
+      VOICECLI_ENABLE_MOCK_ENGINE: "1"
+      NATS_URL: "nats://nats:4222"
+      NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
+    volumes:
+      - ${REPO_ROOT}:/src:ro
+      - ${SEED_PATH}:/run/secrets/nkey.seed:ro
+      - uv-cache:/root/.cache/uv
+
+  voicecli-stt:
+    image: python:3.12
+    depends_on: [nats, lyra-hub]
+    working_dir: /app
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >-
+        apt-get update -qq
+        && apt-get install -y -qq --no-install-recommends portaudio19-dev libportaudio2
+        && cp -r /src/. /app
+        && pip install uv -q
+        && uv sync --extra nats --frozen
+        --no-install-package torch
+        --no-install-package torchaudio -q
+        && uv run voicecli nats-serve stt --model mock
+    environment:
+      VOICECLI_ENABLE_MOCK_ENGINE: "1"
+      NATS_URL: "nats://nats:4222"
+      NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
+    volumes:
+      - ${REPO_ROOT}:/src:ro
+      - ${SEED_PATH}:/run/secrets/nkey.seed:ro
+      - uv-cache:/root/.cache/uv
+
+volumes:
+  uv-cache: {}
