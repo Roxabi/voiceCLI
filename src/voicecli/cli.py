@@ -1388,8 +1388,99 @@ def nats_serve_tts(
     if nkey_seed_env:
         nkey_seed_path = Path(nkey_seed_env).expanduser()
 
+    if nkey_seed_path is not None:
+        mode = nkey_seed_path.stat().st_mode
+        if mode & 0o077:  # any group/other permission bit set
+            log.error(
+                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
+                nkey_seed_path,
+                mode & 0o777,
+            )
+            raise typer.Exit(2)
+
     adapter = TtsNatsAdapter(
         default_engine=resolved_engine,
+        max_concurrent=max_concurrent,
+        reject_when_full=reject_when_full,
+        heartbeat_interval=heartbeat_interval,
+        drain_timeout=drain_timeout,
+    )
+
+    try:
+        asyncio.run(adapter.run(nats_url=nats_url, nkey_seed_path=nkey_seed_path))
+    except DrainTimeoutError:
+        log.error("drain timeout exceeded; some requests may have been dropped")
+        raise typer.Exit(3)
+
+
+@nats_app.command("stt")
+def nats_serve_stt(
+    model: Annotated[Optional[str], typer.Option("--model", "-m", envvar="VOICECLI_MODEL")] = None,
+    max_concurrent: Annotated[
+        int, typer.Option("--max-concurrent", envvar="VOICECLI_MAX_CONCURRENT")
+    ] = 2,
+    reject_when_full: Annotated[
+        bool, typer.Option("--reject-when-full", envvar="VOICECLI_REJECT_WHEN_FULL")
+    ] = False,
+    heartbeat_interval: Annotated[
+        float, typer.Option("--heartbeat-interval", envvar="VOICECLI_HEARTBEAT_INTERVAL")
+    ] = 5.0,
+    drain_timeout: Annotated[
+        float, typer.Option("--drain-timeout", envvar="VOICECLI_DRAIN_TIMEOUT")
+    ] = 30.0,
+    allow_coexist: Annotated[
+        bool, typer.Option("--allow-coexist", envvar="VOICECLI_ALLOW_COEXIST")
+    ] = False,
+) -> None:
+    """Subscribe to lyra.voice.stt.request and reply with transcription."""
+    import asyncio
+    import logging
+    import os
+
+    from voicecli.nats.base import DrainTimeoutError
+    from voicecli.nats.stt_adapter import SttNatsAdapter, _resolve_model
+
+    logging.basicConfig(level=logging.INFO)
+    log = logging.getLogger("voicecli.nats-serve.stt")
+
+    resolved_model = _resolve_model(model)
+
+    sock_path = Path("~/.local/share/voicecli/stt-daemon.sock").expanduser()
+    state = _probe_socket_daemon(sock_path)
+    if state == "live":
+        if allow_coexist:
+            log.warning("coexisting with live socket daemon at %s", sock_path)
+        else:
+            log.error(
+                "live socket daemon at %s — refusing to start (use --allow-coexist or stop the daemon)",
+                sock_path,
+            )
+            raise typer.Exit(78)
+    elif state == "stale":
+        log.info("stale socket file at %s ignored", sock_path)
+
+    nats_url = os.environ.get("NATS_URL")
+    if not nats_url:
+        log.error("NATS_URL env var is required")
+        raise typer.Exit(2)
+
+    nkey_seed_path: Path | None = None
+    nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
+    if nkey_seed_env:
+        nkey_seed_path = Path(nkey_seed_env).expanduser()
+
+    if nkey_seed_path is not None:
+        mode = nkey_seed_path.stat().st_mode
+        if mode & 0o077:  # any group/other permission bit set
+            log.error(
+                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
+                nkey_seed_path,
+                mode & 0o777,
+            )
+            raise typer.Exit(2)
+
+    adapter = SttNatsAdapter(
+        default_model=resolved_model,
         max_concurrent=max_concurrent,
         reject_when_full=reject_when_full,
         heartbeat_interval=heartbeat_interval,
