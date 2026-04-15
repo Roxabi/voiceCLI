@@ -67,7 +67,7 @@ overlay = ["PyGObject>=3.42", "pycairo>=1.25"]
 nats = [
     "nats-py>=2.6,<3",
     "nkeys>=0.1",
-    "nvidia-ml-py>=12",
+    "nvidia-ml-py>=12,<14",
 ]
 
 [dependency-groups]
