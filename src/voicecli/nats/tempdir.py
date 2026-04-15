@@ -14,7 +14,7 @@ def scoped_path(request_id: str, ext: str) -> Path:
     Raises ValueError if *request_id* escapes TEMP_ROOT after path resolution
     (defense-in-depth against path traversal).
     """
-    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    TEMP_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     p = TEMP_ROOT.joinpath(f"{request_id}.{ext.lstrip('.')}").resolve()
     root_resolved = TEMP_ROOT.resolve()
     if not p.is_relative_to(root_resolved):

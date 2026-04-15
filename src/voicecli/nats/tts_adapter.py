@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from voicecli.nats._validate import validate_nats_token
 from voicecli.nats.base import NatsAdapterBase
 from voicecli.nats.queue_groups import TTS_WORKERS
 from voicecli.nats.reply import build_reply
@@ -25,29 +26,8 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_ENGINE = "qwen-fast"
 SUBJECT = "lyra.voice.tts.request"
 HEARTBEAT_SUBJECT = "lyra.voice.tts.heartbeat"
-
-
-def _resolve_engine(cli_value: str | None = None) -> str:
-    """Resolve TTS engine: CLI arg > VOICECLI_ENGINE > LYRA_TTS_ENGINE > voicecli.toml > DEFAULT_ENGINE."""
-    if cli_value:
-        return cli_value
-    for env_var in ("VOICECLI_ENGINE", "LYRA_TTS_ENGINE"):
-        v = os.environ.get(env_var)
-        if v:
-            return v
-    try:
-        from voicecli.config import load_config
-
-        cfg = load_config()
-        toml_engine = cfg.get("defaults", {}).get("engine")
-        if toml_engine:
-            return toml_engine
-    except Exception:
-        pass
-    return DEFAULT_ENGINE
 
 
 def _engine_available(engine: str) -> bool:
@@ -122,6 +102,13 @@ class TtsNatsAdapter(NatsAdapterBase):
             return
 
         engine = payload.get("engine") or self.default_engine
+        try:
+            validate_nats_token(engine, kind="engine")
+        except ValueError:
+            await self.reply(
+                msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+            )
+            return
         if not _engine_available(engine):
             await self.reply(
                 msg, build_reply(ok=False, request_id=request_id, error="engine_unavailable")

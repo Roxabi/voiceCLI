@@ -69,3 +69,22 @@ class TestCleanup:
 
         # Act + Assert — must not raise
         cleanup(missing)
+
+
+class TestTempRootMode:
+    def test_temp_root_created_with_mode_0o700(self) -> None:
+        """TEMP_ROOT is created with mode 0o700 (owner-only rwx) after first scoped_path call."""
+        import os
+        import shutil
+        import stat
+
+        from voicecli.nats.tempdir import TEMP_ROOT
+
+        # Arrange — remove any pre-existing dir so mode is freshly set
+        shutil.rmtree(TEMP_ROOT, ignore_errors=True)
+
+        # Act
+        scoped_path("req-v1", "wav")
+
+        # Assert
+        assert stat.S_IMODE(os.stat(TEMP_ROOT).st_mode) == 0o700

@@ -1357,7 +1357,8 @@ def nats_serve_tts(
     import os
 
     from voicecli.nats.base import DrainTimeoutError
-    from voicecli.nats.tts_adapter import TtsNatsAdapter, _resolve_engine
+    from voicecli.nats.config import _resolve_engine
+    from voicecli.nats.tts_adapter import TtsNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")

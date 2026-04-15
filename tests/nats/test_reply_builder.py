@@ -7,7 +7,7 @@ and the appropriate fields for success vs error responses.
 
 from __future__ import annotations
 
-from voicecli.nats.reply import build_reply
+from voicecli.nats.reply import CONTRACT_VERSION, build_reply
 
 
 class TestBuildReply:
@@ -44,3 +44,16 @@ class TestBuildReply:
 
         # Assert
         assert result["request_id"] == ""
+
+    def test_stamps_override_caller_kwargs(self) -> None:
+        """Stamps (contract_version, ok, request_id) overwrite colliding caller fields."""
+        # Arrange — pass spoofed stamp values via **fields; explicit ok/request_id are stamps
+        # Note: Python rejects duplicate explicit kwargs at parse time, so contract_version
+        # is the primary guard exercised here (a caller sneaking it in via **fields).
+        fields = {"contract_version": "spoof", "extra": "data"}
+        reply = build_reply(ok=True, request_id="r", **fields)
+
+        # Assert — stamps must win over caller-supplied kwargs
+        assert reply["contract_version"] == CONTRACT_VERSION
+        assert reply["ok"] is True
+        assert reply["request_id"] == "r"
