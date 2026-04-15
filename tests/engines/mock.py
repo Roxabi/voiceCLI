@@ -1,7 +1,7 @@
 """Mock TTS engine for testing only.
 
 Returns 1-second silent WAV audio without any model loading or external deps.
-Activated only when VOICECLI_ENABLE_MOCK_ENGINE=1.
+Activated only via pytest fixture in tests/conftest.py.
 """
 
 from __future__ import annotations

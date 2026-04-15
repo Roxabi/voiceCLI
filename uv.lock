@@ -2573,7 +2573,7 @@ requires-dist = [
     { name = "lameenc", specifier = ">=1.7" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6,<3" },
     { name = "nkeys", marker = "extra == 'nats'", specifier = ">=0.1" },
-    { name = "nvidia-ml-py", marker = "extra == 'nats'", specifier = ">=12" },
+    { name = "nvidia-ml-py", marker = "extra == 'nats'", specifier = ">=12,<14" },
     { name = "pyaudio", specifier = ">=0.2.14" },
     { name = "pycairo", marker = "extra == 'overlay'", specifier = ">=1.25" },
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
