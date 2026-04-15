@@ -51,3 +51,17 @@ def test_stt_fallthrough_when_unset(monkeypatch, tmp_path):
 
     with pytest.raises((ValueError, RuntimeError, OSError)):
         _transcribe_mod.transcribe(audio_file, model="mock")
+
+
+def test_silent_wav_bytes_header():
+    """Lock the WAV header contract — any struct.pack drift breaks this."""
+    from voicecli.engines.mock import _SILENT_WAV, _silent_wav_bytes
+
+    data = _silent_wav_bytes()
+
+    assert data[:4] == b"RIFF"
+    assert data[8:12] == b"WAVE"
+    assert data[12:16] == b"fmt "
+    assert data[36:40] == b"data"
+    assert len(data) == 44 + 22050 * 2  # 44-byte header + 1s 16-bit mono @ 22.05 kHz
+    assert _SILENT_WAV == data
