@@ -305,7 +305,9 @@ class TestTtsNatsAdapter:
 
     def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange — slow engine (1.5 s); heartbeat every 0.3 s → expect ≥ 1 heartbeat
+        # Arrange — slow engine (1.5 s); heartbeat every 0.3 s → expect 3–8 heartbeats
+        # (>= 3 ensures the loop actually iterated during inference rather than firing
+        #  just once at entry; <= 8 catches runaway loops that lost their sleep gate)
         heartbeat_calls: list[float] = []
 
         async def _run() -> None:
@@ -344,8 +346,13 @@ class TestTtsNatsAdapter:
 
         asyncio.run(_run())
 
-        # Assert — heartbeat fired at least once during the inference window
-        assert len(heartbeat_calls) >= 1
+        # Assert — heartbeat fired multiple times during the inference window
+        # Floor 3 catches the "fires once at entry" degradation; ceiling 8 catches
+        # a runaway loop that lost its sleep gate. With 1.5 s inference + 0.3 s
+        # interval the expected value is ~5.
+        assert 3 <= len(heartbeat_calls) <= 8, (
+            f"expected 3-8 heartbeats during inference, got {len(heartbeat_calls)}"
+        )
 
     def test_path_traversal_request_id_returns_malformed_request(self, tmp_path: Path) -> None:
         _require_imports()

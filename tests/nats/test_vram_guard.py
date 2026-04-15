@@ -73,13 +73,12 @@ class TestProbeSocketDaemon:
         # Assert
         assert result == "absent"
 
-    def test_probe_returns_stale_when_econnrefused(self, tmp_path: Path) -> None:
-        """Returns "stale" when the path exists but no listener is accepting.
+    def test_probe_returns_stale_when_enotsock(self, tmp_path: Path) -> None:
+        """Returns "stale" when the path is a regular file (ENOTSOCK on connect).
 
-        We use a plain regular file (not a real socket) — connecting to it
-        yields ENOTSOCK rather than ECONNREFUSED, but both represent the same
-        semantic state: a path is present yet no live daemon is behind it.
-        The implementation should treat any connection failure as "stale".
+        A plain regular file produces ENOTSOCK — not ECONNREFUSED — but represents
+        the same semantic state: a path is present yet no live daemon is behind it.
+        The implementation must treat any connection failure as "stale".
         """
         # Arrange
         stale = tmp_path / "stale.sock"
@@ -87,6 +86,28 @@ class TestProbeSocketDaemon:
 
         # Act
         result = _probe_socket_daemon(stale)
+
+        # Assert
+        assert result == "stale"
+
+    def test_probe_returns_stale_on_real_econnrefused(self, tmp_path: Path) -> None:
+        """Returns "stale" on genuine ECONNREFUSED from an AF_UNIX socket fs entry.
+
+        Bind + listen on an AF_UNIX socket, then close() without unlink()ing the
+        path. On Linux the fs entry remains (inode type = socket) but connect()
+        returns ECONNREFUSED because no process is accepting. This is the real
+        stale-daemon path that the sibling ENOTSOCK test can't exercise.
+        """
+        # Arrange — bind, listen, then close to leave a refusing socket path
+        sock_path = tmp_path / "refused.sock"
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(str(sock_path))
+        srv.listen(1)
+        srv.close()
+        assert sock_path.exists(), "socket fs entry should persist after close()"
+
+        # Act
+        result = _probe_socket_daemon(sock_path)
 
         # Assert
         assert result == "stale"

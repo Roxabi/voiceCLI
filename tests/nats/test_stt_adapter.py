@@ -631,7 +631,9 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange — slow transcription (1.5 s in thread); heartbeat every 0.3 s → ≥ 1 fires
+        # Arrange — slow transcription (1.5 s in thread); heartbeat every 0.3 s → 3–8 fires
+        # (>= 3 ensures the loop actually iterated during inference rather than firing
+        #  just once at entry; <= 8 catches runaway loops that lost their sleep gate)
         heartbeat_calls: list[float] = []
 
         async def _run() -> None:
@@ -678,8 +680,13 @@ class TestSttNatsAdapter:
 
         asyncio.run(_run())
 
-        # Assert — heartbeat fired at least once during the inference window
-        assert len(heartbeat_calls) >= 1
+        # Assert — heartbeat fired multiple times during the inference window
+        # Floor 3 catches the "fires once at entry" degradation; ceiling 8 catches
+        # a runaway loop that lost its sleep gate. With 1.5 s inference + 0.3 s
+        # interval the expected value is ~5.
+        assert 3 <= len(heartbeat_calls) <= 8, (
+            f"expected 3-8 heartbeats during inference, got {len(heartbeat_calls)}"
+        )
 
     # ------------------------------------------------------------------
     # Case 22: request_id length boundary — 127/128 accepted, 129 rejected

@@ -46,6 +46,26 @@ class TestScopedPathSecurity:
         with pytest.raises(ValueError, match="escapes temp root"):
             scoped_path("../foo", "wav")
 
+    def test_absolute_path_request_id_rejected(self) -> None:
+        """request_id that is an absolute path must not escape TEMP_ROOT.
+
+        Belt-and-suspenders — the adapter allowlist rejects `/` at ingestion, but
+        scoped_path is the last line of defense and should reject absolute paths
+        directly (joinpath with an absolute component replaces the base dir).
+        """
+        with pytest.raises(ValueError, match="escapes temp root"):
+            scoped_path("/etc/passwd", "wav")
+
+    def test_null_byte_request_id_rejected(self) -> None:
+        """request_id with embedded null byte must raise ValueError.
+
+        Belt-and-suspenders against null-byte injection. Python's path layer
+        already rejects null bytes in syscalls, but scoped_path should surface
+        a ValueError rather than leaking OSError/ValueError from deep below.
+        """
+        with pytest.raises(ValueError):
+            scoped_path("req\x00evil", "wav")
+
 
 class TestCleanup:
     def test_cleanup_removes_file(self, tmp_path: Path) -> None:
