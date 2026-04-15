@@ -29,6 +29,7 @@ packages = ["src/voicecli"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+exclude = [".claude/"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["F401"]
