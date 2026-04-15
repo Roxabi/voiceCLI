@@ -1,0 +1,40 @@
+---
+title: refactor(api): centralize output_path validation (OWASP-adjacent)
+issue: 57
+status: approved
+tier: F-lite
+date: 2026-04-15
+---
+
+## Problem
+
+Every TTS engine accepts an `output_path: Path` from the caller and writes directly without validating that the resolved path stays within an allowed base directory. For a local CLI writing to `~/.voicecli/TTS/voices_out/`, the realistic threat is misconfiguration or malicious `.md` frontmatter `output` field — not a remote attacker. This is low urgency but architecturally incorrect.
+
+Additionally, `output_path.parent.mkdir(parents=True, exist_ok=True)` is duplicated across all 6 engines (qwen, qwen_fast, chatterbox, chatterbox_turbo, voxtral, mock). Centralizing both concerns removes duplication and ensures consistent security posture.
+
+## Who
+
+- **Primary:** voiceCLI maintainers — cleaner architecture, less duplication
+- **Secondary:** Single-user CLI operators — protection against accidental misconfiguration
+
+## Constraints
+
+- **Low priority:** No active exploit path; bundle with future `api.py` refactor to avoid churn
+- **Backward-compatible:** Must support explicit `--output` CLI flag override for intentional writes outside `~/.voicecli/`
+- **Scope bounded:** 6 engines + api.py + tests — no new files beyond optional `paths.py`
+
+## Out of Scope
+
+- Input-path validation (e.g., `--ref-audio` in clone) — separate concern
+- Remote threat models — local CLI context only
+- Changing `--output` flag semantics beyond adding bypass mechanism
+
+## Complexity
+
+**Tier: F-lite** — Clear scope, single domain (api + engines), size:M label matches.
+
+**Signals:**
+- Issue body has complete acceptance criteria (4 scenarios)
+- Explicit out-of-scope boundaries
+- Known file list: 6 engines + api.py + tests
+- No architectural unknowns — straightforward extract-helper refactor
