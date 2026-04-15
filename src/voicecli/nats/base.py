@@ -50,6 +50,7 @@ class NatsAdapterBase:
         self._active_requests: int = 0
         self.model_loaded: str | None = None
         self._contract_version_warned: bool = False
+        self._started_at: float = time.monotonic()
 
     async def run(
         self,
@@ -158,6 +159,8 @@ class NatsAdapterBase:
             "vram_used_mb": vram_used,
             "vram_total_mb": vram_total,
             "active_requests": self._active_requests,
+            "connected": self._nc.is_connected if self._nc is not None else False,
+            "uptime_s": time.monotonic() - self._started_at,
         }
 
     async def _heartbeat_loop(self, stop: asyncio.Event) -> None:
@@ -171,9 +174,9 @@ class NatsAdapterBase:
             except Exception:
                 log.warning("base: heartbeat publish failed", exc_info=True)
             try:
-                await asyncio.wait_for(asyncio.shield(stop.wait()), timeout=self.heartbeat_interval)
-            except asyncio.TimeoutError:
-                pass
+                await asyncio.sleep(self.heartbeat_interval)
+            except asyncio.CancelledError:
+                break
 
     async def _dispatch(self, msg: Msg) -> None:
         try:

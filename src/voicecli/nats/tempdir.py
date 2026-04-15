@@ -14,7 +14,12 @@ def scoped_path(request_id: str, ext: str) -> Path:
     Raises ValueError if *request_id* escapes TEMP_ROOT after path resolution
     (defense-in-depth against path traversal).
     """
-    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    TEMP_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Python's mkdir(mode=..., exist_ok=True) only applies mode at creation time;
+    # a dir that already exists with looser perms is silently reused. Enforce mode
+    # unconditionally so a prior install or a pre-created world-readable dir cannot
+    # leak per-request audio to other local users.
+    TEMP_ROOT.chmod(0o700)
     p = TEMP_ROOT.joinpath(f"{request_id}.{ext.lstrip('.')}").resolve()
     root_resolved = TEMP_ROOT.resolve()
     if not p.is_relative_to(root_resolved):

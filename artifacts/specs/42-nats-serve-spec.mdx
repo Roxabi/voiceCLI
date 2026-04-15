@@ -209,7 +209,7 @@ Vertical, independently demo-able increments. Each slice is a PR candidate; the 
 ### Coexistence & install
 
 - [ ] Existing `voicecli tts-serve` and `voicecli stt-serve` commands pass their current test suite unchanged.
-- [ ] Starting `nats-serve tts` while `tts-serve`'s socket exists aborts with exit code 2 (unless `--allow-coexist`).
+- [ ] Starting `nats-serve tts` while `tts-serve`'s socket exists aborts with exit code 78 (`EX_CONFIG`) (unless `--allow-coexist`).
 - [ ] `uv pip install --all-extras` succeeds and pulls in `nats-py>=2.6` + `nkeys>=0.1`.
 - [ ] Default install (`uv pip install .`) does NOT pull `nats-py` or `nkeys`.
 

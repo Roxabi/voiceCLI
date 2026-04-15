@@ -1699,18 +1699,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pynvml"
-version = "13.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-ml-py" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/57/da7dc63a79f59e082e26a66ac02d87d69ea316b35b35b7a00d82f3ce3d2f/pynvml-13.0.1.tar.gz", hash = "sha256:1245991d9db786b4d2f277ce66869bd58f38ac654e38c9397d18f243c8f6e48f", size = 35226, upload-time = "2025-09-05T20:33:25.377Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/4a/cac76c174bb439a0c46c9a4413fcbea5c6cabfb01879f7bbdb9fdfaed76c/pynvml-13.0.1-py3-none-any.whl", hash = "sha256:e2b20e0a501eeec951e2455b7ab444759cf048e0e13a57b08049fa2775266aa8", size = 28810, upload-time = "2025-09-05T20:33:24.13Z" },
-]
-
-[[package]]
 name = "pyobjc-core"
 version = "12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2557,7 +2545,7 @@ hotkey = [
 nats = [
     { name = "nats-py" },
     { name = "nkeys" },
-    { name = "pynvml" },
+    { name = "nvidia-ml-py" },
 ]
 overlay = [
     { name = "pycairo" },
@@ -2585,11 +2573,11 @@ requires-dist = [
     { name = "lameenc", specifier = ">=1.7" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6,<3" },
     { name = "nkeys", marker = "extra == 'nats'", specifier = ">=0.1" },
+    { name = "nvidia-ml-py", marker = "extra == 'nats'", specifier = ">=12" },
     { name = "pyaudio", specifier = ">=0.2.14" },
     { name = "pycairo", marker = "extra == 'overlay'", specifier = ">=1.25" },
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
-    { name = "pynvml", marker = "extra == 'nats'", specifier = ">=11.5" },
     { name = "qwen-tts" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },
