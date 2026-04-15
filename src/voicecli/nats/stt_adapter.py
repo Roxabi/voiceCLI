@@ -236,23 +236,32 @@ class SttNatsAdapter(NatsAdapterBase):
 
             out_path.write_bytes(audio_bytes)
 
-            # Fix #1: warm up the model once; distinguish load failures from inference failures
+            # Fix #1: warm up the model once; distinguish load failures from inference failures.
+            # The mock model short-circuits in transcribe.transcribe() — skip warmup to avoid
+            # _load_model("mock") raising ValueError (test-only engine, not in VALID_MODELS).
             if not self._model_warm:
-                try:
-                    from voicecli.transcribe import _load_model
-
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(self._executor, _load_model, self.default_model)
+                if (
+                    self.default_model == "mock"
+                    and os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1"
+                ):
                     self._model_warm = True
-                    # Fix #3: set model_loaded only after the model is actually warm
                     self.model_loaded = self.default_model
-                except Exception:
-                    log.exception("model_load_failed", extra={"request_id": request_id})
-                    await self.reply(
-                        msg,
-                        build_reply(ok=False, request_id=request_id, error="model_load_failed"),
-                    )
-                    return
+                else:
+                    try:
+                        from voicecli.transcribe import _load_model
+
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(self._executor, _load_model, self.default_model)
+                        self._model_warm = True
+                        # Fix #3: set model_loaded only after the model is actually warm
+                        self.model_loaded = self.default_model
+                    except Exception:
+                        log.exception("model_load_failed", extra={"request_id": request_id})
+                        await self.reply(
+                            msg,
+                            build_reply(ok=False, request_id=request_id, error="model_load_failed"),
+                        )
+                        return
 
             from voicecli import api
 

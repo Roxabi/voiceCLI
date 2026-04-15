@@ -30,3 +30,36 @@ jobs:
         run: uv run pyright
       - name: Test
         run: uv run python -m pytest --ignore=tests/test_overlay.py
+
+  e2e:
+    needs: [ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: true
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y portaudio19-dev libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-3.0
+      - name: Install dependencies
+        run: uv sync --dev --extra nats
+      - name: Seed-leak lint
+        run: |
+          if find tests/e2e/ \( -name '*.seed' -o -name '*.nk' \) | grep .; then
+            echo "::error::seed-shaped file committed under tests/e2e/"
+            exit 1
+          fi
+      - name: Run E2E tests
+        run: uv run pytest tests/e2e/ -v
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose -f tests/e2e/docker-compose.nats.yml logs
+      - name: Tear down compose
+        if: always()
+        run: docker compose -f tests/e2e/docker-compose.nats.yml down -v
