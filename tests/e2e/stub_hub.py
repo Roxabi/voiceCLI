@@ -15,7 +15,7 @@ from nats.errors import NoRespondersError
 
 TTS_REQUEST_SUBJECT = "lyra.voice.tts.request"
 STT_REQUEST_SUBJECT = "lyra.voice.stt.request"
-REPLY_TIMEOUT = 10.0
+REPLY_TIMEOUT = 30.0
 # Cold-start budget for satellite containers to `uv sync` and subscribe.
 # CI (cold docker pulls + fresh uv cache) needs ~150–250s; local warm runs ~60s.
 SUBSCRIBER_WAIT = 300.0
