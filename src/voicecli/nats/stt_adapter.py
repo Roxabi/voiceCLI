@@ -88,7 +88,7 @@ class SttNatsAdapter(NatsAdapterBase):
             SUBJECT,
             STT_WORKERS,
             "stt",
-            "1",
+            1,
             heartbeat_subject=HEARTBEAT_SUBJECT,
             heartbeat_interval=heartbeat_interval,
             drain_timeout=drain_timeout,

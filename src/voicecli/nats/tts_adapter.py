@@ -157,7 +157,7 @@ class TtsNatsAdapter(NatsAdapterBase):
             SUBJECT,
             TTS_WORKERS,
             envelope_name="tts",
-            schema_version="1",
+            schema_version=1,
             drain_timeout=drain_timeout,
             heartbeat_subject=HEARTBEAT_SUBJECT,
             heartbeat_interval=heartbeat_interval,
