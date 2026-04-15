@@ -6,16 +6,13 @@ import asyncio
 import base64
 import functools
 import logging
-import os
 import re
-import socket
-import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from voicecli.nats.base import NatsAdapterBase
+from roxabi_nats import NatsAdapterBase
 from voicecli.nats.queue_groups import STT_WORKERS
-from voicecli.nats.reply import build_reply
+from voicecli.nats.reply import build_reply, encode_reply
 from voicecli.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
@@ -87,37 +84,50 @@ class SttNatsAdapter(NatsAdapterBase):
         heartbeat_interval: float = 5.0,
         drain_timeout: float = 30.0,
     ) -> None:
-        worker_id = f"stt-{socket.gethostname()}-{os.getpid()}-{int(time.time())}"
         super().__init__(
-            subject=SUBJECT,
-            queue_group=STT_WORKERS,
+            SUBJECT,
+            STT_WORKERS,
+            "stt",
+            "1",
             heartbeat_subject=HEARTBEAT_SUBJECT,
-            service="stt_workers",
-            worker_id=worker_id,
             heartbeat_interval=heartbeat_interval,
             drain_timeout=drain_timeout,
         )
         self.default_model = default_model
         self.max_concurrent = max_concurrent
         self.reject_when_full = reject_when_full
+        self.model_loaded: str | None = None
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
         self._model_warm: bool = False
 
+    def heartbeat_payload(self) -> dict:
+        payload = super().heartbeat_payload()
+        payload["model_loaded"] = self.model_loaded
+        payload["active_requests"] = self.max_concurrent - self._sem._value
+        return payload
+
+    def _extra_subjects(self) -> list[str]:
+        return [f"{self.subject}.{self._worker_id}"]
+
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(msg, build_reply(ok=False, request_id="", error="malformed_request"))
+            await self.reply(
+                msg, encode_reply(build_reply(ok=False, request_id="", error="malformed_request"))
+            )
             return
 
         # Reject path-traversal or oversized request IDs at ingestion
         if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
             await self.reply(
                 msg,
-                build_reply(
-                    ok=False,
-                    request_id=request_id[:64] if request_id else "",
-                    error="malformed_request",
+                encode_reply(
+                    build_reply(
+                        ok=False,
+                        request_id=request_id[:64] if request_id else "",
+                        error="malformed_request",
+                    )
                 ),
             )
             return
@@ -125,7 +135,10 @@ class SttNatsAdapter(NatsAdapterBase):
         audio_b64 = payload.get("audio_b64")
         if not audio_b64 or not isinstance(audio_b64, str):
             await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                msg,
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="malformed_request")
+                ),
             )
             return
 
@@ -141,12 +154,18 @@ class SttNatsAdapter(NatsAdapterBase):
             if key == "language_detection_segments" and isinstance(val, bool):
                 # bool is a subclass of int in Python; reject separately
                 await self.reply(
-                    msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                    msg,
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="malformed_request")
+                    ),
                 )
                 return
             if not isinstance(val, expected_types):
                 await self.reply(
-                    msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                    msg,
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="malformed_request")
+                    ),
                 )
                 return
 
@@ -167,7 +186,10 @@ class SttNatsAdapter(NatsAdapterBase):
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
                 await self.reply(
-                    msg, build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
+                    msg,
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
+                    ),
                 )
                 return
             try:
@@ -197,7 +219,9 @@ class SttNatsAdapter(NatsAdapterBase):
                 )
                 await self.reply(
                     msg,
-                    build_reply(ok=False, request_id=request_id, error="payload_too_large"),
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="payload_too_large")
+                    ),
                 )
                 cleanup(out_path)
                 return
@@ -209,7 +233,9 @@ class SttNatsAdapter(NatsAdapterBase):
                 log.warning("audio_decode_failed", extra={"request_id": request_id})
                 await self.reply(
                     msg,
-                    build_reply(ok=False, request_id=request_id, error="audio_decode_failed"),
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="audio_decode_failed")
+                    ),
                 )
                 # Fix #4: remove redundant cleanup(out_path) here; finally block handles it
                 return
@@ -231,7 +257,9 @@ class SttNatsAdapter(NatsAdapterBase):
                     log.exception("model_load_failed", extra={"request_id": request_id})
                     await self.reply(
                         msg,
-                        build_reply(ok=False, request_id=request_id, error="model_load_failed"),
+                        encode_reply(
+                            build_reply(ok=False, request_id=request_id, error="model_load_failed")
+                        ),
                     )
                     return
 
@@ -249,19 +277,23 @@ class SttNatsAdapter(NatsAdapterBase):
             duration_seconds = _duration_from_segments(result.segments)
             await self.reply(
                 msg,
-                build_reply(
-                    ok=True,
-                    request_id=request_id,
-                    text=result.text,
-                    language=result.language,
-                    duration_seconds=duration_seconds,
+                encode_reply(
+                    build_reply(
+                        ok=True,
+                        request_id=request_id,
+                        text=result.text,
+                        language=result.language,
+                        duration_seconds=duration_seconds,
+                    )
                 ),
             )
         except Exception:
             log.exception("transcription_failed", extra={"request_id": request_id})
             await self.reply(
                 msg,
-                build_reply(ok=False, request_id=request_id, error="transcription_failed"),
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="transcription_failed")
+                ),
             )
         finally:
             cleanup(out_path)

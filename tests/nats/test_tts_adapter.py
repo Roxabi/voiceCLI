@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -50,6 +50,16 @@ def _require_imports() -> None:
 # Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
 # every existing MockMsg() call site keeps working unchanged.
 from _fakes import FakeMsg as MockMsg  # noqa: E402
+from _fakes import FakeNatsConn  # noqa: E402
+
+
+def _setup_adapter(adapter: TtsNatsAdapter, msg: MockMsg) -> None:
+    """Set up adapter with mock NATS connection for testing.
+
+    The SDK's reply() method requires _nc to be set. This helper
+    sets up a FakeNatsConn that forwards publishes to msg.respond().
+    """
+    adapter._nc = FakeNatsConn(msg)  # noqa: E402
 
 
 def _valid_payload(
@@ -119,6 +129,7 @@ class TestTtsNatsAdapter:
         # Arrange
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-001")
 
         def _patched_scoped_path(request_id: str, ext: str) -> Path:
@@ -145,6 +156,7 @@ class TestTtsNatsAdapter:
         # Arrange
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(engine="ghost-engine")
 
         with patch(
@@ -162,6 +174,7 @@ class TestTtsNatsAdapter:
         # Arrange
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-boom")
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
@@ -184,6 +197,7 @@ class TestTtsNatsAdapter:
         # Arrange — contract_version "999" must NOT short-circuit (ADR-044 defensive read).
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-999", contract_version="999")
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
@@ -205,6 +219,7 @@ class TestTtsNatsAdapter:
         # Arrange — no request_id in payload
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"text": "Hello", "engine": "mock"}
 
         with patch(
@@ -238,6 +253,7 @@ class TestTtsNatsAdapter:
         # Arrange
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1, reject_when_full=True)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-cap")
 
         async def _run() -> None:
@@ -264,6 +280,7 @@ class TestTtsNatsAdapter:
         request_id = "req-clean-ok"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         temp_file = tmp_path / f"{request_id}.wav"
 
@@ -285,6 +302,7 @@ class TestTtsNatsAdapter:
         request_id = "req-clean-fail"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         temp_file = tmp_path / f"{request_id}.wav"
 
@@ -330,6 +348,7 @@ class TestTtsNatsAdapter:
                 heartbeat_interval=0.05,  # fast enough to accumulate 3 quickly
             )
             msg = MockMsg()
+            _setup_adapter(adapter, msg)
             payload = _valid_payload(request_id="req-hb")
 
             async def _fake_publish(subject: str, data: bytes) -> None:
@@ -342,9 +361,17 @@ class TestTtsNatsAdapter:
             def _patched_scoped_path(rid: str, ext: str) -> Path:
                 return tmp_path / f"{rid}.{ext}"
 
-            adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
+            original_publish = adapter._nc.publish  # type: ignore[union-attr]
 
-            stop = asyncio.Event()
+            async def _counting_publish(subject: str, data: bytes) -> None:
+                nonlocal heartbeat_count
+                if "heartbeat" in subject:
+                    heartbeat_count += 1
+                    if heartbeat_count >= target_heartbeats:
+                        gate.set()
+                await original_publish(subject, data)
+
+            adapter._nc.publish = _counting_publish  # type: ignore[union-attr, method-assign]
 
             with patch(
                 "voicecli.engine._get_registry",
@@ -354,13 +381,15 @@ class TestTtsNatsAdapter:
                     "voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))
-                    hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
-
-                    # If the loop stops firing, gate never sets → handle_task
-                    # blocks → wait_for times out with a clean failure message
-                    await asyncio.wait_for(handle_task, timeout=5.0)
-                    stop.set()
-                    await asyncio.wait_for(hb_task, timeout=1.0)
+                    hb_task = asyncio.create_task(adapter._heartbeat_loop())  # type: ignore[attr-defined]
+                    try:
+                        # If the loop stops firing, gate never sets → handle_task
+                        # blocks → wait_for times out with a clean failure message
+                        await asyncio.wait_for(handle_task, timeout=5.0)
+                    finally:
+                        hb_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await hb_task
 
         asyncio.run(_run())
 
@@ -375,6 +404,7 @@ class TestTtsNatsAdapter:
         # Arrange — request_id contains path traversal
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="../escape")
 
         with patch(
@@ -392,6 +422,7 @@ class TestTtsNatsAdapter:
         # Arrange — no text in payload
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"contract_version": "1", "request_id": "req-notext", "engine": "mock"}
 
         with patch(
@@ -409,6 +440,7 @@ class TestTtsNatsAdapter:
         # Arrange — text is not a string
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {
             "contract_version": "1",
             "request_id": "req-badtext",
@@ -447,6 +479,7 @@ class TestTtsNatsAdapter:
         # Arrange — engine with a space fails validate_nats_token
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-space", engine="a b")
 
         with (
@@ -469,6 +502,7 @@ class TestTtsNatsAdapter:
         # Arrange — engine with wildcard chars fails validate_nats_token
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-wild", engine="*.tts")
 
         with (
@@ -491,6 +525,7 @@ class TestTtsNatsAdapter:
         # Arrange — engine "**" fails validate_nats_token
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-dbl-wild", engine="**")
 
         with (
@@ -518,6 +553,7 @@ class TestTtsNatsAdapter:
         # Arrange — any whitespace fails validate_nats_token (re.fullmatch on [A-Za-z0-9_.\-]+)
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-ws", engine=bad_engine)
 
         with (
@@ -539,6 +575,7 @@ class TestTtsNatsAdapter:
         # Arrange — dots are allowed by [A-Za-z0-9_.\-]+; must reach _engine_available
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-dotted", engine="engine.with.dots")
 
         with (
@@ -562,6 +599,7 @@ class TestTtsNatsAdapter:
         # Arrange — payload has no engine key; falls back to self.default_engine
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"contract_version": "1", "request_id": "req-noeng", "text": "hello"}
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
@@ -588,6 +626,7 @@ class TestTtsNatsAdapter:
         # Arrange — engine="" is falsy; falls back to self.default_engine
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {
             "contract_version": "1",
             "request_id": "req-empeng",
@@ -636,6 +675,7 @@ class TestTtsNatsAdapter:
         """Invoke handle() with api.generate patched; return (reply, args, kwargs)."""
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         captured: dict = {}
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
@@ -727,6 +767,7 @@ class TestTtsNatsAdapter:
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-fb") | {
             "language": "zz",
             "fallback_language": "en",
@@ -762,6 +803,7 @@ class TestTtsNatsAdapter:
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         # No fallback_language provided → ValueError bubbles up as synthesis_failed.
         payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
 
@@ -791,6 +833,7 @@ class TestTtsNatsAdapter:
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         # fallback == primary → no retry, error is surfaced immediately.
         payload = _valid_payload(request_id="req-same") | {
             "language": "en",
@@ -838,6 +881,7 @@ class TestTtsNatsAdapter:
 
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-wf")
 
         with (
@@ -858,6 +902,7 @@ class TestTtsNatsAdapter:
         # 1-byte stub is not a valid WAV → helper returns None → field omitted.
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-no-wf")
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:

@@ -6,20 +6,17 @@ import asyncio
 import base64
 import contextlib
 import logging
-import os
 import re
-import socket
 import struct
-import time
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from voicecli.nats._validate import validate_nats_token
-from voicecli.nats.base import NatsAdapterBase
+from roxabi_nats import NatsAdapterBase
+from roxabi_nats._validate import validate_nats_token
 from voicecli.nats.queue_groups import TTS_WORKERS
-from voicecli.nats.reply import build_reply
+from voicecli.nats.reply import build_reply, encode_reply
 from voicecli.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
@@ -156,36 +153,49 @@ class TtsNatsAdapter(NatsAdapterBase):
         heartbeat_interval: float = 5.0,
         drain_timeout: float = 30.0,
     ) -> None:
-        worker_id = f"tts-{socket.gethostname()}-{os.getpid()}-{int(time.time())}"
         super().__init__(
-            subject=SUBJECT,
-            queue_group=TTS_WORKERS,
-            heartbeat_subject=HEARTBEAT_SUBJECT,
-            service="tts_workers",
-            worker_id=worker_id,
-            heartbeat_interval=heartbeat_interval,
+            SUBJECT,
+            TTS_WORKERS,
+            envelope_name="tts",
+            schema_version="1",
             drain_timeout=drain_timeout,
+            heartbeat_subject=HEARTBEAT_SUBJECT,
+            heartbeat_interval=heartbeat_interval,
         )
         self.default_engine = default_engine
         self.max_concurrent = max_concurrent
         self.reject_when_full = reject_when_full
+        self.model_loaded: str | None = None
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
+
+    def heartbeat_payload(self) -> dict:
+        payload = super().heartbeat_payload()
+        payload["model_loaded"] = self.model_loaded
+        payload["active_requests"] = self.max_concurrent - self._sem._value
+        return payload
+
+    def _extra_subjects(self) -> list[str]:
+        return [f"{self.subject}.{self._worker_id}"]
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(msg, build_reply(ok=False, request_id="", error="malformed_request"))
+            await self.reply(
+                msg, encode_reply(build_reply(ok=False, request_id="", error="malformed_request"))
+            )
             return
 
         # Reject path-traversal or oversized request IDs at ingestion (Fix 2)
         if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
             await self.reply(
                 msg,
-                build_reply(
-                    ok=False,
-                    request_id=request_id[:64] if request_id else "",
-                    error="malformed_request",
+                encode_reply(
+                    build_reply(
+                        ok=False,
+                        request_id=request_id[:64] if request_id else "",
+                        error="malformed_request",
+                    )
                 ),
             )
             return
@@ -194,7 +204,10 @@ class TtsNatsAdapter(NatsAdapterBase):
         text = payload.get("text")
         if not text or not isinstance(text, str):
             await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                msg,
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="malformed_request")
+                ),
             )
             return
 
@@ -203,12 +216,18 @@ class TtsNatsAdapter(NatsAdapterBase):
             validate_nats_token(engine, kind="engine")
         except ValueError:
             await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                msg,
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="malformed_request")
+                ),
             )
             return
         if not _engine_available(engine):
             await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="engine_unavailable")
+                msg,
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="engine_unavailable")
+                ),
             )
             return
 
@@ -218,7 +237,10 @@ class TtsNatsAdapter(NatsAdapterBase):
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
                 await self.reply(
-                    msg, build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
+                    msg,
+                    encode_reply(
+                        build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
+                    ),
                 )
                 return
             try:
@@ -322,12 +344,15 @@ class TtsNatsAdapter(NatsAdapterBase):
                 reply_fields["waveform_b64"] = waveform_b64
             await self.reply(
                 msg,
-                build_reply(ok=True, request_id=request_id, **reply_fields),
+                encode_reply(build_reply(ok=True, request_id=request_id, **reply_fields)),
             )
         except Exception:
             log.exception("synthesis_failed", extra={"request_id": request_id})
             await self.reply(
-                msg, build_reply(ok=False, request_id=request_id, error="synthesis_failed")
+                msg,
+                encode_reply(
+                    build_reply(ok=False, request_id=request_id, error="synthesis_failed")
+                ),
             )
         finally:
             cleanup(out_path)

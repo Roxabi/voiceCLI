@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
 if TYPE_CHECKING:
-    from voicecli.nats.base import NatsAdapterBase
+    from roxabi_nats import NatsAdapterBase
 
 
 class FakeMsg:
@@ -49,6 +49,30 @@ class FakeMsg:
     @property
     def responses(self) -> list[bytes]:
         return list(self._published)
+
+
+class FakeNatsConn:
+    """Mock NATS connection for testing SDK-based adapters.
+
+    The SDK's reply() method publishes via _nc.publish(msg.reply, data).
+    This mock records publishes and forwards them to the associated FakeMsg.
+    """
+
+    def __init__(self, msg: FakeMsg | None = None) -> None:
+        self._msg = msg
+        self._published: list[tuple[str, bytes]] = []
+        self.is_connected = True
+        self.is_closed = False
+
+    def set_msg(self, msg: FakeMsg) -> None:
+        """Associate a message for respond() forwarding."""
+        self._msg = msg
+
+    async def publish(self, subject: str, data: bytes) -> None:
+        """Record publish and forward to associated message's respond()."""
+        self._published.append((subject, data))
+        if self._msg is not None:
+            await self._msg.respond(data)
 
 
 @contextmanager

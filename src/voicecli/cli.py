@@ -1359,7 +1359,6 @@ def nats_serve_tts(
     import logging
     import os
 
-    from voicecli.nats.base import DrainTimeoutError
     from voicecli.nats.config import _resolve_engine
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
@@ -1387,21 +1386,6 @@ def nats_serve_tts(
         log.error("NATS_URL env var is required")
         raise typer.Exit(2)
 
-    nkey_seed_path: Path | None = None
-    nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
-    if nkey_seed_env:
-        nkey_seed_path = Path(nkey_seed_env).expanduser()
-
-    if nkey_seed_path is not None:
-        mode = nkey_seed_path.stat().st_mode
-        if mode & 0o077:  # any group/other permission bit set
-            log.error(
-                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
-                nkey_seed_path,
-                mode & 0o777,
-            )
-            raise typer.Exit(2)
-
     adapter = TtsNatsAdapter(
         default_engine=resolved_engine,
         max_concurrent=max_concurrent,
@@ -1411,8 +1395,8 @@ def nats_serve_tts(
     )
 
     try:
-        asyncio.run(adapter.run(nats_url=nats_url, nkey_seed_path=nkey_seed_path))
-    except DrainTimeoutError:
+        asyncio.run(adapter.run(nats_url))
+    except asyncio.TimeoutError:
         log.error("drain timeout exceeded; some requests may have been dropped")
         raise typer.Exit(3)
 
@@ -1441,7 +1425,6 @@ def nats_serve_stt(
     import logging
     import os
 
-    from voicecli.nats.base import DrainTimeoutError
     from voicecli.nats.config import _resolve_model
     from voicecli.nats.stt_adapter import SttNatsAdapter
 
@@ -1469,21 +1452,6 @@ def nats_serve_stt(
         log.error("NATS_URL env var is required")
         raise typer.Exit(2)
 
-    nkey_seed_path: Path | None = None
-    nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
-    if nkey_seed_env:
-        nkey_seed_path = Path(nkey_seed_env).expanduser()
-
-    if nkey_seed_path is not None:
-        mode = nkey_seed_path.stat().st_mode
-        if mode & 0o077:  # any group/other permission bit set
-            log.error(
-                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
-                nkey_seed_path,
-                mode & 0o777,
-            )
-            raise typer.Exit(2)
-
     adapter = SttNatsAdapter(
         default_model=resolved_model,
         max_concurrent=max_concurrent,
@@ -1493,8 +1461,8 @@ def nats_serve_stt(
     )
 
     try:
-        asyncio.run(adapter.run(nats_url=nats_url, nkey_seed_path=nkey_seed_path))
-    except DrainTimeoutError:
+        asyncio.run(adapter.run(nats_url))
+    except asyncio.TimeoutError:
         log.error("drain timeout exceeded; some requests may have been dropped")
         raise typer.Exit(3)
 
