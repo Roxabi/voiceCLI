@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -46,19 +47,9 @@ def _require_imports() -> None:
 # ---------------------------------------------------------------------------
 
 
-class MockMsg:
-    """Minimal NATS message stand-in: carries .reply, records respond() calls."""
-
-    def __init__(self, reply_subject: str = "_INBOX.test") -> None:
-        self.reply = reply_subject
-        self._published: list[bytes] = []
-
-    async def respond(self, data: bytes) -> None:
-        self._published.append(data)
-
-    def last_reply(self) -> dict:
-        assert self._published, "No reply published"
-        return json.loads(self._published[-1])
+# Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
+# every existing MockMsg() call site keeps working unchanged.
+from _fakes import FakeMsg as MockMsg  # noqa: E402
 
 
 def _valid_payload(
@@ -81,16 +72,25 @@ def _stub_engine_factory(
     *,
     raises: Exception | None = None,
     sleep_s: float = 0.0,
+    gate: "threading.Event | None" = None,
+    gate_timeout_s: float = 5.0,
 ):
     """Return a class (not instance) for injection into the engine registry.
 
     generate() writes a 1-byte WAV stub, or raises/sleeps per kwargs.
+
+    If ``gate`` is set, ``generate()`` blocks until the gate is set (or
+    ``gate_timeout_s`` elapses). This lets heartbeat tests hold the engine
+    open until the loop proves liveness via an event, instead of relying on
+    wall-clock bounds.
     """
 
     class _FakeEngine:
         name = "mock"
 
         def generate(self, text: str, voice, output_path: Path, **kwargs) -> Path:
+            if gate is not None:
+                gate.wait(timeout=gate_timeout_s)
             if sleep_s:
                 time.sleep(sleep_s)
             if raises:
@@ -304,22 +304,40 @@ class TestTtsNatsAdapter:
         assert not temp_file.exists()
 
     def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
+        """The heartbeat loop keeps firing while ``handle()`` is in-flight.
+
+        Deterministic gate: the stub engine blocks in ``generate()`` until it
+        has observed at least ``target_heartbeats`` heartbeat publishes. The
+        heartbeat fake-publish sets a ``threading.Event`` once the count is
+        reached, unblocking the engine. No wall-clock bounds — if the loop
+        ever stops firing, the engine blocks indefinitely and ``wait_for``
+        below times out with a clear failure.
+
+        Floor of ``target_heartbeats = 3`` catches the "fires once at entry"
+        degradation. No ceiling is asserted: a fast runner is not a bug.
+        """
         _require_imports()
-        # Arrange — slow engine (1.5 s); heartbeat every 0.3 s → expect ≥ 1 heartbeat
-        heartbeat_calls: list[float] = []
+
+        gate = threading.Event()
+        heartbeat_count = 0
+        target_heartbeats = 3
 
         async def _run() -> None:
+            nonlocal heartbeat_count
             adapter = TtsNatsAdapter(
                 default_engine="mock",
                 max_concurrent=1,
-                heartbeat_interval=0.3,
+                heartbeat_interval=0.05,  # fast enough to accumulate 3 quickly
             )
             msg = MockMsg()
             payload = _valid_payload(request_id="req-hb")
 
             async def _fake_publish(subject: str, data: bytes) -> None:
+                nonlocal heartbeat_count
                 if "heartbeat" in subject:
-                    heartbeat_calls.append(time.monotonic())
+                    heartbeat_count += 1
+                    if heartbeat_count >= target_heartbeats:
+                        gate.set()
 
             def _patched_scoped_path(rid: str, ext: str) -> Path:
                 return tmp_path / f"{rid}.{ext}"
@@ -330,7 +348,7 @@ class TestTtsNatsAdapter:
 
             with patch(
                 "voicecli.engine._get_registry",
-                return_value={"mock": _stub_engine_factory(tmp_path, sleep_s=1.5)},
+                return_value={"mock": _stub_engine_factory(tmp_path, gate=gate)},
             ):
                 with patch(
                     "voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
@@ -338,14 +356,19 @@ class TestTtsNatsAdapter:
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))
                     hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
 
+                    # If the loop stops firing, gate never sets → handle_task
+                    # blocks → wait_for times out with a clean failure message
                     await asyncio.wait_for(handle_task, timeout=5.0)
                     stop.set()
                     await asyncio.wait_for(hb_task, timeout=1.0)
 
         asyncio.run(_run())
 
-        # Assert — heartbeat fired at least once during the inference window
-        assert len(heartbeat_calls) >= 1
+        # Assert — gate was tripped, proving at least target_heartbeats fired
+        assert heartbeat_count >= target_heartbeats, (
+            f"heartbeat loop did not fire enough: got {heartbeat_count}, "
+            f"expected >= {target_heartbeats}"
+        )
 
     def test_path_traversal_request_id_returns_malformed_request(self, tmp_path: Path) -> None:
         _require_imports()

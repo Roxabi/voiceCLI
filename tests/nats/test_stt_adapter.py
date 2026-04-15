@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -55,19 +56,9 @@ def _require_imports() -> None:
 # ---------------------------------------------------------------------------
 
 
-class MockMsg:
-    """Minimal NATS message stand-in: carries .reply, records respond() calls."""
-
-    def __init__(self, reply_subject: str = "_INBOX.test") -> None:
-        self.reply = reply_subject
-        self._published: list[bytes] = []
-
-    async def respond(self, data: bytes) -> None:
-        self._published.append(data)
-
-    def last_reply(self) -> dict:
-        assert self._published, "No reply published"
-        return json.loads(self._published[-1])
+# Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
+# every existing MockMsg() call site keeps working unchanged.
+from _fakes import FakeMsg as MockMsg  # noqa: E402
 
 
 def _valid_audio_b64() -> str:
@@ -630,24 +621,41 @@ class TestSttNatsAdapter:
     # Case 22 (F12): heartbeat continues firing while inference is in-flight
     # ------------------------------------------------------------------
     def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
+        """The heartbeat loop keeps firing while transcription is in-flight.
+
+        Deterministic gate: transcription runs inside ``run_in_executor`` so
+        it blocks on a ``threading.Event`` that is set once the heartbeat
+        publisher has been called at least ``target_heartbeats`` times. If
+        the loop stops firing, the gate never sets and ``wait_for`` below
+        times out with a clean failure. No wall-clock bounds.
+
+        Floor ``target_heartbeats = 3`` catches "fires once at entry"; no
+        ceiling — a fast runner is not a bug.
+        """
         _require_imports()
-        # Arrange — slow transcription (1.5 s in thread); heartbeat every 0.3 s → ≥ 1 fires
-        heartbeat_calls: list[float] = []
+
+        gate = threading.Event()
+        heartbeat_count = 0
+        target_heartbeats = 3
 
         async def _run() -> None:
-            adapter = _make_adapter(max_concurrent=1, heartbeat_interval=0.3)
+            nonlocal heartbeat_count
+            adapter = _make_adapter(max_concurrent=1, heartbeat_interval=0.05)
             msg = MockMsg()
             payload = _valid_payload(request_id="req-hb")
 
             async def _fake_publish(subject: str, data: bytes) -> None:
+                nonlocal heartbeat_count
                 if "heartbeat" in subject:
-                    heartbeat_calls.append(time.monotonic())
+                    heartbeat_count += 1
+                    if heartbeat_count >= target_heartbeats:
+                        gate.set()
 
             adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
 
-            # Synchronous mock — runs inside run_in_executor (correct for STT adapter)
-            def _slow_transcribe(*args, **kwargs):
-                time.sleep(1.5)
+            # Blocks until the heartbeat loop proves liveness via the gate
+            def _gated_transcribe(*args, **kwargs):
+                gate.wait(timeout=5.0)
                 return TranscriptionResult(
                     text="ok",
                     language="en",
@@ -663,7 +671,7 @@ class TestSttNatsAdapter:
 
             with patch(
                 "voicecli.nats.stt_adapter.api.transcribe",
-                side_effect=_slow_transcribe,
+                side_effect=_gated_transcribe,
             ):
                 with patch(
                     "voicecli.nats.stt_adapter.scoped_path",
@@ -678,8 +686,11 @@ class TestSttNatsAdapter:
 
         asyncio.run(_run())
 
-        # Assert — heartbeat fired at least once during the inference window
-        assert len(heartbeat_calls) >= 1
+        # Assert — gate was tripped, proving target_heartbeats fired
+        assert heartbeat_count >= target_heartbeats, (
+            f"heartbeat loop did not fire enough: got {heartbeat_count}, "
+            f"expected >= {target_heartbeats}"
+        )
 
     # ------------------------------------------------------------------
     # Case 22: request_id length boundary — 127/128 accepted, 129 rejected

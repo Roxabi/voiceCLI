@@ -12,8 +12,12 @@ def scoped_path(request_id: str, ext: str) -> Path:
     """Per-request unique temp path under TEMP_ROOT. Creates the parent if missing.
 
     Raises ValueError if *request_id* escapes TEMP_ROOT after path resolution
-    (defense-in-depth against path traversal).
+    (defense-in-depth against path traversal). Null bytes are rejected with a
+    custom message before any filesystem interaction, so the error path matches
+    the other traversal cases instead of relying on CPython's OS-layer message.
     """
+    if "\x00" in request_id:
+        raise ValueError(f"escapes temp root: {request_id!r} (null byte)")
     TEMP_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Python's mkdir(mode=..., exist_ok=True) only applies mode at creation time;
     # a dir that already exists with looser perms is silently reused. Enforce mode

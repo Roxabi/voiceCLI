@@ -58,6 +58,26 @@ class TestResolveEngine:
         # Assert
         assert result == "voicecli-engine"
 
+    def test_voicecli_engine_wins_when_both_env_vars_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """VOICECLI_ENGINE takes precedence over LYRA_TTS_ENGINE when both are set.
+
+        The precedence doc promises VOICECLI_ENGINE > LYRA_TTS_ENGINE, but the sibling
+        test only proves VOICECLI wins when LYRA is absent. This test pins the "both
+        set" case so a future swap of the env-var lookup order is caught.
+        """
+        _require_imports()
+        # Arrange — both env vars set with different distinguishable values
+        monkeypatch.setenv("VOICECLI_ENGINE", "voicecli-wins")
+        monkeypatch.setenv("LYRA_TTS_ENGINE", "lyra-loses")
+
+        # Act
+        result = _resolve_engine(None)
+
+        # Assert
+        assert result == "voicecli-wins"
+
     def test_lyra_tts_engine_fallback_when_voicecli_absent(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

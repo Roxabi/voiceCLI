@@ -36,15 +36,62 @@ class TestScopedPath:
 
 
 class TestScopedPathSecurity:
-    def test_path_traversal_raises_value_error(self) -> None:
-        """scoped_path raises ValueError when request_id escapes TEMP_ROOT."""
+    """Every case here raises with the same canonical ``escapes temp root``
+    message. The null-byte variant is guarded explicitly in ``scoped_path``
+    so the rejection source is consistent across all traversal shapes — no
+    reliance on CPython's OS-layer messages. ``monkeypatch`` redirects
+    ``TEMP_ROOT`` to an isolated ``tmp_path`` so the rejected calls do not
+    race with live adapter processes in ``/tmp/voicecli-nats/``.
+    """
+
+    def test_path_traversal_raises_value_error(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        import voicecli.nats.tempdir as tempdir_mod
+
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root"):
             scoped_path("../../etc/passwd", "wav")
 
-    def test_dotdot_request_id_raises_value_error(self) -> None:
-        """request_id with .. components must be rejected."""
+    def test_dotdot_request_id_raises_value_error(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        import voicecli.nats.tempdir as tempdir_mod
+
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root"):
             scoped_path("../foo", "wav")
+
+    def test_absolute_path_request_id_rejected(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """request_id that is an absolute path must not escape TEMP_ROOT.
+
+        Belt-and-suspenders — the adapter allowlist rejects `/` at ingestion,
+        but scoped_path is the last line of defense and should reject absolute
+        paths directly (joinpath with an absolute component replaces the base).
+        """
+        import voicecli.nats.tempdir as tempdir_mod
+
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
+        with pytest.raises(ValueError, match="escapes temp root"):
+            scoped_path("/etc/passwd", "wav")
+
+    def test_null_byte_request_id_rejected(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """request_id with embedded null byte must raise ValueError.
+
+        The explicit null-byte guard in ``scoped_path`` surfaces the canonical
+        ``escapes temp root`` message rather than CPython's OS-layer
+        ``embedded null character``. Pinning the message means a future
+        refactor that silently strips the null byte would fail loudly.
+        """
+        import voicecli.nats.tempdir as tempdir_mod
+
+        monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
+        with pytest.raises(ValueError, match="escapes temp root.*null byte"):
+            scoped_path("req\x00evil", "wav")
 
 
 class TestCleanup:
