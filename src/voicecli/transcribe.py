@@ -7,6 +7,7 @@ if the daemon is unavailable.
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -124,6 +125,9 @@ def transcribe(
     initial_prompt: str | None = None,
     _skip_daemon: bool = False,
 ) -> TranscriptionResult:
+    if model == "mock" and os.environ.get("VOICECLI_ENABLE_MOCK_ENGINE") == "1":
+        return TranscriptionResult(text="", language="en", segments=[])
+
     # Try daemon first — reuses warm model, avoids loading locally
     if not _skip_daemon:
         daemon_result = _try_daemon(
