@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import functools
 import logging
 import os
 import re
 import socket
+import struct
 import time
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -47,6 +47,46 @@ def _wav_duration_ms(path: Path) -> int:
     except Exception:
         pass
     return 0
+
+
+def _wav_waveform_b64(path: Path, num_samples: int = 256) -> str | None:
+    """Compute a 256-byte amplitude waveform from a WAV file.
+
+    Mirrors lyra's `_wav_waveform_b64` so Discord voice-message waveforms
+    can be rendered without a second decoding pass hub-side.
+    Returns None on any error (field is optional in ADR-044).
+    """
+    try:
+        with wave.open(str(path), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            n_frames = wf.getnframes()
+            raw = wf.readframes(n_frames)
+
+        if sampwidth == 1:
+            samples = [raw[i] - 128 for i in range(0, len(raw), n_channels)]
+            max_val = 128
+        elif sampwidth == 2:
+            samples = [
+                struct.unpack_from("<h", raw, i)[0] for i in range(0, len(raw) - 1, 2 * n_channels)
+            ]
+            max_val = 32768
+        else:
+            return None
+
+        if not samples:
+            return None
+
+        chunk = max(1, len(samples) // num_samples)
+        waveform = bytearray()
+        for i in range(num_samples):
+            sl = samples[i * chunk : i * chunk + chunk]
+            amp = sum(abs(x) for x in sl) // len(sl) if sl else 0
+            waveform.append(min(255, int(amp * 255 / max_val)))
+        return base64.b64encode(bytes(waveform)).decode("ascii")
+    except Exception:
+        log.warning("waveform_b64 computation failed", exc_info=True)
+        return None
 
 
 class TtsNatsAdapter(NatsAdapterBase):
@@ -140,6 +180,8 @@ class TtsNatsAdapter(NatsAdapterBase):
             self.model_loaded = engine
             from voicecli import api
 
+            # Engine-agnostic kwargs forwarded through api.generate **kwargs
+            # (translate.py will strip fields the target engine can't consume).
             optional_kwargs = {
                 k: v
                 for k, v in {
@@ -148,29 +190,65 @@ class TtsNatsAdapter(NatsAdapterBase):
                     "speed": payload.get("speed"),
                     "exaggeration": payload.get("exaggeration"),
                     "cfg_weight": payload.get("cfg_weight"),
+                    "accent": payload.get("accent"),
+                    "personality": payload.get("personality"),
+                    "emotion": payload.get("emotion"),
                 }.items()
                 if v is not None
             }
-            fn = functools.partial(
-                api.generate,
-                text,
-                engine=engine,
-                output=out_path,
-                **optional_kwargs,
-            )
+
+            # Named parameters of api.generate — must be passed explicitly, not via **kwargs.
+            named_kwargs: dict[str, Any] = {}
+            chunked = payload.get("chunked")
+            if chunked is not None:
+                named_kwargs["chunked"] = bool(chunked)
+            for key in ("chunk_size", "segment_gap", "crossfade"):
+                value = payload.get(key)
+                if value is not None:
+                    named_kwargs[key] = value
+
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(self._executor, fn)
+
+            def _synthesize(language: str | None) -> None:
+                kw = dict(optional_kwargs)
+                if language is not None:
+                    kw["language"] = language
+                api.generate(text, engine=engine, output=out_path, **kw, **named_kwargs)
+
+            try:
+                await loop.run_in_executor(self._executor, _synthesize, None)
+            except ValueError as exc:
+                # ADR-044 fallback_language semantics: api.generate raises ValueError for
+                # param/language validation; retry once with the fallback before giving up.
+                fallback_language = payload.get("fallback_language")
+                primary_language = payload.get("language")
+                if fallback_language and fallback_language != primary_language:
+                    log.warning(
+                        "language_synthesis_failed_retrying_with_fallback",
+                        extra={
+                            "request_id": request_id,
+                            "primary_language": primary_language,
+                            "fallback_language": fallback_language,
+                            "error": str(exc),
+                        },
+                    )
+                    await loop.run_in_executor(self._executor, _synthesize, fallback_language)
+                else:
+                    raise
+
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
             duration_ms = _wav_duration_ms(out_path)
+            waveform_b64 = _wav_waveform_b64(out_path)
+            reply_fields: dict[str, Any] = {
+                "audio_b64": audio_b64,
+                "mime_type": "audio/wav",
+                "duration_ms": duration_ms,
+            }
+            if waveform_b64 is not None:
+                reply_fields["waveform_b64"] = waveform_b64
             await self.reply(
                 msg,
-                build_reply(
-                    ok=True,
-                    request_id=request_id,
-                    audio_b64=audio_b64,
-                    mime_type="audio/wav",
-                    duration_ms=duration_ms,
-                ),
+                build_reply(ok=True, request_id=request_id, **reply_fields),
             )
         except Exception:
             log.exception("synthesis_failed", extra={"request_id": request_id})
