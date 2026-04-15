@@ -267,11 +267,18 @@ class TtsNatsAdapter(NatsAdapterBase):
             loop = asyncio.get_running_loop()
 
             def _synthesize(language: str | None) -> None:
+                from voicecli.utils import UNRESTRICTED
+
                 kw = dict(optional_kwargs)
                 if language is not None:
                     kw["language"] = language
                 api.generate(
-                    text, engine=engine, output=out_path, _cli_bypass=True, **kw, **named_kwargs
+                    text,
+                    engine=engine,
+                    output=out_path,
+                    allowed_base=UNRESTRICTED,
+                    **kw,
+                    **named_kwargs,
                 )
 
             try:

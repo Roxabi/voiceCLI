@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from voicecli.utils import OUTPUT_DIR
+from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
 log = logging.getLogger(__name__)
 
@@ -99,34 +99,38 @@ def _validate_tts_params(
 def _validate_output_path(
     output_path: Path,
     *,
-    allowed_base: Path | None = None,
-    cli_bypass: bool = False,
+    allowed_base: Path | _Unrestricted,
 ) -> Path:
-    """Validate output path stays within allowed_base, create parent dirs.
+    """Validate output path stays within allowed_base; create parent dirs.
 
     Args:
         output_path: Target output path.
-        allowed_base: Base directory for validation (default: OUTPUT_DIR).
-        cli_bypass: Skip validation for CLI --output override.
+        allowed_base: Base directory the path must stay within, or
+            ``UNRESTRICTED`` when the caller owns the trust boundary (CLI
+            ``--output`` override, server-controlled scratch path). Pass
+            ``UNRESTRICTED`` explicitly — there is no implicit default, so
+            each caller declares its trust model.
 
     Returns:
-        Resolved absolute path.
+        Resolved absolute path. For ``UNRESTRICTED`` no parent dirs are
+        created (caller is responsible).
 
     Raises:
-        ValueError: If path escapes allowed_base and cli_bypass is False.
+        ValueError: If ``output_path`` escapes ``allowed_base``.
     """
     resolved = output_path.expanduser().resolve()
-    base = (allowed_base or OUTPUT_DIR).expanduser().resolve()
 
-    if not cli_bypass:
-        try:
-            resolved.relative_to(base)
-        except ValueError:
-            raise ValueError(
-                f"Output path escapes allowed directory: {resolved} "
-                f"is outside {base}. Use --output for explicit override."
-            )
+    if isinstance(allowed_base, _Unrestricted):
+        return resolved
 
+    base = allowed_base.expanduser().resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError:
+        raise ValueError(
+            f"Output path is outside the allowed directory {allowed_base}. "
+            "Pass an explicit --output to override."
+        )
     resolved.parent.mkdir(parents=True, exist_ok=True)
     return resolved
 
@@ -683,7 +687,7 @@ def generate(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
-    _cli_bypass: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -702,6 +706,9 @@ def generate(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path (CLI ``--output``, server scratch dir).
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -763,8 +770,9 @@ def generate(
     # Validate output path BEFORE loading engine (security)
     prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
     if output is not None:
-        out = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
     else:
+        # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
     eng = get_engine(r_engine)
@@ -846,7 +854,7 @@ def clone(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
-    _cli_bypass: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -866,6 +874,9 @@ def clone(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path.
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -927,8 +938,9 @@ def clone(
     # Validate output path BEFORE loading engine (security)
     prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
     if output is not None:
-        out = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
     else:
+        # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
     eng = get_engine(r_engine)
@@ -1007,7 +1019,7 @@ def transcribe(
     language_detection_segments: int | None = None,
     language_fallback: str | None = None,
     _skip_daemon: bool = False,
-    _cli_bypass: bool = False,
+    allowed_base: Path | _Unrestricted = STT_OUTPUT_DIR,
 ):
     """Transcribe an audio file to text.
 
@@ -1020,8 +1032,9 @@ def transcribe(
         language_detection_segments: Number of segments to sample for language detection.
         language_fallback: Language code to use when detection confidence is below threshold.
         _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
-        _cli_bypass: Skip output-path base-directory check — set by trusted CLI
-            callers who have already vetted *output* (private).
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``STT_OUTPUT_DIR``). Pass ``UNRESTRICTED`` for an
+            explicit caller-provided path.
 
     Returns:
         TranscriptionResult with .text, .language, .segments.
@@ -1048,7 +1061,7 @@ def transcribe(
     )
 
     if output is not None:
-        out_path = _validate_output_path(Path(output), cli_bypass=_cli_bypass)
+        out_path = _validate_output_path(Path(output), allowed_base=allowed_base)
         out_path.write_text(result.text, encoding="utf-8")
 
     return result
