@@ -1388,6 +1388,16 @@ def nats_serve_tts(
     if nkey_seed_env:
         nkey_seed_path = Path(nkey_seed_env).expanduser()
 
+    if nkey_seed_path is not None:
+        mode = nkey_seed_path.stat().st_mode
+        if mode & 0o077:  # any group/other permission bit set
+            log.error(
+                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
+                nkey_seed_path,
+                mode & 0o777,
+            )
+            raise typer.Exit(2)
+
     adapter = TtsNatsAdapter(
         default_engine=resolved_engine,
         max_concurrent=max_concurrent,
@@ -1458,6 +1468,16 @@ def nats_serve_stt(
     nkey_seed_env = os.environ.get("NATS_NKEY_SEED_PATH")
     if nkey_seed_env:
         nkey_seed_path = Path(nkey_seed_env).expanduser()
+
+    if nkey_seed_path is not None:
+        mode = nkey_seed_path.stat().st_mode
+        if mode & 0o077:  # any group/other permission bit set
+            log.error(
+                "nkey seed file %s has unsafe permissions (mode %o); must be 0600",
+                nkey_seed_path,
+                mode & 0o777,
+            )
+            raise typer.Exit(2)
 
     adapter = SttNatsAdapter(
         default_model=resolved_model,

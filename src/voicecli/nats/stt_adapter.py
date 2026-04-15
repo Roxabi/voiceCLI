@@ -68,10 +68,18 @@ def _duration_from_segments(segments: list[dict]) -> float:
     (silent audio or detection failure)."""
     if not segments:
         return 0.0
-    end = segments[-1].get("end", 0.0)
+    last = segments[-1]
+    if "end" not in last:
+        log.warning("segment_missing_end_key", extra={"segments_count": len(segments)})
+        return 0.0
+    end = last["end"]
     try:
         return float(end)
     except (TypeError, ValueError):
+        log.warning(
+            "segment_end_not_numeric",
+            extra={"segments_count": len(segments), "end_type": type(end).__name__},
+        )
         return 0.0
 
 
@@ -140,6 +148,27 @@ class SttNatsAdapter(NatsAdapterBase):
                 msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
             )
             return
+
+        for key, expected_types in (
+            ("language", (str,)),
+            ("language_detection_threshold", (int, float)),
+            ("language_detection_segments", (int,)),
+            ("language_fallback", (str,)),
+        ):
+            val = payload.get(key)
+            if val is None:
+                continue
+            if key == "language_detection_segments" and isinstance(val, bool):
+                # bool is a subclass of int in Python; reject separately
+                await self.reply(
+                    msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                )
+                return
+            if not isinstance(val, expected_types):
+                await self.reply(
+                    msg, build_reply(ok=False, request_id=request_id, error="malformed_request")
+                )
+                return
 
         overrides = {
             k: v

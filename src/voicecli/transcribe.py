@@ -114,6 +114,7 @@ def _try_daemon(
 
 def transcribe(
     audio_path: Path,
+    *,
     model: str = DEFAULT_MODEL,
     language: str | None = None,
     language_detection_threshold: float | None = None,

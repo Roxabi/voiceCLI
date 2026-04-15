@@ -672,6 +672,61 @@ class TestSttNatsAdapter:
         assert resolved == "tiny"
 
     # ------------------------------------------------------------------
+    # Case 22 (F12): heartbeat continues firing while inference is in-flight
+    # ------------------------------------------------------------------
+    def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
+        _require_imports()
+        # Arrange — slow transcription (1.5 s in thread); heartbeat every 0.3 s → ≥ 1 fires
+        heartbeat_calls: list[float] = []
+
+        async def _run() -> None:
+            adapter = _make_adapter(max_concurrent=1, heartbeat_interval=0.3)
+            msg = MockMsg()
+            payload = _valid_payload(request_id="req-hb")
+
+            async def _fake_publish(subject: str, data: bytes) -> None:
+                if "heartbeat" in subject:
+                    heartbeat_calls.append(time.monotonic())
+
+            adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
+
+            # Synchronous mock — runs inside run_in_executor (correct for STT adapter)
+            def _slow_transcribe(*args, **kwargs):
+                time.sleep(1.5)
+                return TranscriptionResult(
+                    text="ok",
+                    language="en",
+                    segments=[{"start": 0.0, "end": 1.5, "text": "ok"}],
+                )
+
+            import voicecli.nats.stt_adapter as _mod
+            import voicecli.api as _api  # noqa: F401
+
+            _mod.api = _api  # type: ignore[attr-defined]
+
+            stop = asyncio.Event()
+
+            with patch(
+                "voicecli.nats.stt_adapter.api.transcribe",
+                side_effect=_slow_transcribe,
+            ):
+                with patch(
+                    "voicecli.nats.stt_adapter.scoped_path",
+                    side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
+                ):
+                    handle_task = asyncio.create_task(adapter.handle(msg, payload))
+                    hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
+
+                    await asyncio.wait_for(handle_task, timeout=5.0)
+                    stop.set()
+                    await asyncio.wait_for(hb_task, timeout=1.0)
+
+        asyncio.run(_run())
+
+        # Assert — heartbeat fired at least once during the inference window
+        assert len(heartbeat_calls) >= 1
+
+    # ------------------------------------------------------------------
     # Case 22: request_id length boundary — 127/128 accepted, 129 rejected
     # ------------------------------------------------------------------
     @pytest.mark.parametrize(
