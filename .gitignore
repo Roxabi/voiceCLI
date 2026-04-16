@@ -25,5 +25,6 @@ voicecli.vocab
 
 .env
 .claude/settings.local.json
+.claude/worktrees/
 
 .claude/dev-core.yml
