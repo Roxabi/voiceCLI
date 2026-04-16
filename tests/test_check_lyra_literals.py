@@ -43,9 +43,7 @@ class TestCheckLyraLiterals:
         )
 
         # Assert
-        assert result.returncode == 1, (
-            f"Script should fail on violator but passed: {result.stdout}"
-        )
+        assert result.returncode == 1, f"Script should fail on violator but passed: {result.stdout}"
         assert "ERROR:" in result.stdout
         assert "violator.py" in result.stdout
 
@@ -70,9 +68,7 @@ class TestCheckLyraLiterals:
         )
 
         # Assert
-        assert result.returncode == 0, (
-            f"Script failed on allowlisted files: {result.stderr}"
-        )
+        assert result.returncode == 0, f"Script failed on allowlisted files: {result.stderr}"
         assert "OK:" in result.stdout
 
     def test_script_fails_on_multiple_violators(self, tmp_path):
