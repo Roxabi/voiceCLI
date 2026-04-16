@@ -30,6 +30,8 @@ jobs:
         run: uv run pyright
       - name: Test
         run: uv run python -m pytest --ignore=tests/test_overlay.py
+      - name: Check lyra.* subject literals
+        run: ./scripts/check-lyra-literals.sh
 
   e2e:
     runs-on: ubuntu-latest
