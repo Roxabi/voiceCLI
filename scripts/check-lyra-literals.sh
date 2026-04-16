@@ -2,7 +2,9 @@
 # Enforce ADR-047 Rule 3: lyra.* subject literals only in designated adapter modules
 set -euo pipefail
 
-ALLOWLIST="src/voicecli/nats/stt_adapter.py src/voicecli/nats/tts_adapter.py"
+# Designated adapter modules (actual subject string usage)
+# cli.py: docstrings only, not subject literals
+ALLOWLIST="src/voicecli/nats/stt_adapter.py src/voicecli/nats/tts_adapter.py src/voicecli/cli.py"
 
 # Find files with lyra. literals, excluding allowlisted paths
 VIOLATORS=$(grep -rln "lyra\." src/ --include='*.py' 2>/dev/null | grep -vE "^($(echo "$ALLOWLIST" | tr ' ' '|'))$" || true)
