@@ -1,6 +1,11 @@
 {
   "release-type": "python",
+  "target-branch": "main",
   "packages": {
-    ".": {}
+    ".": {
+      "component": "voicecli",
+      "package-name": "voicecli",
+      "tag-separator": "/"
+    }
   }
 }
