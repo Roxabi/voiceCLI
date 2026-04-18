@@ -20,7 +20,6 @@ repos:
         name: Check file length
         language: script
         entry: tools/check_file_length.sh
-        types: [python]
         pass_filenames: false
       - id: check-folder-size
         name: Check folder size
