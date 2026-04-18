@@ -31,9 +31,11 @@ is_exempt() {
 
 while IFS= read -r -d '' d; do
     is_exempt "$d" && continue
-    # -print0 + mapfile keeps the array consistent with the outer loop's NUL-delimited pattern.
-    mapfile -d '' files < <(find "$d" -maxdepth 1 -name "*.py" -type f -print0)
-    COUNT=${#files[@]}
+    # Portable NUL-delimited count — works on macOS bash 3.2 (no `mapfile`/`readarray`).
+    COUNT=0
+    while IFS= read -r -d '' _; do
+        COUNT=$((COUNT + 1))
+    done < <(find "$d" -maxdepth 1 -name "*.py" -type f -print0)
     if [ "$COUNT" -gt "$MAX" ]; then
         echo "$d - $COUNT files (max $MAX)"
         FAIL=1
