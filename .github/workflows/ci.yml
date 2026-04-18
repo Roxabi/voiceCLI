@@ -28,6 +28,8 @@ jobs:
         run: uv run ruff format --check .
       - name: Typecheck
         run: uv run pyright
+      - name: Import layer contracts
+        run: uv run lint-imports
       - name: Test
         run: uv run python -m pytest --ignore=tests/test_overlay.py
       - name: Check lyra.* subject literals

@@ -47,3 +47,16 @@ standards:
   architecture: docs/architecture/
   configuration: docs/configuration.md
   contributing: docs/contributing.md
+
+quality_gates:
+  file_length:
+    enabled: true
+    max_lines: 300
+    exemptions_file: tools/file_exemptions.txt
+  folder_size:
+    enabled: true
+    max_files: 12
+    exemptions_file: tools/folder_exemptions.txt
+  import_layers:
+    enabled: true
+    stage: pre-push
