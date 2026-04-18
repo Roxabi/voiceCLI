@@ -1,0 +1,16 @@
+[importlinter]
+root_packages =
+    voicecli
+include_external_packages = False
+
+# ── Contracts ────────────────────────────────────────────────────────────────
+# Uncomment and edit when you have defined your layer topology.
+# Reference: https://import-linter.readthedocs.io/en/stable/contract_types.html
+#
+# [importlinter:contract:clean-architecture-layers]
+# name = Clean architecture layers (example — replace with your topology)
+# type = layers
+# layers =
+#     voicecli.bootstrap
+#     voicecli.adapters
+#     voicecli.core

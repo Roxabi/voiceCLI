@@ -1,0 +1,4 @@
+# Exemptions — folder_size gate
+# Format: <path> <issue-url>  (single-space separator)
+# Each entry MUST reference a tracking issue so the exemption is recoverable.
+src/voicecli https://github.com/Roxabi/voiceCLI/issues/83
