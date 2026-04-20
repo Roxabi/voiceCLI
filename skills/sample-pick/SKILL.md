@@ -43,7 +43,7 @@ command -v ffprobe &>/dev/null || { echo "ERROR: ffprobe not found"; exit 1; }
 if command -v voicecli &>/dev/null; then
   VOICECLI="voicecli"
 else
-  for d in . .. ../voiceCLI ~/projects/voiceCLI; do
+  for d in ../voiceCLI ~/projects/voiceCLI; do
     test -f "$d/src/voicecli/cli.py" && VOICECLI_DIR="$(cd "$d" && pwd)" && break
   done
   [ -z "$VOICECLI_DIR" ] && echo "ERROR: voicecli not found" && exit 1
@@ -55,7 +55,7 @@ fi
 
 ```bash
 if [ -z "$VOICECLI_DIR" ]; then
-  for d in . .. ../voiceCLI ~/projects/voiceCLI; do
+  for d in ../voiceCLI ~/projects/voiceCLI; do
     test -f "$d/scripts/sample_pick.py" && VOICECLI_DIR="$(cd "$d" && pwd)" && break
   done
   [ -z "$VOICECLI_DIR" ] && echo "ERROR: voiceCLI repo not found" && exit 1

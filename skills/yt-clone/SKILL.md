@@ -82,7 +82,7 @@ command -v ffmpeg &>/dev/null || { echo "ERROR: ffmpeg not found"; exit 1; }
 if command -v voicecli &>/dev/null; then
   VOICECLI="voicecli"
 else
-  for d in . .. ../voiceCLI ~/projects/voiceCLI; do
+  for d in ../voiceCLI ~/projects/voiceCLI; do
     test -f "$d/src/voicecli/cli.py" && VOICECLI_DIR="$(cd "$d" && pwd)" && break
   done
   [ -z "$VOICECLI_DIR" ] && echo "ERROR: voicecli not found" && exit 1
