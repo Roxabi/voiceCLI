@@ -80,7 +80,13 @@ def detect_silence(
          "-f", "null", "-"],
         capture_output=True, text=True,
     )
-    # silencedetect writes to stderr
+    # silencedetect writes to stderr. Surface tail on unexpected failure —
+    # `-f null -` normally exits 0; anything else indicates a decode problem
+    # that would otherwise be swallowed (empty silence list → picker runs blind).
+    if proc.returncode != 0:
+        tail = "\n  ".join(proc.stderr.splitlines()[-10:])
+        print(f"WARN: ffmpeg exited {proc.returncode} during silencedetect on {path}:\n  {tail}",
+              file=sys.stderr)
     starts: list[float] = []
     ends: list[float] = []
     for match in _SILENCE_RE.finditer(proc.stderr):
