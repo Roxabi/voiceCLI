@@ -69,6 +69,9 @@ class NatsAdapterBase:
         # owns its own lifecycle and trusts NATS reconnect to handle hub flakes.
 
         sub = await nc.subscribe(self.subject, queue=self.queue_group, cb=self._dispatch)
+        # Per-worker subject for targeted delivery from the hub
+        # (hub publishes to ``<subject>.<worker_id>`` for least-loaded routing)
+        worker_sub = await nc.subscribe(f"{self.subject}.{self.worker_id}", cb=self._dispatch)
         hb_sub = await nc.subscribe(self.heartbeat_subject, cb=self._noop_cb)
 
         if stop is None:
@@ -92,9 +95,11 @@ class NatsAdapterBase:
 
         await stop.wait()
 
-        # Unsubscribe both subjects
+        # Unsubscribe all subjects
         with contextlib.suppress(Exception):
             await sub.unsubscribe()
+        with contextlib.suppress(Exception):
+            await worker_sub.unsubscribe()
         with contextlib.suppress(Exception):
             await hb_sub.unsubscribe()
 
