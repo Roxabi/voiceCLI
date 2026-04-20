@@ -39,6 +39,24 @@ If no URL is provided → ask the user for one (plain text) and wait for reply.
 Extract URL and optional flags from `$ARGUMENTS`. Apply defaults for any missing args.
 Derive `--slug` from the YouTube video ID if not provided (e.g. `yt_XYZ`).
 
+**Flag precedence guard** — reject ambiguous combinations before doing anything:
+
+```
+--blind ∧ (--start ∨ --duration)  → ERROR "--blind is exclusive with --start/--duration"
+--start XOR --duration            → ERROR "--start and --duration must be used together"
+```
+
+Enforce in bash before mode selection:
+
+```bash
+if [ -n "$BLIND" ] && { [ -n "$START" ] || [ -n "$DURATION" ]; }; then
+  echo "ERROR: --blind is exclusive with --start/--duration" >&2; exit 1
+fi
+if { [ -n "$START" ] && [ -z "$DURATION" ]; } || { [ -z "$START" ] && [ -n "$DURATION" ]; }; then
+  echo "ERROR: --start and --duration must be used together (or use neither for auto-pick)" >&2; exit 1
+fi
+```
+
 Determine **selection mode:**
 
 ```
