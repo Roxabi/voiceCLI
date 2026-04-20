@@ -100,7 +100,7 @@ FREE_VRAM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/
 
 if [ -n "$FREE_VRAM" ] && [ "$FREE_VRAM" -lt 500 ]; then
   echo "⚠ VRAM nearly full (${FREE_VRAM} MiB free) — stopping STT daemon..."
-  make -C ~/projects/lyra-stack stt stop 2>/dev/null || true
+  make -C ~/projects stt stop 2>/dev/null || true
   sleep 2
   FREE_VRAM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | tr -d ' ')
   echo "  → ${FREE_VRAM} MiB free after stop"
@@ -190,7 +190,7 @@ Capture the output path from the last line (`Saved to ...`) and report it.
 
 ```bash
 if [ "$STT_WAS_STOPPED" = "1" ]; then
-  make -C ~/projects/lyra-stack stt start 2>/dev/null || true
+  make -C ~/projects stt start 2>/dev/null || true
   echo "✅ STT daemon restarted"
 fi
 ```
@@ -216,7 +216,7 @@ To generate more with this voice:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `Permission denied (publickey)` | SSH config issue, unrelated | Ignore — not needed for yt-clone |
-| `CUDA out of memory` | STT daemon still running | Re-run Step 3 manually: `make -C ~/projects/lyra-stack stt stop` |
+| `CUDA out of memory` | STT daemon still running | Re-run Step 3 manually: `make -C ~/projects stt stop` |
 | `No supported JavaScript runtime` | yt-dlp warning, non-fatal | Safe to ignore — download proceeds |
 | `ERROR: Video unavailable` | Private/geo-blocked video | Try a different URL or use a VPN |
 | Sample sounds wrong | Picker chose a bad segment (rare) | Re-run with `--start <sec> --duration <sec>` manual override |
