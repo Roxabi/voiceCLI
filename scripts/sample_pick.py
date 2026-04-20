@@ -62,8 +62,18 @@ def get_duration(path: Path) -> float:
     return float(out)
 
 
-def detect_silence(path: Path, noise_db: int = -35, min_silence: float = 0.5) -> list[tuple[float, float]]:
-    """Return list of (silence_start, silence_end) via ffmpeg silencedetect."""
+def detect_silence(
+    path: Path,
+    total_duration: float,
+    noise_db: int = -35,
+    min_silence: float = 0.5,
+) -> list[tuple[float, float]]:
+    """Return list of (silence_start, silence_end) via ffmpeg silencedetect.
+
+    If the file ends mid-silence, `silencedetect` emits silence_start with no
+    matching silence_end. We synthesize `end = total_duration` for that trailing
+    segment so `speech_segments` correctly truncates the final speech window.
+    """
     proc = subprocess.run(
         ["ffmpeg", "-i", str(path),
          "-af", f"silencedetect=n={noise_db}dB:d={min_silence}",
@@ -76,8 +86,10 @@ def detect_silence(path: Path, noise_db: int = -35, min_silence: float = 0.5) ->
     for match in _SILENCE_RE.finditer(proc.stderr):
         kind, val = match.group(1), float(match.group(2))
         (starts if kind == "start" else ends).append(val)
-    # Pair up — may have mismatched counts at file edges
     pairs = list(zip(starts, ends))
+    if len(starts) > len(ends):
+        # File ended mid-silence — extend trailing unpaired start to EOF
+        pairs.append((starts[len(ends)], total_duration))
     return pairs
 
 
@@ -147,7 +159,7 @@ def pick_candidates(
     min_silence: float = 0.5,
 ) -> list[Segment]:
     total = get_duration(path)
-    silences = detect_silence(path, noise_db=noise_db, min_silence=min_silence)
+    silences = detect_silence(path, total, noise_db=noise_db, min_silence=min_silence)
     segments = speech_segments(total, silences)
     candidates: list[Segment] = []
     for s_start, s_end in segments:
