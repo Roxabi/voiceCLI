@@ -451,5 +451,9 @@ Docker build context. To prevent accidental leakage:
 2. **Separate build stage:** Use a dedicated CI job for production builds that
    never runs E2E tests (which export the env var).
 
-The mock engine is isolated to test scope via the `tests/engines/mock.py` location
-and pytest fixture activation. Production code has no reference to `MockEngine`.
+The mock engine lives at `src/voicecli/engines/mock.py` but is only registered in
+the engine registry (and the STT transcribe short-circuit) when the
+`VOICECLI_ENABLE_MOCK_ENGINE` env var is truthy. Production images leave the var
+unset, so `mock` is absent from `voicecli.engine.available_engines()` and any
+request carrying `engine: "mock"` is rejected with `engine_unavailable`. The
+`mock_engine` pytest fixture sets the var for the test scope.

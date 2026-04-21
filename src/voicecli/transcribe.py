@@ -124,6 +124,11 @@ def transcribe(
     initial_prompt: str | None = None,
     _skip_daemon: bool = False,
 ) -> TranscriptionResult:
+    from voicecli.env import coerce_bool_env
+
+    if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        return TranscriptionResult(text="", language="en", segments=[])
+
     # Try daemon first — reuses warm model, avoids loading locally
     if not _skip_daemon:
         daemon_result = _try_daemon(
@@ -139,6 +144,8 @@ def transcribe(
             return daemon_result
 
     whisper = _load_model(model)
+    # transcribe() short-circuits for mock at the top, so whisper is non-None here.
+    assert whisper is not None
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -218,8 +225,16 @@ def unload_model() -> None:
     print("[stt] Models unloaded.")
 
 
-def _load_model(model: str) -> WhisperModel:
-    """Load a faster-whisper model, caching for reuse."""
+def _load_model(model: str) -> WhisperModel | None:
+    """Load a faster-whisper model, caching for reuse.
+
+    Returns None when the mock env gate is set — mirrors the short-circuit at
+    the top of transcribe(), so adapter warmup paths stay engine-agnostic.
+    """
+    from voicecli.env import coerce_bool_env
+
+    if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        return None
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"

@@ -95,14 +95,16 @@ def available_engines() -> list[str]:
 def _get_registry() -> dict[str, type[TTSEngine]]:
     """Build the engine registry.
 
-    Returns a dict mapping engine names to engine classes. MockEngine is not
-    included — it is only available in test scope via pytest fixture.
+    MockEngine is gated by ``VOICECLI_ENABLE_MOCK_ENGINE`` — unset in prod,
+    set to "1" in the e2e docker-compose files so the NATS satellite can
+    answer round-trip requests without loading a real model.
     """
     from voicecli.engines.chatterbox import ChatterboxEngine
     from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
     from voicecli.engines.qwen import QwenEngine
     from voicecli.engines.qwen_fast import QwenFastEngine
     from voicecli.engines.voxtral import VoxtralEngine
+    from voicecli.env import coerce_bool_env
 
     registry: dict[str, type[TTSEngine]] = {
         "qwen": QwenEngine,
@@ -111,4 +113,8 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
         "chatterbox-turbo": ChatterboxTurboEngine,
         "voxtral": VoxtralEngine,
     }
+    if coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        from voicecli.engines.mock import MockEngine
+
+        registry["mock"] = MockEngine
     return registry
