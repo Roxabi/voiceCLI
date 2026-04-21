@@ -94,7 +94,7 @@ class QwenFastEngine(QwenEngine):
             print(f"    {seg.text[:80]}{'...' if len(seg.text) > 80 else ''}")
 
             kw = {**base_kwargs, "text": seg.text}
-            if seg.instruct:
+            if seg.instruct and method == "custom_voice":
                 kw["instruct"] = seg.instruct
             else:
                 kw.pop("instruct", None)
