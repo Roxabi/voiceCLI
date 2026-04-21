@@ -5,22 +5,11 @@ import pytest
 
 @pytest.fixture
 def mock_engine(monkeypatch):
-    """Register MockEngine in the registry for the test scope.
+    """Activate MockEngine for the test scope via the env gate.
 
-    This fixture patches the engine registry to include the mock engine,
-    which is isolated to test scope (not in production code).
+    Sets ``VOICECLI_ENABLE_MOCK_ENGINE=1`` for the duration of the test, which
+    is the same gate the e2e docker-compose stack uses to expose ``mock`` in
+    the engine registry and short-circuit the STT transcribe path.
     """
-    from voicecli.engine import _get_registry
-    from tests.engines.mock import MockEngine
-
-    # Get the current registry and add mock
-    registry = _get_registry()
-    registry["mock"] = MockEngine
-
-    # Patch the registry function to return our modified registry
-    def _patched_registry():
-        # Return the cached registry with mock
-        return registry
-
-    monkeypatch.setattr("voicecli.engine._get_registry", _patched_registry)
+    monkeypatch.setenv("VOICECLI_ENABLE_MOCK_ENGINE", "1")
     yield
