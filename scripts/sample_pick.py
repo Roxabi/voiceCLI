@@ -13,6 +13,7 @@ Output (in --out-dir, default = <input-dir>/.sample-pick/):
     candidates.json        ranked list {rank, start, end, duration, score, reasons}
     preview_<rank>.mp3     first <previews>s of each top-N candidate
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +56,19 @@ def _check_ffmpeg() -> None:
 
 def get_duration(path: Path) -> float:
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=nw=1:nk=1", str(path)],
-        capture_output=True, text=True, check=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     return float(out)
 
@@ -75,18 +86,28 @@ def detect_silence(
     segment so `speech_segments` correctly truncates the final speech window.
     """
     proc = subprocess.run(
-        ["ffmpeg", "-i", str(path),
-         "-af", f"silencedetect=n={noise_db}dB:d={min_silence}",
-         "-f", "null", "-"],
-        capture_output=True, text=True,
+        [
+            "ffmpeg",
+            "-i",
+            str(path),
+            "-af",
+            f"silencedetect=n={noise_db}dB:d={min_silence}",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
     )
     # silencedetect writes to stderr. Surface tail on unexpected failure —
     # `-f null -` normally exits 0; anything else indicates a decode problem
     # that would otherwise be swallowed (empty silence list → picker runs blind).
     if proc.returncode != 0:
         tail = "\n  ".join(proc.stderr.splitlines()[-10:])
-        print(f"WARN: ffmpeg exited {proc.returncode} during silencedetect on {path}:\n  {tail}",
-              file=sys.stderr)
+        print(
+            f"WARN: ffmpeg exited {proc.returncode} during silencedetect on {path}:\n  {tail}",
+            file=sys.stderr,
+        )
     starts: list[float] = []
     ends: list[float] = []
     for match in _SILENCE_RE.finditer(proc.stderr):
@@ -99,7 +120,9 @@ def detect_silence(
     return pairs
 
 
-def speech_segments(duration: float, silences: list[tuple[float, float]]) -> list[tuple[float, float]]:
+def speech_segments(
+    duration: float, silences: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
     """Complement of silence intervals within [0, duration]."""
     if not silences:
         return [(0.0, duration)]
@@ -141,7 +164,9 @@ def score_segment(
     # Edge cleanliness: prefer segments bordered by silence (vs hard cut)
     eps = 0.5
     left_clean = any(abs(s_end - start) < eps for _, s_end in silences) or start < eps
-    right_clean = any(abs(s_start - end) < eps for s_start, _ in silences) or end > total_duration - eps
+    right_clean = (
+        any(abs(s_start - end) < eps for s_start, _ in silences) or end > total_duration - eps
+    )
     if left_clean and right_clean:
         score += 15.0
         reasons.append("clean edges (+15)")
@@ -173,9 +198,15 @@ def pick_candidates(
         if dur < min_duration:
             continue
         score, reasons = score_segment(s_start, s_end, total, silences)
-        candidates.append(Segment(
-            start=s_start, end=s_end, duration=dur, score=score, reasons=reasons,
-        ))
+        candidates.append(
+            Segment(
+                start=s_start,
+                end=s_end,
+                duration=dur,
+                score=score,
+                reasons=reasons,
+            )
+        )
     candidates.sort(key=lambda s: s.score, reverse=True)
     top = candidates[:top_n]
     for i, seg in enumerate(top, start=1):
@@ -186,10 +217,24 @@ def pick_candidates(
 def emit_preview(src: Path, seg: Segment, out: Path, preview_duration: float = 10.0) -> None:
     clip_len = min(preview_duration, seg.duration)
     subprocess.run(
-        ["ffmpeg", "-y", "-ss", f"{seg.start}", "-t", f"{clip_len}",
-         "-i", str(src), "-vn", "-acodec", "libmp3lame", "-q:a", "4",
-         str(out)],
-        capture_output=True, check=True,
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{seg.start}",
+            "-t",
+            f"{clip_len}",
+            "-i",
+            str(src),
+            "-vn",
+            "-acodec",
+            "libmp3lame",
+            "-q:a",
+            "4",
+            str(out),
+        ],
+        capture_output=True,
+        check=True,
     )
 
 
@@ -201,17 +246,39 @@ def main() -> None:
     _check_ffmpeg()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("input", type=Path, help="Audio or video file")
-    ap.add_argument("--min-duration", type=float, default=15.0,
-                    help="Minimum speech-segment duration in seconds (default: 15)")
-    ap.add_argument("--top-n", type=int, default=3, help="Number of candidates to return (default: 3)")
-    ap.add_argument("--noise-db", type=int, default=-35,
-                    help="Silence threshold in dB (default: -35; lower = stricter)")
-    ap.add_argument("--min-silence", type=float, default=0.5,
-                    help="Minimum silence duration to count as a boundary (default: 0.5s)")
-    ap.add_argument("--out-dir", type=Path, default=None,
-                    help="Output directory (default: <input-dir>/.sample-pick/)")
-    ap.add_argument("--previews", type=float, default=10.0,
-                    help="Preview clip length in seconds (default: 10; 0 = disable)")
+    ap.add_argument(
+        "--min-duration",
+        type=float,
+        default=15.0,
+        help="Minimum speech-segment duration in seconds (default: 15)",
+    )
+    ap.add_argument(
+        "--top-n", type=int, default=3, help="Number of candidates to return (default: 3)"
+    )
+    ap.add_argument(
+        "--noise-db",
+        type=int,
+        default=-35,
+        help="Silence threshold in dB (default: -35; lower = stricter)",
+    )
+    ap.add_argument(
+        "--min-silence",
+        type=float,
+        default=0.5,
+        help="Minimum silence duration to count as a boundary (default: 0.5s)",
+    )
+    ap.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Output directory (default: <input-dir>/.sample-pick/)",
+    )
+    ap.add_argument(
+        "--previews",
+        type=float,
+        default=10.0,
+        help="Preview clip length in seconds (default: 10; 0 = disable)",
+    )
     ap.add_argument("--quiet", action="store_true", help="JSON-only on stdout")
     args = ap.parse_args()
 
@@ -250,8 +317,7 @@ def main() -> None:
         "input": str(src),
         "out_dir": str(out_dir),
         "candidates": [
-            {**seg.as_dict(), "preview": preview_paths.get(seg.rank)}
-            for seg in candidates
+            {**seg.as_dict(), "preview": preview_paths.get(seg.rank)} for seg in candidates
         ],
     }
     json_path = out_dir / "candidates.json"
@@ -266,8 +332,10 @@ def main() -> None:
         for seg in candidates:
             start_ts = format_timestamp(seg.start)
             end_ts = format_timestamp(seg.end)
-            print(f"{seg.rank:<4} {start_ts:<8} {end_ts:<8} "
-                  f"{seg.duration:<6.1f} {seg.score:<6.1f} {' · '.join(seg.reasons)}")
+            print(
+                f"{seg.rank:<4} {start_ts:<8} {end_ts:<8} "
+                f"{seg.duration:<6.1f} {seg.score:<6.1f} {' · '.join(seg.reasons)}"
+            )
         if preview_paths:
             print(f"\npreviews → {out_dir}/preview_<rank>.mp3")
         print(f"json     → {json_path}")
