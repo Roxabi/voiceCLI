@@ -1,3 +1,4 @@
+# pyright: ignore — excluded from pyrightconfig.json (heavy ML deps, no type stubs)
 """Qwen3-TTS engine with CUDA graph acceleration via faster-qwen3-tts."""
 
 from __future__ import annotations
@@ -93,7 +94,7 @@ class QwenFastEngine(QwenEngine):
             print(f"    {seg.text[:80]}{'...' if len(seg.text) > 80 else ''}")
 
             kw = {**base_kwargs, "text": seg.text}
-            if seg.instruct:
+            if seg.instruct and method == "custom_voice":
                 kw["instruct"] = seg.instruct
             else:
                 kw.pop("instruct", None)
@@ -128,8 +129,6 @@ class QwenFastEngine(QwenEngine):
         base_kwargs["ref_text"] = ref_text or ""
         if not ref_text:
             base_kwargs["xvec_only"] = True
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Multi-segment mode
         if segments and len(segments) > 1:

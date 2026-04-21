@@ -88,8 +88,8 @@ def daemon_send(tmp_path):
                 raise RuntimeError(f"Daemon socket never appeared at {sock_path}")
             time.sleep(0.02)
 
-        # Verify warmup was called during serve() startup
-        mock_warmup.assert_called_once()
+        # Since #36 (VRAM lifecycle), warmup is lazy — no longer called at startup
+        mock_warmup.assert_not_called()
 
         def send(action: str, **kwargs) -> dict:
             """Connect to the daemon socket, send one action, return parsed response."""
@@ -547,7 +547,8 @@ class TestPaRecordFallback:
                 finally:
                     sock.close()
 
-            mock_warmup.assert_called_once()
+            # Since #36 (VRAM lifecycle), warmup is lazy — no longer called at startup
+            mock_warmup.assert_not_called()
 
             yield send, MagicMock(), mock_write_clipboard, mock_recording_thread_cls
 

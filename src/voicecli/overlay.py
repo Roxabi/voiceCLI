@@ -40,6 +40,7 @@ except (ValueError, ImportError):
 
 from voicecli.stt_client import SOCKET_PATH, send_status  # noqa: E402
 from voicecli.stt_daemon import LEVEL_FILE  # noqa: E402
+from voicecli.env import coerce_bool_env  # noqa: E402
 
 _ASSETS = Path(__file__).parent / "assets"
 
@@ -420,8 +421,13 @@ class WaveformOverlay:
         Gtk.main()
 
 
+def _resolve_test_mode() -> bool:
+    """Resolve test mode from CLI args or env var."""
+    return "--test" in sys.argv or coerce_bool_env("VOICECLI_OVERLAY_TEST")
+
+
 def main() -> None:
-    test_mode = "--test" in sys.argv or os.environ.get("VOICECLI_OVERLAY_TEST") == "1"
+    test_mode = _resolve_test_mode()
     if not test_mode and not SOCKET_PATH.exists():
         sys.exit(0)
     initial_mode = os.environ.get("VOICECLI_OVERLAY_MODE") or ("test" if test_mode else None)

@@ -5,8 +5,15 @@ over Unix socket to reuse the warm model. Falls back to local model loading
 if the daemon is unavailable.
 """
 
+from __future__ import annotations
+
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
 DEFAULT_MODEL = "large-v3-turbo"
@@ -32,7 +39,8 @@ VALID_MODELS = frozenset(
     }
 )
 
-_model_cache: dict[str, object] = {}
+_model_cache: dict[str, WhisperModel] = {}
+_model_lock = threading.Lock()
 
 
 @dataclass
@@ -106,6 +114,7 @@ def _try_daemon(
 
 def transcribe(
     audio_path: Path,
+    *,
     model: str = DEFAULT_MODEL,
     language: str | None = None,
     language_detection_threshold: float | None = None,
@@ -113,21 +122,30 @@ def transcribe(
     language_fallback: str | None = None,
     task: str = "transcribe",
     initial_prompt: str | None = None,
+    _skip_daemon: bool = False,
 ) -> TranscriptionResult:
+    from voicecli.env import coerce_bool_env
+
+    if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        return TranscriptionResult(text="", language="en", segments=[])
+
     # Try daemon first — reuses warm model, avoids loading locally
-    daemon_result = _try_daemon(
-        audio_path,
-        language,
-        language_detection_threshold,
-        language_detection_segments,
-        language_fallback,
-        task,
-        initial_prompt,
-    )
-    if daemon_result is not None:
-        return daemon_result
+    if not _skip_daemon:
+        daemon_result = _try_daemon(
+            audio_path,
+            language,
+            language_detection_threshold,
+            language_detection_segments,
+            language_fallback,
+            task,
+            initial_prompt,
+        )
+        if daemon_result is not None:
+            return daemon_result
 
     whisper = _load_model(model)
+    # transcribe() short-circuits for mock at the top, so whisper is non-None here.
+    assert whisper is not None
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -187,15 +205,45 @@ def warmup(model: str = DEFAULT_MODEL) -> None:
     _load_model(model)
 
 
-def _load_model(model: str):
+def unload_model() -> None:
+    """Unload all cached models and release VRAM."""
+    with _model_lock:
+        if not _model_cache:
+            return
+        _model_cache.clear()
+
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    print("[stt] Models unloaded.")
+
+
+def _load_model(model: str) -> WhisperModel | None:
+    """Load a faster-whisper model, caching for reuse.
+
+    Returns None when the mock env gate is set — mirrors the short-circuit at
+    the top of transcribe(), so adapter warmup paths stay engine-agnostic.
+    """
+    from voicecli.env import coerce_bool_env
+
+    if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        return None
     if model not in VALID_MODELS:
         raise ValueError(
             f"Unknown model '{model}'. Valid models: {', '.join(sorted(VALID_MODELS))}"
         )
-    if model not in _model_cache:
-        from faster_whisper import WhisperModel
+    with _model_lock:
+        if model not in _model_cache:
+            from faster_whisper import WhisperModel
 
-        print(f"[stt] Loading faster-whisper {model}...")
-        _model_cache[model] = WhisperModel(model, device="cuda", compute_type="float16")
-        print("[stt] Model loaded.")
-    return _model_cache[model]
+            print(f"[stt] Loading faster-whisper {model}...")
+            _model_cache[model] = WhisperModel(model, device="cuda", compute_type="float16")
+            print("[stt] Model loaded.")
+        return _model_cache[model]

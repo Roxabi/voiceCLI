@@ -1,419 +1,138 @@
 @.claude/stack.yml
+@~/.claude/shared/global-patterns.md
 
 # VoiceCLI
 
-Unified CLI for local voice generation with Qwen3-TTS, Chatterbox Multilingual and Chatterbox Turbo backends.
+Unified CLI for local voice gen — Qwen3-TTS, Chatterbox Multilingual, Chatterbox Turbo, Voxtral backends.
+
+Python 3.12 via `uv` · Typer CLI · PyTorch 2.7+ cu128 · ruff (L≤100, py312) · audio: `soundfile`, `lameenc`, PulseAudio CLI (WSL2 via WSLg).
 
 ## TL;DR
 
 - **Project:** VoiceCLI
-- **Before work:** Use `/dev #N` as the single entry point — it determines tier (S / F-lite / F-full) and drives the full lifecycle
-- **Always** `AskUserQuestion` for choices — never plain-text questions
-- **Never** commit without asking, push without request, or use `--force`/`--hard`/`--amend`
-- **Always** use appropriate skill even without slash command
-
-### AskUserQuestion
-
-Always `AskUserQuestion` for: decisions, choices (≥2 options), approach proposals.
-**Never** plain-text "Do you want..." / "Should I..." → use the tool.
-
-### Git
-
-Format: `<type>(<scope>): <desc>` + `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
-Types: feat|fix|refactor|docs|style|test|chore|ci|perf
-Never push without request. Never force/hard/amend. Hook fail → fix + NEW commit.
-
-### Dev Process
-
-**Entry point: `/dev #N`** — single command that scans artifacts, shows progress, and delegates to the right phase skill.
-
-| Tier | Criteria | Phases |
-|------|----------|--------|
-| **S** | ≤3 files, no arch, no risk | triage → implement → pr → validate → review → fix* → cleanup* |
-| **F-lite** | Clear scope, single domain | Frame → spec → plan → implement → verify → ship |
-| **F-full** | New arch, unclear reqs, >2 domains | Frame → analyze → spec → plan → implement → verify → ship |
-
-`*` = conditional (runs only if applicable)
-
-Phases: **Frame** (problem) → **Shape** (spec) → **Build** (code) → **Verify** (review) → **Ship** (release).
-
-### Orchestrator Delegation
-
-Orchestrator does not modify code/docs directly. Delegate: FE→`frontend-dev` | BE→`backend-dev` | Infra→`devops` | Docs→`doc-writer` | Tests→`tester` | Fixes→`fixer`. Exception: typo/single-line. Deploy→`devops` only.
-
-### Parallel Execution
-
-≥3 complex tasks → AskUserQuestion: Sequential | Parallel (Recommended).
-F-full + ≥4 independent tasks in 1 domain → multiple same-type agents on separate file groups.
-
-### Artifact Model
-
-Artifacts are the state markers `/dev` uses for progress detection and resumption.
-
-| Type | Directory | Question answered |
-|------|-----------|-------------------|
-| **Frame** | `artifacts/frames/` | What's the problem? |
-| **Analysis** | `artifacts/analyses/` | How deep is it? |
-| **Spec** | `artifacts/specs/` | What will we build? |
-| **Plan** | `artifacts/plans/` | How do we build it? |
-
-### Mandatory Worktree
-
-```bash
-git worktree add ../voiceCLI-XXX -b feat/XXX-slug staging
-cd ../voiceCLI-XXX && cp .env.example .env && uv sync
-```
-
-Exceptions: XS (confirm via AskUserQuestion) | `/dev` pre-implementation artifacts (frame, analysis, spec, plan) | `/promote` release artifacts.
-**Never code on main/staging without worktree.**
+- **Before work:** `/dev #N` = single entry — picks tier (S / F-lite / F-full) + drives lifecycle
+- **Decisions:** → global patterns (@~/.claude/shared/global-patterns.md)
+- **Never:** `--force` / `--hard` / `--amend`
+- **Always:** use matching skill even w/o slash cmd
 
 ### Code Review
 
-MUST read [code-review](docs/standards/code-review.md). Conventional Comments. Block only: security, correctness, standard violations.
+MUST read [code-review](docs/standards/code-review.md). Conventional Comments. Block only: security, correctness, standards violations.
 
 ### Coding Standards
 
 | Context | Read |
-|---------|------|
+|---|---|
 | API / Backend | [backend-patterns](docs/standards/backend-patterns.md) |
 | Tests | [testing](docs/standards/testing.md) |
 
-### Skills & Agents
+## Usage Reference
 
-Skills: always use appropriate skill. Workflow skills → `dev-core` plugin.
-Agents: Sonnet = all agents (frontend-dev, backend-dev, devops, doc-writer, fixer, tester, architect, product-lead, security-auditor).
+**CLI, engine caps, markdown format, frontmatter, directives, config, workflow** → [`skills/voice/SKILL.md`](skills/voice/SKILL.md) (single source of truth).
 
-**Shared agent rules:** Never commit/push (lead handles git) | Never force/hard/amend | Stage specific files only | Escalate blockers → lead | Message lead on completion.
+Priority: **CLI flag > frontmatter > voicecli.toml > default**
 
-## Global Workflow — What Handles What
-
-### Code pipeline (deterministic, at runtime)
-
-```
-User runs: voicecli generate script.md -e chatterbox
-
-  1. cli.py         — detects .md input, resolves engine from CLI flag / frontmatter
-  2. markdown.py    — parses YAML frontmatter + body into TTSDocument
-                      (extracts instruct, segments, tags, exaggeration, etc.)
-  2b. cli.py        — _apply_config_defaults(): backfills voicecli.toml structured parts
-                      (accent, personality, speed, emotion) into doc/segments, recomposes instruct
-  3. translate.py   — adapts TTSDocument for the target engine via ENGINE_CAPS matrix
-                      (strips/converts tags, nulls unsupported fields)
-  4. cli.py         — extracts fields from translated doc into engine kwargs
-  5. engine/*.py    — generates audio (chunking, model inference, WAV output)
-  6. utils.py       — optional MP3 conversion
-```
-
-Each step is pure Python, no LLM involved. The translator is the key new piece — it makes
-one universal `.md` file work across all three engines without manual adaptation.
-
-### LLM skill (`skills/voice/SKILL.md`)
-
-The `/voicecli` skill lives at `skills/voice/SKILL.md` (source of truth, part of the self-contained plugin).
-`.claude/skills/voicecli/SKILL.md` and `roxabi-plugins/plugins/voice-cli/skills/voice/SKILL.md` are both symlinks to it.
-Install directly: `claude plugin marketplace add Roxabi/voiceCLI && claude plugin install voice-cli`
-
-The LLM handles:
-
-- **Intent parsing** — understanding natural language requests ("make me a French speech with laughter")
-- **Command selection** — picking the right `uv run voicecli` command and flags
-- **Script authoring** — writing `.md` files with appropriate frontmatter when the user wants a script
-- **Engine guidance** — knowing which features each engine supports (from the Engine Notes)
-
-The LLM does NOT translate documents — that is handled by `translate.py` in the code pipeline.
-The skill just needs to know that unified format exists so it can write scripts using all features.
-
-## Tech Stack
-
-- Python 3.12, managed with `uv`
-- CLI framework: Typer
-- TTS engines: `qwen-tts` (Qwen3-TTS), `chatterbox-tts` (Chatterbox Multilingual + Turbo)
-- Audio: `soundfile`, `lameenc` (MP3 encoding)
-- Recording: PulseAudio CLI (`parecord`/`paplay`) — works on WSL2 via WSLg
-- Linting: `ruff` (line-length 100, target py312)
-- GPU: PyTorch 2.7+ cu128 for RTX 5070 Ti (Blackwell sm_120)
+Pipeline (cli → markdown → api → translate → engine → utils) + LLM skill install → [`docs/architecture/pipeline.md`](docs/architecture/pipeline.md).
 
 ## Project Layout
 
 ```
-voicecli.example.toml — template config — copy to ~/.voicecli/voicecli.toml
+voicecli.example.toml — template — copy → ~/.voicecli/voicecli.toml
 TTS/
-  texts_in/         — authored .md scripts (tracked in git)
+  texts_in/         — authored .md scripts (git-tracked)
 ~/.voicecli/
   voicecli.toml     — user config (global, all projects)
-  voicecli.vocab    — personal vocabulary for STT (shared with Lyra)
+  voicecli.vocab    — personal STT vocabulary (shared w/ Lyra)
   TTS/
     voices_out/     — generated WAV/MP3
-    samples/        — voice samples for cloning
+    samples/        — voice clone samples
   STT/
     audio_in/       — recorded audio from dictate
     texts_out/      — transcription results
 src/voicecli/
-  cli.py            — Typer app: command definitions, .md detection, flag overrides
-  config.py         — TOML config loader (reads voicecli.toml)
-  engine.py         — Abstract TTSEngine base class + engine registry
-  translate.py      — Engine capability matrix (ENGINE_CAPS) + translate_for_engine()
-  markdown.py       — YAML frontmatter parser + markdown-to-plaintext + directive parser
-  utils.py          — Output path helper + concat_audio() + WAV→MP3 conversion
-  samples.py        — Sample management + PulseAudio recording with chimes
+  cli.py            — Typer app: commands, .md detection, flag overrides
+  api.py            — Public API: generate(), clone(), transcribe() + config resolution
+  config.py         — TOML loader (reads voicecli.toml)
+  engine.py         — Abstract TTSEngine + registry
+  translate.py      — ENGINE_CAPS matrix + translate_for_engine()
+  markdown.py       — YAML frontmatter + md→text + directive parser
+  utils.py          — Output path + concat_audio() + WAV→MP3
+  samples.py        — Sample mgmt + PulseAudio record w/ chimes
   transcribe.py     — Faster Whisper file transcription
   listen.py         — Kyutai STT real-time mic transcription
   overlay.py        — Waveform overlay (GTK3 + gtk-layer-shell on Wayland, X11 fallback); stop.wav on close
-  assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed tap); start_mic/stop_mic alternates
+  assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed); start_mic/stop_mic alts
   engines/
-    qwen.py              — Qwen3-TTS engine (CustomVoice for generate, Base for clone)
-    chatterbox.py        — Chatterbox Multilingual engine (23 languages, segment-aware)
-    chatterbox_turbo.py  — Chatterbox Turbo engine (English-only, paralinguistic tags)
+    qwen.py              — Qwen3-TTS (CustomVoice generate, Base clone)
+    chatterbox.py        — Chatterbox Multilingual (23 languages, segment-aware)
+    chatterbox_turbo.py  — Chatterbox Turbo (English-only, paralinguistic tags)
+    voxtral.py           — Voxtral 4B (int4, 20 presets, 9 languages)
 ```
 
-## User Config (`voicecli.toml`)
+## Key Patterns (invariants)
 
-Optional TOML file (gitignored). Copy from `voicecli.example.toml` and customize.
-
-**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. Place your config at `~/.voicecli/voicecli.toml` for global access regardless of CWD. If no file is found, a warning is printed to stderr and built-in defaults are used.
-
-```toml
-[defaults]
-language = "French"
-engine = "qwen"
-accent = "Léger accent du sud provençal"
-personality = "Voix calme, douce et flamboyante"
-exaggeration = 0.7
-cfg_weight = 0.3
-segment_gap = 200       # ms silence between segments
-crossfade = 50          # ms fade between segments
-# plain = false         # strip [tags] and ignore <!-- directives -->
-# chunked = false       # always output separate chunk files
-# chunk_size = 500      # target chunk size in chars (~15 chars/sec)
-```
-
-Structured instruct parts (`accent`, `personality`, `speed`, `emotion`) auto-compose into a single
-`instruct` string: `"accent. personality. speed. emotion"`. Raw `instruct` bypasses composition.
-
-**Segment propagation**: When a `.md` file is parsed, toml structured parts (accent, personality,
-speed, emotion) are backfilled into segments where frontmatter didn't set them, then instruct is
-recomposed. This means a `.md` file with no frontmatter still gets instruct from voicecli.toml.
-Segments with a raw `instruct` bypass (instruct set but no structured parts) are left untouched.
-
-Priority: **CLI flag > markdown frontmatter > voicecli.toml > hardcoded default**
-
-## Engine Capability Matrix
-
-Defined in `translate.py:ENGINE_CAPS` — drives all translation decisions:
-
-| Capability     | Qwen            | Chatterbox Multilingual | Chatterbox Turbo |
-|----------------|-----------------|-------------------------|------------------|
-| `instruct`     | yes             | no (nulled)             | no (nulled)      |
-| `segments`     | yes             | yes                     | yes              |
-| `tags`         | `to_instruct`   | `strip`                 | `native`         |
-| `exaggeration` | no (nulled)     | yes (per-segment)       | yes (per-segment)|
-| `cfg_weight`   | no (nulled)     | yes (per-segment)       | yes (per-segment)|
-| `language`     | yes (per-segment)| yes (per-segment)      | no (nulled)      |
-| `voice`        | yes (per-segment)| no (nulled)            | no (nulled)      |
-
-Tag handling modes:
-- `native` — keep `[laugh]` etc. in text as-is (engine processes them)
-- `strip` — remove all `[tag]` markers (engine can't use them)
-- `to_instruct` — split text at tags, create new segments with mapped instruct (e.g. `[laugh]` → `instruct: "Laughing"`). Base instruct is preserved in both pre-tag and post-tag segments (e.g. `"Provençal. Calme, En riant, puis retrouve son calme"`).
-
-## All CLI Commands
-
-```bash
-# Daemon (keep Qwen model warm — eliminates ~60s cold start)
-voicecli serve                              # start daemon (lazy-loads on first request)
-voicecli serve --engine qwen               # preload Qwen model at startup
-voicecli serve --engine qwen --fast        # preload smaller 0.6B model
-
-# Speech generation (built-in voices)
-voicecli generate "text"                    # Qwen default voice; uses daemon if running
-voicecli generate "text" -e chatterbox      # Chatterbox Multilingual engine
-voicecli generate "text" -e chatterbox-turbo # Chatterbox Turbo (English, emotion tags)
-voicecli generate script.md                 # from markdown with frontmatter
-voicecli generate article.txt               # from plain text file
-voicecli generate script.md --mp3           # also save as MP3
-voicecli generate script.md --segment-gap 300  # 300ms silence between segments
-voicecli generate script.md --crossfade 50     # 50ms fade between segments
-voicecli generate script.md --plain         # strip [tags] and ignore <!-- directives -->
-voicecli generate article.txt --chunked     # split into separate chunk files
-voicecli generate article.txt --chunked --chunk-size 300  # ~20s chunks
-
-# Voice cloning
-voicecli clone "text" --ref voice.wav       # clone from reference audio
-voicecli clone "text"                       # uses active sample (no --ref needed)
-voicecli clone script.md --mp3              # from markdown + MP3 output
-voicecli clone script.md --plain            # strip [tags] and ignore <!-- directives -->
-voicecli clone article.txt --chunked        # split into separate chunk files
-
-# Sample management
-voicecli samples list                       # list all .wav in TTS/samples/
-voicecli samples add file.wav               # import a WAV file
-voicecli samples record name -d 30          # record 30s from mic (PulseAudio)
-voicecli samples use name.wav               # set as active sample for clone
-voicecli samples active                     # show current active sample
-voicecli samples remove name.wav            # delete a sample
-
-# Speech-to-text
-voicecli transcribe audio.wav               # transcribe audio file
-voicecli transcribe audio.wav --json        # JSON with language + timestamps
-voicecli transcribe audio.wav -m large-v3   # choose model
-voicecli transcribe audio.wav -l fr         # force language
-voicecli listen                             # live mic → text (Kyutai)
-voicecli listen -m 2.6b                     # English-only model
-
-# Utilities
-voicecli mp3 TTS/voices_out/file.wav       # convert WAV to MP3 (192kbps default)
-voicecli mp3 TTS/voices_out/file.wav -b 320 # convert at 320kbps
-voicecli voices                             # list Qwen voices
-voicecli voices -e chatterbox               # list Chatterbox voices
-voicecli engines                            # list available engines
-voicecli emotions                           # emotion/expressiveness cheat sheet
-```
-
-## Unified Markdown Format
-
-Write one `.md` file using ALL features — the translator adapts it per engine:
-
-```markdown
----
-language: French
-accent: "Léger accent provençal"
-personality: "Calme et douce"
-emotion: "Chaleureuse"
-exaggeration: 0.7
-cfg_weight: 0.3
-segment_gap: 200
-crossfade: 50
----
-
-Welcome everyone. [laugh] This is going to be fun!
-
-<!-- emotion: "Passionnée et excitée", segment_gap: 500 -->
-Now let me tell you something important. [sigh] It has been a long road.
-
-<!-- language: Japanese, voice: Ono_Anna, crossfade: 0, segment_gap: 300 -->
-A section in Japanese with a different voice.
-```
-
-### All frontmatter fields (all optional)
-
-```yaml
----
-language: French          # any language name (Qwen + Chatterbox Multilingual)
-voice: Ryan               # built-in voice name (Qwen only)
-engine: qwen              # qwen | chatterbox | chatterbox-turbo
-instruct: "Parle avec colère" # raw instruct bypass (Qwen only) — overrides structured parts
-accent: "Provençal"       # pronunciation/origin (Qwen, composes into instruct)
-personality: "Calme"      # character traits (Qwen, composes into instruct)
-speed: "Rythme posé"      # tempo/pace (Qwen, composes into instruct)
-emotion: "Chaleureuse"    # emotional state (Qwen, composes into instruct)
-exaggeration: 0.75        # expressiveness 0.25-2.0, default 0.5 (Chatterbox only)
-cfg_weight: 0.3           # speaker adherence 0.0-1.0, default 0.5 (Chatterbox only)
-segment_gap: 200          # ms silence between segments, default 0
-crossfade: 50             # ms fade between segments, default 0
----
-```
-
-### Structured instruct composition
-
-The `accent`, `personality`, `speed`, `emotion` fields auto-compose into `instruct`:
-`"accent. personality. speed. emotion"` (only non-empty parts are joined).
-
-- Per-section: `<!-- emotion: "Passionnée" -->` overrides just emotion, other parts inherited
-- Raw `instruct` (frontmatter or directive) bypasses composition entirely
-- Priority: raw `instruct` > composed parts
-- **Write instruct parts in the target language** — French speech needs French instructs, English speech needs English instructs
-
-### In-body directives
-
-All frontmatter fields can also be set per-section using HTML comments. Multiple keys can be combined in a single comment, separated by commas:
-
-- `<!-- emotion: "Passionnée", speed: "Rapide et haché" -->` — multi-key on one line
-- `<!-- accent: "Parisien" -->` — single-key still works
-- `<!-- instruct: "..." -->` — raw instruct bypass (Qwen, overrides all structured parts)
-- `<!-- exaggeration: 0.8, cfg_weight: 0.3 -->` — per-section expressiveness (Chatterbox)
-- `<!-- language: Japanese, voice: Ono_Anna -->` — per-section language + voice switch
-- `<!-- segment_gap: 500, crossfade: 100 -->` — per-section transition control
-- `[laugh]` `[chuckle]` `[sigh]` etc. — paralinguistic tags (native on Turbo, converted to instruct on Qwen, stripped on Multilingual)
-
-Commas inside quoted values are handled correctly: `<!-- emotion: "Passionnée, mais contenue" -->`.
-
-Directives accumulate before a text block and apply to the text that follows.
-Each section inherits frontmatter defaults, overridden by its inline directives.
-
-### Segment transitions
-
-| gap | crossfade | Result |
-|-----|-----------|--------|
-| 0   | 0         | Direct concat (default) |
-| >0  | 0         | Hard cut, silence, hard cut |
-| 0   | >0        | Fade-out then fade-in (no silence) |
-| >0  | >0        | Fade-out, silence, fade-in |
-
-### Translation example
-
-Given the universal script above, the translator produces:
-
-**Qwen** (`tags: to_instruct`, `segments: True`):
-- Segment 1: "Welcome everyone." — instruct: "Léger accent provençal. Calme et douce. Chaleureuse, de plus en plus amusé, prêt à éclater de rire"
-- Segment 2: "Ah ah ah ah ! This is going to be fun!" — instruct: "Léger accent provençal. Calme et douce. Chaleureuse, En riant, puis retrouve progressivement son calme"
-- Segment 3: "Now let me tell you something important." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée, avec une lassitude croissante"
-- Segment 4: "Haaa... It has been a long road." — instruct: "Léger accent provençal. Calme et douce. Passionnée et excitée, En soupirant, puis reprend doucement contenance"
-- exaggeration/cfg_weight: nulled
-- Note: base instruct (from frontmatter/toml) is preserved in all tag-split segments
-
-**Chatterbox Multilingual** (`tags: strip`, `segments: True`):
-- Segment 1: "Welcome everyone. This is going to be fun!" — exaggeration: 0.7, language: French
-- Segment 2: "Now let me tell you something important. It has been a long road." — segment_gap: 500
-- instruct/accent/personality/emotion: nulled per-segment
-
-**Chatterbox Turbo** (`tags: native`, `segments: True`):
-- Segment 1: "Welcome everyone. [laugh] This is going to be fun!" — exaggeration: 0.7
-- Segment 2: "Now let me tell you something important. [sigh] It has been a long road." — segment_gap: 500
-- instruct/accent/personality/emotion: nulled per-segment, language: nulled
-
-## Key Patterns
-
-- Engines are lazy-loaded (model loaded on first use, not import)
-- Engine registry in `engine.py:_get_registry()` — add new engines there
-- `QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})` in `engine.py` — single source for Qwen engine names
-- Daemon (`daemon.py`) keeps Qwen models in VRAM; `generate`/`clone` try daemon first for Qwen engines, fall back silently to standalone if socket absent or any error occurs
+- Engines lazy — model loads on 1st use, ¬on import
+- Registry ∈ `engine.py:_get_registry()` — add engines here
+- `QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})` ∈ `engine.py` — single source for Qwen names
+- Daemon (`daemon.py`) keeps Qwen models ∈ VRAM; `generate`/`clone` try daemon first for Qwen, silently fall back to standalone iff socket absent ∨ any error
 - Daemon socket: `~/.local/share/voicecli/daemon.sock` (AF_UNIX, newline-delimited JSON)
-- `generate` and `clone` both accept raw text OR a `.md` file path (auto-detected)
-- `clone` falls back to active sample when `--ref` is omitted
-- Priority chain: CLI flag > markdown frontmatter > voicecli.toml > hardcoded default
-- Config backfill (`_apply_config_defaults`) runs after `parse_md_file()`, before `translate_for_engine()`
-- Translation happens after config backfill but before field extraction in cli.py
-- All engines support segment-aware generation with per-segment parameter overrides
-- Qwen clone uses `x_vector_only_mode=True` when no `--ref-text` is provided
-- Qwen clone does NOT support `instruct` — only `generate` (CustomVoice) does
-- Both Chatterbox engines split long text into sentence chunks (~250 chars) to avoid 40s cutoff
-- Chatterbox Multilingual clone defaults to cfg_weight=0.0 to reduce accent bleed in cross-language cloning
-- Recommended Chatterbox settings: passionate speech = exaggeration 0.7-0.8, cfg_weight 0.3
+- `generate` ∧ `clone` both accept raw text ∨ `.md` path (auto-detected)
+- `clone` falls back to active sample iff `--ref` omitted
+- Config backfill (`_apply_config_defaults`) runs post `parse_md_file()`, pre `translate_for_engine()`
+- All engines: segment-aware generation w/ per-segment param overrides
+
+Engine-specific nuances (Qwen `x_vector_only_mode`, Chatterbox chunking @ 250 chars, `cfg_weight=0.0` for Multilingual clone cross-lang) → documented in engine modules.
 
 ## Conventions
 
-- No over-engineering — this is a thin CLI, keep it flat and simple
-- Imports of heavy libs (torch, qwen_tts, chatterbox) are deferred to function bodies
-- Output WAVs/MP3s go to `~/.voicecli/TTS/voices_out/` by default
-- Samples stored in `~/.voicecli/TTS/samples/`
-- Transcription results saved to `~/.voicecli/STT/texts_out/` by default
-- Dictate recordings saved to `~/.voicecli/STT/audio_in/`
-- Scripts authored in `TTS/texts_in/` (project-local, tracked in git)
-- Override conflicts in `[tool.uv] override-dependencies` in pyproject.toml
-- Audio playback/recording uses PulseAudio CLI tools (paplay/parecord), not sounddevice
+- ¬over-engineering — thin CLI, flat + simple
+- Heavy imports (torch, qwen_tts, chatterbox, voxtral_tts) deferred to function bodies
+- Output WAV/MP3 → `~/.voicecli/TTS/voices_out/` default
+- Samples → `~/.voicecli/TTS/samples/`
+- Transcription → `~/.voicecli/STT/texts_out/` default
+- Dictate recordings → `~/.voicecli/STT/audio_in/`
+- Scripts authored ∈ `TTS/texts_in/` (project-local, git-tracked)
+- Override conflicts ∈ `[tool.uv] override-dependencies` ∈ pyproject.toml
+- Audio playback/record: PulseAudio CLI (paplay/parecord), ¬sounddevice
 
-## STT / Dictate — Key Patterns
+## STT / Dictate
 
-- **AHK shortcuts** (Windows): `Alt+Shift+Space` = toggle, `Alt+Shift+Tab` = next-mode, `Alt+Shift+Esc` = cancel
-- **AHK script location**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\voicecli-dictate.ahk`
-- **Wrapper scripts**: `~/.local/bin/voicecli-dictate`, `voicecli-next-mode`, `voicecli-cancel`
-- **Auto-paste on WSL2**: daemon writes `%TEMP%\voicecli_paste_trigger` → AHK polls it every 150ms → sends `^v`
-- **Auto-paste config**: `auto_paste = true` in `[stt]` section of `voicecli.toml` (requires daemon restart)
-- **UI sounds**: start.wav played by `stt_daemon._play_ui_sound()` (zero-latency, before overlay spawns); stop.wav played by overlay on `_close()`
-- **No chimes in stt_daemon**: `_chime()` removed — overlay handles all UI sounds
-- **Overlay shortcuts are display-only**: Tab/Esc in overlay toolbar are informational; actual shortcuts go through AHK
-- **CLI commands**: `voicecli dictate cancel` | `voicecli dictate next-mode` | `voicecli dictate status`
+→ [`docs/STT-SETUP.md`](docs/STT-SETUP.md) — AHK shortcuts, WSL2 auto-paste, overlay sounds, CLI commands.
 
 ## Gotchas
 
-<!-- Add project-specific gotchas here -->
+### Daemons managed by supervisord
+
+`voicecli serve` (TTS) ∧ `voicecli stt-serve` (STT) = **¬standalone** — managed by supervisor hub @ `~/projects/`. `kill` won't work — supervisord auto-restarts within seconds.
+
+Temp stop: use hub Make targets:
+```bash
+make -C ~/projects tts stop      # stop TTS daemon
+make -C ~/projects stt stop      # stop STT daemon
+make -C ~/projects tts start     # restart TTS daemon
+make -C ~/projects stt start     # restart STT daemon
+make -C ~/projects ps            # status all services
+```
+
+### VRAM contention on RTX 3080 (10 GB)
+
+TTS daemon (qwen-fast) ~7.4 GB + STT daemon ~2.2 GB → fills whole GPU. Both running → `voicecli clone` (∨ any op needing extra VRAM alloc) fails CUDA OOM even though model already loaded.
+
+**Fix:** stop STT daemon before clone, restart after:
+```bash
+make -C ~/projects stt stop
+voicecli clone "text" -e qwen-fast
+make -C ~/projects stt start
+```
+
+### NATS satellite vs socket daemon — pick one mode per host
+
+`voicecli nats-serve` ∧ `voicecli serve` / `stt-serve` compete for same GPU. VRAM-sequencing guard refuses to start satellite iff live socket daemon detected (exit 78). Three coexistence modes:
+
+| Mode | When | How |
+|---|---|---|
+| **socket-only** | Hub + voicecli on same host (low-latency local dev) | Run `voicecli serve` / `stt-serve`, ¬start NATS satellite |
+| **nats-only** (default) | Prod — hub on different host | Stop socket daemon, run `voicecli nats-serve tts` / `stt` |
+| **allow-coexist** | Large-VRAM dev boxes (RTX 5070 Ti 16GB, …) only | `--allow-coexist` ∨ `VOICECLI_ALLOW_COEXIST=1` |
+
+¬allow-coexist on RTX 3080 (10GB) prod — OOMs under concurrent synthesis. Full guard + exit codes: [`docs/NATS-SERVE.md#vram-sequencing`](docs/NATS-SERVE.md#vram-sequencing).

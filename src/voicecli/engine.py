@@ -12,10 +12,44 @@ _CUDA_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Minimum free VRAM (GB) required to load each engine.
+# Used by cuda_guard (standalone) and daemon pre-check.
+VRAM_REQUIRED_GB: dict[str, float] = {
+    "qwen": 5.0,
+    "qwen-fast": 5.0,
+    "chatterbox": 2.0,
+    "chatterbox-turbo": 2.0,
+    "voxtral": 4.0,
+}
+VRAM_REQUIRED_GB_DEFAULT = 4.0
+
+
+def check_vram(engine_name: str) -> None:
+    """Raise RuntimeError if not enough free VRAM to load the engine."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        free_bytes, _ = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024**3)
+        required_gb = VRAM_REQUIRED_GB.get(engine_name, VRAM_REQUIRED_GB_DEFAULT)
+        if free_gb < required_gb:
+            raise RuntimeError(
+                f"CUDA error in {engine_name}: not enough VRAM to load model — "
+                f"{free_gb:.1f} GB free, need {required_gb:.1f} GB. "
+                f"Stop other GPU processes first (e.g. voicecli serve, voicecli dictate)."
+            )
+    except RuntimeError:
+        raise
+    except Exception:
+        pass  # if check fails, let it try
+
 
 @contextlib.contextmanager
 def cuda_guard(engine_name: str) -> Iterator[None]:
-    """Catch CUDA-related errors and re-raise as RuntimeError."""
+    """Check VRAM availability, then catch CUDA errors and re-raise as RuntimeError."""
+    check_vram(engine_name)
     try:
         yield
     except (RuntimeError, OSError) as exc:
@@ -27,6 +61,7 @@ def cuda_guard(engine_name: str) -> Iterator[None]:
 
 class TTSEngine(ABC):
     name: str
+    _small: bool = False
 
     @abstractmethod
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
@@ -58,14 +93,28 @@ def available_engines() -> list[str]:
 
 
 def _get_registry() -> dict[str, type[TTSEngine]]:
+    """Build the engine registry.
+
+    MockEngine is gated by ``VOICECLI_ENABLE_MOCK_ENGINE`` — unset in prod,
+    set to "1" in the e2e docker-compose files so the NATS satellite can
+    answer round-trip requests without loading a real model.
+    """
     from voicecli.engines.chatterbox import ChatterboxEngine
     from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
     from voicecli.engines.qwen import QwenEngine
     from voicecli.engines.qwen_fast import QwenFastEngine
+    from voicecli.engines.voxtral import VoxtralEngine
+    from voicecli.env import coerce_bool_env
 
-    return {
+    registry: dict[str, type[TTSEngine]] = {
         "qwen": QwenEngine,
         "qwen-fast": QwenFastEngine,
         "chatterbox": ChatterboxEngine,
         "chatterbox-turbo": ChatterboxTurboEngine,
+        "voxtral": VoxtralEngine,
     }
+    if coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
+        from voicecli.engines.mock import MockEngine
+
+        registry["mock"] = MockEngine
+    return registry

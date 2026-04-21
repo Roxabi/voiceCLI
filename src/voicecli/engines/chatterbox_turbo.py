@@ -1,3 +1,4 @@
+# pyright: ignore — excluded from pyrightconfig.json (heavy ML deps, no type stubs)
 from __future__ import annotations
 
 import numpy as np
@@ -60,6 +61,14 @@ class ChatterboxTurboEngine(TTSEngine):
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             audio = self._generate_chunked(seg.text, **kw)
             all_wavs.append(audio)
 
@@ -75,14 +84,23 @@ class ChatterboxTurboEngine(TTSEngine):
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
         exaggeration = kwargs.get("exaggeration", 0.5)
         cfg_weight = kwargs.get("cfg_weight", 0.5)
+        temperature = kwargs.get("temperature", 0.8)
+        top_p = kwargs.get("top_p", 1.0)
+        min_p = kwargs.get("min_p", 0.05)
+        repetition_penalty = kwargs.get("repetition_penalty", 1.2)
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         if segments and len(segments) > 1:
-            base_kwargs = dict(exaggeration=exaggeration, cfg_weight=cfg_weight)
+            base_kwargs = dict(
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
+            )
             audio = self._generate_segmented(
                 segments,
                 base_kwargs,
@@ -92,7 +110,14 @@ class ChatterboxTurboEngine(TTSEngine):
             sf.write(str(output_path), audio, self._load_model().sr)
             return output_path
 
-        gen_kwargs = dict(exaggeration=exaggeration, cfg_weight=cfg_weight)
+        gen_kwargs = dict(
+            exaggeration=exaggeration,
+            cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
+        )
         audio = self._generate_chunked(text, **gen_kwargs)
         sf.write(str(output_path), audio, self._load_model().sr)
         return output_path
@@ -102,17 +127,23 @@ class ChatterboxTurboEngine(TTSEngine):
     ) -> Path:
         exaggeration = kwargs.get("exaggeration", 0.5)
         cfg_weight = kwargs.get("cfg_weight", 0.5)
+        temperature = kwargs.get("temperature", 0.8)
+        top_p = kwargs.get("top_p", 1.0)
+        min_p = kwargs.get("min_p", 0.05)
+        repetition_penalty = kwargs.get("repetition_penalty", 1.2)
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if segments and len(segments) > 1:
             base_kwargs = dict(
                 audio_prompt_path=str(ref_audio),
                 exaggeration=exaggeration,
                 cfg_weight=cfg_weight,
+                temperature=temperature,
+                top_p=top_p,
+                min_p=min_p,
+                repetition_penalty=repetition_penalty,
             )
             audio = self._generate_segmented(
                 segments,
@@ -127,6 +158,10 @@ class ChatterboxTurboEngine(TTSEngine):
             audio_prompt_path=str(ref_audio),
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
+            temperature=temperature,
+            top_p=top_p,
+            min_p=min_p,
+            repetition_penalty=repetition_penalty,
         )
         audio = self._generate_chunked(text, **gen_kwargs)
         sf.write(str(output_path), audio, self._load_model().sr)

@@ -111,42 +111,155 @@ def _worker(q: queue.Queue, engines: dict, fast: bool) -> None:
             _handle_job(job.conn, job.req, engines, fast)
         finally:
             q.task_done()
+            _vram_cleanup()
 
 
-_VRAM_REQUIRED_GB: dict[str, float] = {
-    "qwen": 5.0,
-    "qwen-fast": 5.0,
-    "chatterbox": 2.0,
-    "chatterbox-turbo": 2.0,
-}
-_VRAM_REQUIRED_GB_DEFAULT = 4.0
+def _vram_cleanup() -> None:
+    """Release cached VRAM allocations after a job completes."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 def _has_vram(eng_name: str) -> bool:
     """Return True if enough free VRAM is available to load the engine."""
-    try:
-        import torch
+    from voicecli.engine import check_vram
 
-        if not torch.cuda.is_available():
-            return True  # CPU-only: no VRAM constraint
-        free_bytes, _ = torch.cuda.mem_get_info()
-        free_gb = free_bytes / (1024**3)
-        required_gb = _VRAM_REQUIRED_GB.get(eng_name, _VRAM_REQUIRED_GB_DEFAULT)
-        if free_gb < required_gb:
-            print(
-                f"[voicecli daemon] Refusing to load '{eng_name}': "
-                f"{free_gb:.1f}GB free, need {required_gb:.1f}GB",
-                flush=True,
-            )
-            return False
+    try:
+        check_vram(eng_name)
         return True
-    except Exception:
-        return True  # if check fails, let it try (existing behavior)
+    except RuntimeError:
+        return False
+
+
+def _sanitize_request(req: dict) -> str | None:
+    """Validate and sanitize daemon request fields.
+
+    Returns an error message string if validation fails, None if OK.
+    Mutates req in-place to strip newlines from string fields.
+    """
+    import math
+
+    _STR_MAX = 256
+    _TEXT_MAX = 100_000
+
+    # Sanitize string fields: cap length, strip newlines (protocol safety)
+    for field, max_len in [
+        ("engine", 64),
+        ("voice", _STR_MAX),
+        ("language", _STR_MAX),
+        ("instruct", _STR_MAX),
+        ("ref_text", _STR_MAX),
+    ]:
+        val = req.get(field)
+        if val is not None and isinstance(val, str):
+            if len(val) > max_len:
+                return f"{field} exceeds maximum length ({max_len} chars)"
+            req[field] = val.replace("\n", "").replace("\r", "")
+
+    # Text length
+    text = req.get("text")
+    if isinstance(text, str) and len(text) > _TEXT_MAX:
+        return f"text exceeds maximum length ({_TEXT_MAX} chars)"
+    if isinstance(text, str):
+        req["text"] = text.replace("\n", " ").replace("\r", "")
+
+    # Float range validation
+    for field, lo, hi in [("exaggeration", 0.0, 2.0), ("cfg_weight", 0.0, 1.0)]:
+        val = req.get(field)
+        if val is not None:
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                return f"{field} must be a number"
+            if math.isnan(val) or math.isinf(val):
+                return f"{field} must be finite"
+            if not (lo <= val <= hi):
+                return f"{field} must be between {lo} and {hi}, got {val}"
+            req[field] = val
+
+    # Integer range validation
+    for field, lo, hi in [("segment_gap", 0, 30_000), ("crossfade", 0, 10_000)]:
+        val = req.get(field)
+        if val is not None:
+            try:
+                val = int(val)
+            except (TypeError, ValueError):
+                return f"{field} must be an integer"
+            if not (lo <= val <= hi):
+                return f"{field} must be between {lo} and {hi}, got {val}"
+            req[field] = val
+
+    # Sanitize per-segment fields
+    segments = req.get("segments")
+    if isinstance(segments, list):
+        for i, seg in enumerate(segments):
+            if not isinstance(seg, dict):
+                return f"segments[{i}] must be a dict"
+            for sf, max_len in [
+                ("instruct", _STR_MAX),
+                ("language", _STR_MAX),
+                ("voice", _STR_MAX),
+                ("accent", _STR_MAX),
+                ("personality", _STR_MAX),
+                ("speed", _STR_MAX),
+                ("emotion", _STR_MAX),
+            ]:
+                sv = seg.get(sf)
+                if sv is not None and isinstance(sv, str):
+                    if len(sv) > max_len:
+                        return f"segments[{i}].{sf} exceeds maximum length ({max_len} chars)"
+                    seg[sf] = sv.replace("\n", "").replace("\r", "")
+            # Per-segment text
+            st = seg.get("text")
+            if isinstance(st, str):
+                if len(st) > _TEXT_MAX:
+                    return f"segments[{i}].text exceeds maximum length ({_TEXT_MAX} chars)"
+                seg["text"] = st.replace("\n", " ").replace("\r", "")
+            # Per-segment float fields
+            for sf, lo, hi in [("exaggeration", 0.0, 2.0), ("cfg_weight", 0.0, 1.0)]:
+                sv = seg.get(sf)
+                if sv is not None:
+                    try:
+                        sv = float(sv)
+                    except (TypeError, ValueError):
+                        return f"segments[{i}].{sf} must be a number"
+                    if math.isnan(sv) or math.isinf(sv):
+                        return f"segments[{i}].{sf} must be finite"
+                    if not (lo <= sv <= hi):
+                        return f"segments[{i}].{sf} must be between {lo} and {hi}, got {sv}"
+                    seg[sf] = sv
+            # Per-segment int fields
+            for sf, lo, hi in [("segment_gap", 0, 30_000), ("crossfade", 0, 10_000)]:
+                sv = seg.get(sf)
+                if sv is not None:
+                    try:
+                        sv = int(sv)
+                    except (TypeError, ValueError):
+                        return f"segments[{i}].{sf} must be an integer"
+                    if not (lo <= sv <= hi):
+                        return f"segments[{i}].{sf} must be between {lo} and {hi}, got {sv}"
+                    seg[sf] = sv
+
+    return None
 
 
 def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = False) -> None:
     """Process one synthesis job. Called exclusively from the worker thread."""
     try:
+        # Validate and sanitize request fields
+        error = _sanitize_request(req)
+        if error:
+            _send_json(conn, {"status": "error", "message": error})
+            return
+
         action = req.get("action")
 
         eng_name = req.get("engine")
@@ -220,8 +333,15 @@ def _handle_job(conn: socket.socket, req: dict, engines: dict, fast: bool = Fals
             if not ref_audio:
                 _send_json(conn, {"status": "error", "message": "clone requires ref_audio"})
                 return
+            ref_audio_path = Path(ref_audio).resolve()
+            if not str(ref_audio_path).startswith(str(_OUTPUT_BASE)):
+                _send_json(
+                    conn,
+                    {"status": "error", "message": "ref_audio must be within home directory"},
+                )
+                return
             ref_text = req.get("ref_text")
-            result = eng.clone(text, Path(ref_audio), output_path, ref_text=ref_text, **kwargs)
+            result = eng.clone(text, ref_audio_path, output_path, ref_text=ref_text, **kwargs)
         else:
             _send_json(conn, {"status": "error", "message": f"Unknown action: {action!r}"})
             return

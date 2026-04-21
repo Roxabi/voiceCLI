@@ -15,6 +15,12 @@ ENGINE_CAPS = {
         "tags": "to_instruct",  # convert [laugh] → segment with instruct
         "exaggeration": False,
         "cfg_weight": False,
+        "flow_steps": False,
+        "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": False,
+        "repetition_penalty": True,
         "language": True,
         "voice": True,
     },
@@ -24,6 +30,12 @@ ENGINE_CAPS = {
         "tags": "strip",  # remove tags, can't translate
         "exaggeration": True,
         "cfg_weight": True,
+        "flow_steps": False,
+        "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": True,
+        "repetition_penalty": True,
         "language": True,
         "voice": False,
     },
@@ -33,8 +45,29 @@ ENGINE_CAPS = {
         "tags": "native",  # keep as-is, engine handles them
         "exaggeration": True,
         "cfg_weight": True,
+        "flow_steps": False,
+        "cfg_alpha": False,
+        "temperature": True,
+        "top_p": True,
+        "min_p": True,
+        "repetition_penalty": True,
         "language": False,
         "voice": False,
+    },
+    "voxtral": {
+        "instruct": False,
+        "segments": True,
+        "tags": "strip",  # no tag support
+        "exaggeration": False,
+        "cfg_weight": False,
+        "flow_steps": True,
+        "cfg_alpha": True,
+        "temperature": False,
+        "top_p": False,
+        "min_p": False,
+        "repetition_penalty": False,
+        "language": True,
+        "voice": True,
     },
 }
 ENGINE_CAPS["qwen-fast"] = ENGINE_CAPS["qwen"]
@@ -271,6 +304,30 @@ def translate_for_engine(doc: TTSDocument, engine: str) -> TTSDocument:
         doc.cfg_weight = None
         for seg in doc.segments:
             seg.cfg_weight = None
+    if not caps["flow_steps"]:
+        doc.flow_steps = None
+        for seg in doc.segments:
+            seg.flow_steps = None
+    if not caps["cfg_alpha"]:
+        doc.cfg_alpha = None
+        for seg in doc.segments:
+            seg.cfg_alpha = None
+    if not caps["temperature"]:
+        doc.temperature = None
+        for seg in doc.segments:
+            seg.temperature = None
+    if not caps["top_p"]:
+        doc.top_p = None
+        for seg in doc.segments:
+            seg.top_p = None
+    if not caps["min_p"]:
+        doc.min_p = None
+        for seg in doc.segments:
+            seg.min_p = None
+    if not caps["repetition_penalty"]:
+        doc.repetition_penalty = None
+        for seg in doc.segments:
+            seg.repetition_penalty = None
 
     # ── Language / Voice ──
     if not caps["language"]:

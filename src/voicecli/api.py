@@ -5,15 +5,134 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
 log = logging.getLogger(__name__)
 
 
 class DaemonUnavailableError(RuntimeError):
     """Raised when the voicecli daemon is not reachable for a QWEN engine."""
+
+
+# ── Input validation ────────────────────────────────────────────────────────
+
+_MAX_STRING_LEN = 256
+_MAX_TEXT_LEN = 100_000
+
+
+def _check_str(name: str, value, *, max_len: int = _MAX_STRING_LEN) -> None:
+    """Validate a string parameter: type, length, no embedded newlines."""
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string, got {type(value).__name__}")
+    if len(value) > max_len:
+        raise ValueError(f"{name} exceeds maximum length ({max_len} chars)")
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{name} must not contain newline characters")
+
+
+def _check_float(name: str, value, lo: float, hi: float) -> None:
+    """Validate a float parameter: type, finite, within range."""
+    if value is None:
+        return
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be a number, got bool")
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number, got {type(value).__name__}")
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(f"{name} must be finite, got {value}")
+    if not (lo <= value <= hi):
+        raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
+
+
+def _check_int(name: str, value, lo: int, hi: int) -> None:
+    """Validate an integer parameter: type, within range."""
+    if value is None:
+        return
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, got bool")
+    if not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+    if not (lo <= value <= hi):
+        raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
+
+
+def _validate_tts_params(
+    *,
+    text: str | Path | None = None,
+    engine: str | None = None,
+    voice: str | None = None,
+    language: str | None = None,
+    segment_gap: int | None = None,
+    crossfade: int | None = None,
+    chunk_size: int | None = None,
+    extra_kwargs: dict | None = None,
+) -> None:
+    """Validate TTS parameters at the API boundary.
+
+    Raises TypeError or ValueError for invalid input.
+    """
+    # Text length (only for raw strings, not file paths)
+    if isinstance(text, str) and Path(text).suffix not in (".md", ".txt"):
+        _check_str("text", text, max_len=_MAX_TEXT_LEN)
+
+    _check_str("engine", engine, max_len=64)
+    _check_str("voice", voice)
+    _check_str("language", language)
+    _check_int("segment_gap", segment_gap, 0, 30_000)
+    _check_int("crossfade", crossfade, 0, 10_000)
+    _check_int("chunk_size", chunk_size, 1, 10_000)
+
+    if extra_kwargs:
+        for field in ("instruct", "accent", "personality", "speed", "emotion"):
+            _check_str(field, extra_kwargs.get(field))
+        _check_float("exaggeration", extra_kwargs.get("exaggeration"), 0.0, 2.0)
+        _check_float("cfg_weight", extra_kwargs.get("cfg_weight"), 0.0, 1.0)
+
+
+def _validate_output_path(
+    output_path: Path,
+    *,
+    allowed_base: Path | _Unrestricted,
+) -> Path:
+    """Validate output path stays within allowed_base; create parent dirs.
+
+    Args:
+        output_path: Target output path.
+        allowed_base: Base directory the path must stay within, or
+            ``UNRESTRICTED`` when the caller owns the trust boundary (CLI
+            ``--output`` override, server-controlled scratch path). Pass
+            ``UNRESTRICTED`` explicitly — there is no implicit default, so
+            each caller declares its trust model.
+
+    Returns:
+        Resolved absolute path. For ``UNRESTRICTED`` no parent dirs are
+        created (caller is responsible).
+
+    Raises:
+        ValueError: If ``output_path`` escapes ``allowed_base``.
+    """
+    resolved = output_path.expanduser().resolve()
+
+    if isinstance(allowed_base, _Unrestricted):
+        return resolved
+
+    base = allowed_base.expanduser().resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError:
+        raise ValueError(
+            f"Output path is outside the allowed directory {allowed_base}. "
+            "Pass an explicit --output to override."
+        )
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
 
 
 @dataclass
@@ -63,11 +182,20 @@ def _resolve_config(
     r_chunk_size = chunk_size if chunk_size is not None else cfg.get("chunk_size", 500)
 
     # Numeric defaults from config
-    for field in ("exaggeration", "cfg_weight"):
+    for field in (
+        "exaggeration",
+        "cfg_weight",
+        "flow_steps",
+        "cfg_alpha",
+        "temperature",
+        "top_p",
+        "min_p",
+        "repetition_penalty",
+    ):
         if field not in kw and field in cfg:
             kw[field] = cfg[field]
 
-    # Instruct default from config (raw bypass > composed from parts)
+    # Instruct: API kwargs > config raw > composed from (kwargs + config parts)
     if "instruct" not in kw:
         if "instruct" in cfg:
             kw["instruct"] = cfg["instruct"]
@@ -75,10 +203,10 @@ def _resolve_config(
             from voicecli.markdown import compose_instruct
 
             composed = compose_instruct(
-                cfg.get("accent"),
-                cfg.get("personality"),
-                cfg.get("speed"),
-                cfg.get("emotion"),
+                kw.get("accent") or cfg.get("accent"),
+                kw.get("personality") or cfg.get("personality"),
+                kw.get("speed") or cfg.get("speed"),
+                kw.get("emotion") or cfg.get("emotion"),
             )
             if composed:
                 kw["instruct"] = composed
@@ -196,6 +324,18 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
             kw["exaggeration"] = doc.exaggeration
         if doc.cfg_weight is not None:
             kw["cfg_weight"] = doc.cfg_weight
+        if doc.flow_steps is not None:
+            kw["flow_steps"] = doc.flow_steps
+        if doc.cfg_alpha is not None:
+            kw["cfg_alpha"] = doc.cfg_alpha
+        if doc.temperature is not None:
+            kw["temperature"] = doc.temperature
+        if doc.top_p is not None:
+            kw["top_p"] = doc.top_p
+        if doc.min_p is not None:
+            kw["min_p"] = doc.min_p
+        if doc.repetition_penalty is not None:
+            kw["repetition_penalty"] = doc.repetition_penalty
         if doc.segments and len(doc.segments) > 1:
             kw["segments"] = doc.segments
         if resolved.get("_segment_gap_from_caller") is None and doc.segment_gap is not None:
@@ -248,7 +388,6 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 
 # ── Daemon helpers ───────────────────────────────────────────────────────────
-
 
 _DAEMON_WAIT_SECS = 60.0
 _DAEMON_POLL_INTERVAL = 2.0
@@ -387,7 +526,6 @@ def _generate_chunked(
     """Generate speech in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -400,6 +538,18 @@ def _generate_chunked(
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.flow_steps is not None:
+                kw["flow_steps"] = seg.flow_steps
+            if seg.cfg_alpha is not None:
+                kw["cfg_alpha"] = seg.cfg_alpha
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             seg_voice = seg.voice or voice
             p = _emit_chunk(
                 eng,
@@ -454,7 +604,6 @@ def _clone_chunked(
     """Clone voice in chunks. Returns list of chunk paths."""
     from voicecli.utils import smart_chunk
 
-    out.parent.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
 
     if segments and len(segments) > 1:
@@ -470,6 +619,18 @@ def _clone_chunked(
                 kw["exaggeration"] = seg.exaggeration
             if seg.cfg_weight is not None:
                 kw["cfg_weight"] = seg.cfg_weight
+            if seg.flow_steps is not None:
+                kw["flow_steps"] = seg.flow_steps
+            if seg.cfg_alpha is not None:
+                kw["cfg_alpha"] = seg.cfg_alpha
+            if seg.temperature is not None:
+                kw["temperature"] = seg.temperature
+            if seg.top_p is not None:
+                kw["top_p"] = seg.top_p
+            if seg.min_p is not None:
+                kw["min_p"] = seg.min_p
+            if seg.repetition_penalty is not None:
+                kw["repetition_penalty"] = seg.repetition_penalty
             p = _emit_chunk(
                 eng,
                 "clone",
@@ -526,6 +687,7 @@ def generate(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -544,16 +706,31 @@ def generate(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path (CLI ``--output``, server scratch dir).
         **kwargs: Additional engine-specific parameters.
 
     Returns:
         TTSResult with wav_path and optional mp3_path.
 
     Raises:
-        ValueError: Invalid engine name.
+        TypeError: Wrong parameter type.
+        ValueError: Invalid engine name or parameter out of range.
         FileNotFoundError: Script file not found.
         RuntimeError: CUDA/GPU error.
     """
+    _validate_tts_params(
+        text=text,
+        engine=engine,
+        voice=voice,
+        language=language,
+        segment_gap=segment_gap,
+        crossfade=crossfade,
+        chunk_size=chunk_size,
+        extra_kwargs=kwargs,
+    )
+
     from voicecli.engine import QWEN_ENGINES, get_engine
     from voicecli.utils import build_output_prefix, default_output_path
 
@@ -590,12 +767,17 @@ def generate(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
+    if output is not None:
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
+    else:
+        # default_output_path writes inside OUTPUT_DIR by construction
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, voice=r_voice, language=r_language)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -672,6 +854,7 @@ def clone(
     segment_gap: int | None = None,
     crossfade: int | None = None,
     plain: bool = False,
+    allowed_base: Path | _Unrestricted = OUTPUT_DIR,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -691,16 +874,32 @@ def clone(
         segment_gap: Silence between segments (ms).
         crossfade: Fade between segments (ms).
         plain: Ignore [tags] and directives.
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
+            has already vetted the path.
         **kwargs: Additional engine-specific parameters.
 
     Returns:
         TTSResult with wav_path and optional mp3_path.
 
     Raises:
-        ValueError: Invalid engine name or no active sample set.
+        TypeError: Wrong parameter type.
+        ValueError: Invalid engine name, no active sample, or parameter out of range.
         FileNotFoundError: Reference audio or script file not found.
         RuntimeError: CUDA/GPU error.
     """
+    _validate_tts_params(
+        text=text,
+        engine=engine,
+        voice=None,
+        language=language,
+        segment_gap=segment_gap,
+        crossfade=crossfade,
+        chunk_size=chunk_size,
+        extra_kwargs=kwargs,
+    )
+    _check_str("ref_text", ref_text)
+
     from voicecli.engine import QWEN_ENGINES, get_engine
     from voicecli.utils import build_output_prefix, default_output_path
 
@@ -736,12 +935,17 @@ def clone(
     script_stem = resolved["script_stem"]
     extra = resolved["extra_kwargs"]
 
+    # Validate output path BEFORE loading engine (security)
+    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
+    if output is not None:
+        out = _validate_output_path(Path(output), allowed_base=allowed_base)
+    else:
+        # default_output_path writes inside OUTPUT_DIR by construction
+        out = default_output_path(prefix)
+
     eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
-
-    prefix = build_output_prefix(r_engine, script=script_stem, language=r_language, clone=True)
-    out = Path(output) if output is not None else default_output_path(prefix)
 
     if r_chunked:
         daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
@@ -811,6 +1015,11 @@ def transcribe(
     model: str = "large-v3-turbo",
     language: str | None = None,
     output: str | Path | None = None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+    language_fallback: str | None = None,
+    _skip_daemon: bool = False,
+    allowed_base: Path | _Unrestricted = STT_OUTPUT_DIR,
 ):
     """Transcribe an audio file to text.
 
@@ -819,6 +1028,13 @@ def transcribe(
         model: Whisper model name.
         language: Force language code.
         output: Save transcription text to file.
+        language_detection_threshold: Confidence threshold below which fallback language is used.
+        language_detection_segments: Number of segments to sample for language detection.
+        language_fallback: Language code to use when detection confidence is below threshold.
+        _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
+        allowed_base: Base directory ``output`` must stay within
+            (default: ``STT_OUTPUT_DIR``). Pass ``UNRESTRICTED`` for an
+            explicit caller-provided path.
 
     Returns:
         TranscriptionResult with .text, .language, .segments.
@@ -834,11 +1050,18 @@ def transcribe(
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-    result: TranscriptionResult = _transcribe(audio_path, model=model, language=language)
+    result: TranscriptionResult = _transcribe(
+        audio_path,
+        model=model,
+        language=language,
+        language_detection_threshold=language_detection_threshold,
+        language_detection_segments=language_detection_segments,
+        language_fallback=language_fallback,
+        _skip_daemon=_skip_daemon,
+    )
 
     if output is not None:
-        out_path = Path(output)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = _validate_output_path(Path(output), allowed_base=allowed_base)
         out_path.write_text(result.text, encoding="utf-8")
 
     return result

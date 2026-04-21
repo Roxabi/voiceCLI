@@ -1,0 +1,57 @@
+---
+title: nats adapter hygiene + pynvml deprecation + spec typo
+issue: 49
+status: approved
+tier: F-lite
+date: 2026-04-15
+---
+
+## Problem
+
+PR #43 (the NATS-serve slice V1 for TTS) shipped with a bundle of non-blocking review findings
+deliberately deferred to a follow-up. They span security hardening (tempdir mode, engine
+allowlist), correctness (kwarg-override guard in `build_reply`, heartbeat coroutine leak),
+maintainability (CLI-layer logic living in adapter, missing `connected`/`uptime_s` heartbeat
+fields), and a deprecation warning (`pynvml` shim). One spec typo (`artifacts/specs/42-nats-serve-spec.mdx`
+line 212: "exit code 2" should read "exit code 78 (`EX_CONFIG`)") is bundled here because it
+was deferred from the same review pass and is a trivial single-line edit.
+
+None of these are blocking, but several matter for slice V2 reuse (the STT adapter in PR #44
+will copy patterns from the TTS adapter — better to fix them once, before copy-paste cements
+the issues). The heartbeat coroutine leak is the only runtime-relevant defect.
+
+## Who
+
+- **Primary:** VoiceCLI maintainer (Mickael) — consuming the code next in slice V2 (STT adapter)
+  and V3 (NATS-serve on production).
+- **Secondary:** Future readers of the NATS adapter code; hub-side consumers of heartbeat
+  payloads (lyra dashboards).
+
+## Constraints
+
+- **One bundled PR.** Splitting into 7+ micro-PRs is churn; the findings are independent but
+  co-located in `src/voicecli/nats/`.
+- **No behavior regressions.** TTS adapter must still pass existing tests after the relocation
+  of `_resolve_engine` and the heartbeat refactor.
+- **`nvidia-ml-py` swap must preserve import API.** The `pynvml` import statements and call
+  sites stay identical — only the package name changes in `pyproject.toml`.
+- **Don't expand scope beyond the listed findings.** No drive-by refactors.
+
+## Out of Scope
+
+- Any slice V2 (STT) or V3 (production rollout) work — tracked in separate issues (#44, #45).
+- Broader refactor of the adapter base class — we are patching, not redesigning.
+- Adding new heartbeat fields beyond `connected` and `uptime_s`.
+- Changing the NATS wire contract or subject naming.
+
+## Complexity
+
+**Tier: F-lite** — Clear scope, single domain (`src/voicecli/nats/`), 4–10 files touched,
+bundle of independent fixes with well-specified acceptance criteria.
+
+Signals:
+- `size:M` label on the issue.
+- Single domain: all changes live under `src/voicecli/nats/` + `pyproject.toml` + one spec file.
+- No unknowns — each finding has a concrete recipe from the review comment.
+- No new architecture.
+- Frame → spec → plan → implement pipeline applies cleanly; analyze phase unnecessary.

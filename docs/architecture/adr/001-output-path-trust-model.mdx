@@ -1,0 +1,205 @@
+---
+title: "ADR-001: Output-path trust model for generate, clone, and transcribe"
+description: Replace the _cli_bypass boolean with an explicit allowed_base parameter and an UNRESTRICTED sentinel to encode each caller's containment contract at the call site.
+---
+
+## Status
+
+Accepted
+
+## Context
+
+`_validate_output_path` was extracted in PR #74 (issue #57) to centralize the
+`mkdir` + path-traversal guard that had been scattered inline across five engines
+and two chunked helpers.
+
+The extraction introduced a `_cli_bypass: bool` parameter to handle callers that
+should not be constrained to `OUTPUT_DIR`. Three distinct caller semantics were
+collapsed into that flag:
+
+| Caller | Intended semantics |
+|---|---|
+| `cli.generate` / `cli.clone` | Human explicitly chose a path — write anywhere |
+| NATS adapter (`_run_synthesis`) | Server controls the path via `scoped_path(request_id, "wav")` — write to temp scratch dir |
+| `api.generate` / `api.clone` (library, no override) | Stay inside `OUTPUT_DIR` |
+| `api.transcribe` (library, no override) | Stay inside `STT_OUTPUT_DIR`, not `OUTPUT_DIR` |
+
+The `_cli_bypass: bool` flag conflated cases 1 and 2 (both pass `True` today),
+leaked a private naming convention into the public `generate()` and `clone()`
+signatures, caused `mkdir` to run unconditionally outside the guard, surfaced the
+resolved temp-dir path in error messages, and silently applied `OUTPUT_DIR` as the
+base for STT output (wrong domain).
+
+Four review findings traced directly to this design:
+
+- **F5** — `_cli_bypass` as a named parameter on public API functions
+- **F7** — `mkdir` executes even when the bypass short-circuits validation
+- **F8** — error message exposes the resolved scratch-dir path
+- **STT base asymmetry** — `transcribe()` inherits the TTS `OUTPUT_DIR`
+
+## Options Considered
+
+### Option A: Typed enum `OutputPolicy`
+
+```python
+class OutputPolicy(enum.Enum):
+    LIBRARY   = "library"    # validate against allowed_base, create dirs
+    TRUSTED   = "trusted"    # skip validation, create dirs
+```
+
+Pass `policy: OutputPolicy` as a required parameter.
+
+- **Pros:** Self-documenting, IDE-completable, extensible
+- **Cons:** Enum import on every call site; adds a new public type; the distinction
+  between `LIBRARY` + a custom base vs. `TRUSTED` is still encoded in two
+  parameters; over-engineered for a thin CLI
+
+### Option B: Dual functions — `validate_contained_path` + `resolve_trusted_path`
+
+Two separate functions with disjoint contracts.
+
+- **Pros:** No conditional logic; each function is maximally obvious
+- **Cons:** Caller must choose the right function — the same error-prone decision
+  is pushed to every call site; doubles the surface to test; `transcribe` still
+  needs a way to supply a different base
+
+### Option C: `allowed_base: Path | None` + `UNRESTRICTED` sentinel (recommended)
+
+Keep a single function. Replace `cli_bypass: bool` with `allowed_base: Path`.
+Add a module-level sentinel `UNRESTRICTED = object()` (or use `None` for trusted,
+with the default being `OUTPUT_DIR`).
+
+After evaluation, the cleanest flat form is:
+
+```python
+# In utils.py — alongside OUTPUT_DIR
+STT_OUTPUT_DIR = Path.home() / ".voicecli" / "STT" / "texts_out"
+
+# Sentinel — type-checked via `is`
+UNRESTRICTED: Path = object()  # type: ignore[assignment]
+```
+
+```python
+def _validate_output_path(
+    output_path: Path,
+    *,
+    allowed_base: Path,
+) -> Path:
+    """Resolve output_path and enforce containment within allowed_base.
+
+    Pass allowed_base=UNRESTRICTED to skip containment check (CLI --output).
+    mkdir is always called after a successful check or for UNRESTRICTED paths.
+
+    Returns the resolved absolute Path.
+    Raises ValueError when path escapes allowed_base.
+    """
+    resolved = output_path.expanduser().resolve()
+
+    if allowed_base is not UNRESTRICTED:
+        base = allowed_base.expanduser().resolve()
+        try:
+            resolved.relative_to(base)
+        except ValueError:
+            raise ValueError(
+                f"output path escapes allowed directory "
+                f"(allowed: {base}). Pass an explicit --output to write elsewhere."
+            )
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+```
+
+- **Pros:**
+  - No new public type; `allowed_base` is descriptive and required — no silent
+    default to the wrong domain
+  - STT base is expressed directly at the `transcribe()` call site
+  - `UNRESTRICTED` sentinel communicates intent without a boolean
+  - Error message references the semantic base name, not a temp path
+  - `mkdir` placement is unchanged but its guard is now the `allowed_base is not
+    UNRESTRICTED` branch — logically correct and testable
+  - `generate()` / `clone()` signatures lose the `_cli_bypass` parameter entirely
+- **Cons:** `UNRESTRICTED` is a sentinel that requires `is`-comparison (not `==`);
+  that is documented in the docstring
+
+## Decision
+
+Option C — `allowed_base: Path` required parameter with `UNRESTRICTED` sentinel.
+
+`_cli_bypass` is removed from all public API functions. Each caller declares its
+own containment contract explicitly.
+
+### Call-site examples
+
+**CLI (`cli.py` — human override, write anywhere):**
+```python
+from voicecli.utils import UNRESTRICTED
+
+# output is guaranteed non-None here (Typer parsed it)
+out = _validate_output_path(Path(output), allowed_base=UNRESTRICTED)
+```
+
+**NATS adapter (`tts_adapter.py` — server-controlled scratch path):**
+```python
+from voicecli.utils import UNRESTRICTED
+
+# scoped_path is already pre-validated; adapter controls lifecycle
+api.generate(text, engine=engine, output=out_path, allowed_base=UNRESTRICTED, ...)
+```
+
+Alternatively — and this is the preferred shape — the NATS adapter does NOT pass
+`allowed_base` at all. Instead `api.generate()` / `api.clone()` can accept
+`output_path_base: Path = OUTPUT_DIR` and the adapter just passes its
+`scoped_path(...)` as `output`. The adapter already validates `request_id` format
+and owns the temp dir, so the containment check against `scoped_path`'s parent is
+redundant. Passing `UNRESTRICTED` is explicit and documents intent.
+
+**Library default (no caller override — stay in TTS output dir):**
+```python
+# In api.generate(), output is None branch falls through to default_output_path()
+# which already writes inside OUTPUT_DIR — _validate_output_path is only called
+# when output is not None.
+if output is not None:
+    out = _validate_output_path(Path(output), allowed_base=OUTPUT_DIR)
+else:
+    out = default_output_path(prefix)
+```
+
+**STT / transcribe (different base domain):**
+```python
+from voicecli.utils import STT_OUTPUT_DIR
+
+if output is not None:
+    out_path = _validate_output_path(Path(output), allowed_base=STT_OUTPUT_DIR)
+    out_path.write_text(result.text, encoding="utf-8")
+```
+
+## Consequences
+
+### Positive
+
+- `generate()` and `clone()` public signatures no longer carry a `_cli_bypass`
+  parameter — the API is clean for library consumers
+- Each caller's trust model is visible at the call site; no inference required
+- `transcribe()` uses the correct STT base — the domain mismatch is fixed
+  structurally, not by a comment
+- Error messages reference the meaningful base directory name
+- `default_output_path()` asymmetry (it calls `mkdir` internally, while
+  `_validate_output_path` does so only after validation) is now irrelevant for the
+  auto-path branch because `_validate_output_path` is only reached when `output`
+  is explicitly provided
+
+### Negative
+
+- `UNRESTRICTED` sentinel requires `is`-comparison; callers must import it from
+  `utils` alongside `OUTPUT_DIR` / `STT_OUTPUT_DIR`
+- `_validate_output_path` remains a required-keyword-arg function — callers cannot
+  call it without naming `allowed_base`, which is the point but requires a
+  one-time update to all existing call sites (3 in `api.py`)
+
+### Neutral
+
+- `STT_OUTPUT_DIR` is a new export from `utils.py`; it mirrors `OUTPUT_DIR` and
+  documents the STT domain explicitly
+- The `UNRESTRICTED` sentinel type annotation (`Path = object()`) requires a
+  `type: ignore[assignment]`; alternatively it can be typed as `object` and the
+  parameter typed `Path | object` — implementation detail left to the developer

@@ -1,3 +1,4 @@
+# pyright: ignore — excluded from pyrightconfig.json (heavy ML deps, no type stubs)
 from __future__ import annotations
 
 import numpy as np
@@ -155,8 +156,6 @@ class QwenEngine(TTSEngine):
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Multi-segment mode
         if segments and len(segments) > 1:
             base_kwargs = dict(language=language, speaker=voice)
@@ -194,8 +193,6 @@ class QwenEngine(TTSEngine):
             base_kwargs["ref_text"] = ref_text
         else:
             base_kwargs["x_vector_only_mode"] = True
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Multi-segment mode
         if segments and len(segments) > 1:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tomllib
+from typing import Any, Callable
 from pathlib import Path
 
 VOICECLI_DIR = Path.home() / ".voicecli"
@@ -15,7 +16,7 @@ def _parse_bool(value: object) -> bool:
     return str(value).lower() in ("true", "1", "yes", "on")
 
 
-_KNOWN_DEFAULTS: dict[str, object] = {
+_KNOWN_DEFAULTS: dict[str, Callable[..., Any]] = {
     "engine": str,
     "language": str,
     "voice": str,
@@ -26,6 +27,12 @@ _KNOWN_DEFAULTS: dict[str, object] = {
     "emotion": str,
     "exaggeration": float,
     "cfg_weight": float,
+    "flow_steps": int,
+    "cfg_alpha": float,
+    "temperature": float,
+    "top_p": float,
+    "min_p": float,
+    "repetition_penalty": float,
     "segment_gap": int,
     "crossfade": int,
     "plain": _parse_bool,
