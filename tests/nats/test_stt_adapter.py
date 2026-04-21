@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -59,6 +59,16 @@ def _require_imports() -> None:
 # Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
 # every existing MockMsg() call site keeps working unchanged.
 from _fakes import FakeMsg as MockMsg  # noqa: E402
+from _fakes import FakeNatsConn  # noqa: E402
+
+
+def _setup_adapter(adapter: "SttNatsAdapter", msg: MockMsg) -> None:
+    """Set up adapter with mock NATS connection for testing.
+
+    The SDK's reply() method requires _nc to be set. This helper
+    sets up a FakeNatsConn that forwards publishes to msg.respond().
+    """
+    adapter._nc = FakeNatsConn(msg)  # noqa: E402
 
 
 def _valid_audio_b64() -> str:
@@ -144,6 +154,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-001")
 
         with _patch_transcribe(_fake_result()) as mock_transcribe:
@@ -168,6 +179,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"audio_b64": _valid_audio_b64()}
 
         asyncio.run(adapter.handle(msg, payload))
@@ -186,6 +198,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         bad_id = "../etc/passwd"
         payload = _valid_payload(request_id=bad_id)
 
@@ -206,6 +219,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"contract_version": "1", "request_id": "req-noaudio"}
 
         asyncio.run(adapter.handle(msg, payload))
@@ -223,6 +237,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = {"contract_version": "1", "request_id": "req-badtype", "audio_b64": 123}
 
         asyncio.run(adapter.handle(msg, payload))
@@ -240,6 +255,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(audio_b64="!!!not-base64!!!")
 
         with _patch_transcribe(_fake_result()) as mock_transcribe:
@@ -260,6 +276,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-boom")
 
         import voicecli.nats.stt_adapter as _mod
@@ -288,6 +305,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-999", contract_version="999")
 
         with _patch_transcribe(_fake_result()) as _:
@@ -308,6 +326,7 @@ class TestSttNatsAdapter:
         rid = "my-unique-req-42"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=rid)
 
         with _patch_transcribe(_fake_result()) as _:
@@ -326,6 +345,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-fr")
         payload["language"] = "fr"
 
@@ -352,6 +372,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-overrides")
         payload["language"] = "de"
         payload["language_detection_threshold"] = 0.7
@@ -378,6 +399,8 @@ class TestSttNatsAdapter:
         # Arrange — same adapter instance, two sequential calls
         adapter = _make_adapter(max_concurrent=2)
         msg1, msg2 = MockMsg(), MockMsg()
+        _setup_adapter(adapter, msg1)
+        _setup_adapter(adapter, msg2)
 
         payload1 = _valid_payload(request_id="req-with-overrides")
         payload1["language"] = "de"
@@ -420,64 +443,28 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_first_heartbeat_null_model(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter()
-        heartbeat_payloads: list[dict] = []
+        adapter._nc = FakeNatsConn()
 
-        async def _fake_publish(subject: str, data: bytes) -> None:
-            if "heartbeat" in subject:
-                heartbeat_payloads.append(json.loads(data.decode()))
+        hb = adapter.heartbeat_payload()
 
-        adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
-
-        async def _run() -> None:
-            stop = asyncio.Event()
-            hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
-            # Let one iteration fire
-            await asyncio.sleep(0.05)
-            stop.set()
-            await asyncio.wait_for(hb_task, timeout=1.0)
-
-        # Patch heartbeat_interval to fire immediately
-        adapter.heartbeat_interval = 0.01
-        asyncio.run(_run())
-
-        # Assert — at least one heartbeat published before any request
-        assert heartbeat_payloads, "No heartbeat published"
-        hb = heartbeat_payloads[0]
         assert hb["model_loaded"] is None
         assert hb["active_requests"] == 0
-        assert hb["service"] == "stt_workers"
+        assert hb["service"] == STT_WORKERS
         assert hb["subject"] == SUBJECT
         assert hb["queue_group"] == STT_WORKERS
 
     # ------------------------------------------------------------------
     # Case 14: heartbeat payload includes all required fields
+    # VRAM fields (vram_used_mb, vram_total_mb) dropped in SDK migration.
     # ------------------------------------------------------------------
     def test_heartbeat_fields(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter()
-        heartbeat_payloads: list[dict] = []
+        adapter._nc = FakeNatsConn()
 
-        async def _fake_publish(subject: str, data: bytes) -> None:
-            if "heartbeat" in subject:
-                heartbeat_payloads.append(json.loads(data.decode()))
+        hb = adapter.heartbeat_payload()
 
-        adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
-        adapter.heartbeat_interval = 0.01
-
-        async def _run() -> None:
-            stop = asyncio.Event()
-            hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
-            await asyncio.sleep(0.05)
-            stop.set()
-            await asyncio.wait_for(hb_task, timeout=1.0)
-
-        asyncio.run(_run())
-
-        assert heartbeat_payloads, "No heartbeat published"
-        hb = heartbeat_payloads[0]
         required_keys = {
             "contract_version",
             "worker_id",
@@ -487,8 +474,6 @@ class TestSttNatsAdapter:
             "queue_group",
             "ts",
             "model_loaded",
-            "vram_used_mb",
-            "vram_total_mb",
             "active_requests",
         }
         missing = required_keys - set(hb.keys())
@@ -528,6 +513,8 @@ class TestSttNatsAdapter:
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     msg1, msg2 = MockMsg(), MockMsg()
+                    _setup_adapter(adapter, msg1)
+                    _setup_adapter(adapter, msg2)
                     p1 = _valid_payload(request_id="req-c1")
                     p2 = _valid_payload(request_id="req-c2")
                     # Fire both concurrently — semaphore serialises them
@@ -554,6 +541,7 @@ class TestSttNatsAdapter:
         # Arrange
         adapter = _make_adapter(max_concurrent=1, reject_when_full=True)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-cap")
 
         async def _run() -> None:
@@ -580,6 +568,7 @@ class TestSttNatsAdapter:
         request_id = "req-clean-ok"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         temp_file = tmp_path / f"{request_id}.wav"
 
@@ -599,6 +588,7 @@ class TestSttNatsAdapter:
         request_id = "req-clean-fail"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
         temp_file = tmp_path / f"{request_id}.wav"
 
@@ -642,16 +632,22 @@ class TestSttNatsAdapter:
             nonlocal heartbeat_count
             adapter = _make_adapter(max_concurrent=1, heartbeat_interval=0.05)
             msg = MockMsg()
+            _setup_adapter(adapter, msg)
             payload = _valid_payload(request_id="req-hb")
 
-            async def _fake_publish(subject: str, data: bytes) -> None:
+            # Wrap the FakeNatsConn.publish set up by _setup_adapter to count
+            # heartbeat publishes and trip the gate once the floor is hit.
+            original_publish = adapter._nc.publish  # type: ignore[union-attr]
+
+            async def _counting_publish(subject: str, data: bytes) -> None:
                 nonlocal heartbeat_count
                 if "heartbeat" in subject:
                     heartbeat_count += 1
                     if heartbeat_count >= target_heartbeats:
                         gate.set()
+                await original_publish(subject, data)
 
-            adapter._nats_publish = _fake_publish  # type: ignore[attr-defined]
+            adapter._nc.publish = _counting_publish  # type: ignore[union-attr, method-assign]
 
             # Blocks until the heartbeat loop proves liveness via the gate
             def _gated_transcribe(*args, **kwargs):
@@ -667,8 +663,6 @@ class TestSttNatsAdapter:
 
             _mod.api = _api  # type: ignore[attr-defined]
 
-            stop = asyncio.Event()
-
             with patch(
                 "voicecli.nats.stt_adapter.api.transcribe",
                 side_effect=_gated_transcribe,
@@ -678,11 +672,13 @@ class TestSttNatsAdapter:
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))
-                    hb_task = asyncio.create_task(adapter._heartbeat_loop(stop))  # type: ignore[attr-defined]
-
-                    await asyncio.wait_for(handle_task, timeout=5.0)
-                    stop.set()
-                    await asyncio.wait_for(hb_task, timeout=1.0)
+                    hb_task = asyncio.create_task(adapter._heartbeat_loop())  # type: ignore[attr-defined]
+                    try:
+                        await asyncio.wait_for(handle_task, timeout=5.0)
+                    finally:
+                        hb_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await hb_task
 
         asyncio.run(_run())
 
@@ -707,6 +703,7 @@ class TestSttNatsAdapter:
         rid = "a" * rid_len
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
+        _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=rid)
 
         with _patch_transcribe(_fake_result()) as mock_transcribe:
