@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 Entries are generated automatically by `/promote` and committed to staging before the promotion PR.
 
+## [0.2.1](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.0...voicecli/v0.2.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **api:** honor daemon-absent fallback + skip socket probe on NATS path ([c0d85c9](https://github.com/Roxabi/voiceCLI/commit/c0d85c9a74fcc7f77b3f311e803e7d44bdfdf363))
+* **api:** honor daemon-absent fallback + skip socket probe on NATS path ([13cf5ef](https://github.com/Roxabi/voiceCLI/commit/13cf5ef008bffc1ce370398b536d4ca45b7dee55))
+* **e2e:** make engine registry robust to missing torch ([#92](https://github.com/Roxabi/voiceCLI/issues/92)) ([4fba1c4](https://github.com/Roxabi/voiceCLI/commit/4fba1c453eaf1fe46b1939cd3839808bdc7042a9))
+* **nats:** scope nats-py reply inbox per ADR-051 for voice-tts/voice-stt ([04ebc61](https://github.com/Roxabi/voiceCLI/commit/04ebc61be06cf11b0a01edbd3e4d49427eb1ede1))
+* **nats:** scope nats-py reply inbox per ADR-051 for voice-tts/voice-stt ([125053e](https://github.com/Roxabi/voiceCLI/commit/125053e794f97175e50e6b13c2a6a2c425a4ea4c))
+
+
+### Documentation
+
+* **frame:** add e2e engine_unavailable failure frame ([caacb82](https://github.com/Roxabi/voiceCLI/commit/caacb82e363cb27a126ae624de9694db4db0ccef))
+* **plan:** add e2e engine_unavailable failure plan ([060d052](https://github.com/Roxabi/voiceCLI/commit/060d0524f6a6ccb11ea36c69cf0f01ada3cd0763))
+* **spec:** add e2e engine_unavailable failure spec ([47c8f94](https://github.com/Roxabi/voiceCLI/commit/47c8f948727ded451cd9cab7f86c2f99e319ea5c))
+
 ## [0.2.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.1.0...voicecli/v0.2.0) (2026-04-21)
 
 
