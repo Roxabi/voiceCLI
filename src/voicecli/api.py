@@ -15,10 +15,6 @@ from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 log = logging.getLogger(__name__)
 
 
-class DaemonUnavailableError(RuntimeError):
-    """Raised when the voicecli daemon is not reachable for a QWEN engine."""
-
-
 # ── Input validation ────────────────────────────────────────────────────────
 
 _MAX_STRING_LEN = 256
@@ -454,14 +450,9 @@ def _make_chunk_daemon_fn(engine_name: str):
             req["ref_audio"] = str(ref.resolve()) if ref else None
             req["ref_text"] = kwargs.get("ref_text")
         if not _wait_for_daemon_socket():
-            raise DaemonUnavailableError(
-                f"voicecli daemon not available for engine '{engine_name}' — "
-                "start with: voicecli serve --engine qwen-fast"
-            )
+            return False
         if _try_daemon(req) is None:
-            raise DaemonUnavailableError(
-                f"voicecli daemon failed to handle chunk for engine '{engine_name}'"
-            )
+            return False
         return True
 
     return daemon_fn
@@ -688,6 +679,7 @@ def generate(
     crossfade: int | None = None,
     plain: bool = False,
     allowed_base: Path | _Unrestricted = OUTPUT_DIR,
+    _skip_daemon: bool = False,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -780,7 +772,11 @@ def generate(
         eng._small = True
 
     if r_chunked:
-        daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
+        daemon_fn = (
+            _make_chunk_daemon_fn(r_engine)
+            if r_engine in QWEN_ENGINES and not _skip_daemon
+            else None
+        )
         chunk_paths = _generate_chunked(
             eng,
             r_text,
@@ -795,12 +791,7 @@ def generate(
         )
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-    if r_engine in QWEN_ENGINES:
-        if not _wait_for_daemon_socket():
-            raise DaemonUnavailableError(
-                f"voicecli daemon not available for engine '{r_engine}' — "
-                "start with: voicecli serve --engine qwen-fast"
-            )
+    if r_engine in QWEN_ENGINES and not _skip_daemon and _wait_for_daemon_socket():
         daemon_result = _try_daemon(
             {
                 "action": "generate",
@@ -825,7 +816,6 @@ def generate(
 
                 mp3_path = wav_to_mp3(out)
             return TTSResult(wav_path=out, mp3_path=mp3_path)
-        raise DaemonUnavailableError(f"voicecli daemon failed to generate with engine '{r_engine}'")
 
     out = eng.generate(r_text, r_voice, out, language=r_language, **extra)
 
@@ -855,6 +845,7 @@ def clone(
     crossfade: int | None = None,
     plain: bool = False,
     allowed_base: Path | _Unrestricted = OUTPUT_DIR,
+    _skip_daemon: bool = False,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -948,7 +939,11 @@ def clone(
         eng._small = True
 
     if r_chunked:
-        daemon_fn = _make_chunk_daemon_fn(r_engine) if r_engine in QWEN_ENGINES else None
+        daemon_fn = (
+            _make_chunk_daemon_fn(r_engine)
+            if r_engine in QWEN_ENGINES and not _skip_daemon
+            else None
+        )
         chunk_paths = _clone_chunked(
             eng,
             r_text,
@@ -964,12 +959,7 @@ def clone(
         )
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-    if r_engine in QWEN_ENGINES:
-        if not _wait_for_daemon_socket():
-            raise DaemonUnavailableError(
-                f"voicecli daemon not available for engine '{r_engine}' — "
-                "start with: voicecli serve --engine qwen-fast"
-            )
+    if r_engine in QWEN_ENGINES and not _skip_daemon and _wait_for_daemon_socket():
         daemon_result = _try_daemon(
             {
                 "action": "clone",
@@ -996,7 +986,6 @@ def clone(
 
                 mp3_path = wav_to_mp3(out)
             return TTSResult(wav_path=out, mp3_path=mp3_path)
-        raise DaemonUnavailableError(f"voicecli daemon failed to clone with engine '{r_engine}'")
 
     out = eng.clone(r_text, ref_path, out, ref_text=ref_text, language=r_language, **extra)
 

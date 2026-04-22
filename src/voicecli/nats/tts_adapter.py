@@ -300,6 +300,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                     engine=engine,
                     output=out_path,
                     allowed_base=UNRESTRICTED,
+                    _skip_daemon=True,
                     **kw,
                     **named_kwargs,
                 )
