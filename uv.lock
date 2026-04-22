@@ -1658,15 +1658,15 @@ wheels = [
 [[package]]
 name = "roxabi-contracts"
 version = "0.2.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&tag=roxabi-nats%2Fv0.2.0#2ae99ddbe638afd05106163dfef22e76b2df1b17" }
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&tag=roxabi-nats%2Fv0.2.1#86e00a1019c118c1578a98847615facb3b03853e" }
 dependencies = [
     { name = "pydantic" },
 ]
 
 [[package]]
 name = "roxabi-nats"
-version = "0.2.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&tag=roxabi-nats%2Fv0.2.0#2ae99ddbe638afd05106163dfef22e76b2df1b17" }
+version = "0.2.1"
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&tag=roxabi-nats%2Fv0.2.1#86e00a1019c118c1578a98847615facb3b03853e" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
@@ -2205,7 +2205,7 @@ requires-dist = [
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts" },
-    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&tag=roxabi-nats%2Fv0.2.0" },
+    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&tag=roxabi-nats%2Fv0.2.1" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },
     { name = "torch", specifier = ">=2.7" },
