@@ -161,6 +161,7 @@ class TtsNatsAdapter(NatsAdapterBase):
             drain_timeout=drain_timeout,
             heartbeat_subject=HEARTBEAT_SUBJECT,
             heartbeat_interval=heartbeat_interval,
+            inbox_prefix="_INBOX.voice-tts",
         )
         self.default_engine = default_engine
         self.max_concurrent = max_concurrent
