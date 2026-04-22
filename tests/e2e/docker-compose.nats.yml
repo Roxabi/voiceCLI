@@ -21,7 +21,7 @@ services:
         && uv sync --extra nats --frozen
         --no-install-package torch
         --no-install-package torchaudio -q
-        && uv run voicecli nats-serve tts --engine mock
+        && uv run --no-sync voicecli nats-serve tts --engine mock
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"
@@ -45,7 +45,7 @@ services:
         && uv sync --extra nats --frozen
         --no-install-package torch
         --no-install-package torchaudio -q
-        && uv run voicecli nats-serve stt --model mock
+        && uv run --no-sync voicecli nats-serve stt --model mock
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"

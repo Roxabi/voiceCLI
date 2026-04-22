@@ -10,7 +10,7 @@
     {
       "name": "voice-cli",
       "description": "Deep VoiceCLI knowledge — author TTS scripts, generate speech, clone voices, transcribe audio, dictate with STT daemon.",
-      "source": "./",
+      "source": "./plugins/voice-cli",
       "category": "tools"
     }
   ]

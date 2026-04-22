@@ -28,7 +28,7 @@ MUST read [code-review](docs/standards/code-review.md). Conventional Comments. B
 
 ## Usage Reference
 
-**CLI, engine caps, markdown format, frontmatter, directives, config, workflow** → [`skills/voice/SKILL.md`](skills/voice/SKILL.md) (single source of truth).
+**CLI, engine caps, markdown format, frontmatter, directives, config, workflow** → [`plugins/voice-cli/skills/voice/SKILL.md`](plugins/voice-cli/skills/voice/SKILL.md) (single source of truth).
 
 Priority: **CLI flag > frontmatter > voicecli.toml > default**
 
