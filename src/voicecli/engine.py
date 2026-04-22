@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _CUDA_PATTERNS = re.compile(
     r"CUDA|cuDNN|NCCL|out of memory|CUBLAS|CUSOLVER|GPU|"
@@ -123,8 +126,8 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
                 "voxtral": VoxtralEngine,
             }
         )
-    except ImportError:
-        pass  # torch not installed — real engines unavailable
+    except ImportError as e:
+        log.debug("Skipping real engines: %s", e)
 
     if coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         from voicecli.engines.mock import MockEngine
