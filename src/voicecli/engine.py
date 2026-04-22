@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _CUDA_PATTERNS = re.compile(
     r"CUDA|cuDNN|NCCL|out of memory|CUBLAS|CUSOLVER|GPU|"
@@ -83,6 +86,11 @@ QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})
 
 def get_engine(name: str) -> TTSEngine:
     engines = _get_registry()
+    if not engines:
+        raise ValueError(
+            "No engines available. Install torch for real engines, "
+            "or set VOICECLI_ENABLE_MOCK_ENGINE=1 for mock engine."
+        )
     if name not in engines:
         raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
     return engines[name]()
@@ -98,21 +106,34 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
     MockEngine is gated by ``VOICECLI_ENABLE_MOCK_ENGINE`` — unset in prod,
     set to "1" in the e2e docker-compose files so the NATS satellite can
     answer round-trip requests without loading a real model.
+
+    Real engine imports are wrapped in try/except to handle missing torch.
+    If ImportError occurs (torch not installed), real engines are skipped.
     """
-    from voicecli.engines.chatterbox import ChatterboxEngine
-    from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
-    from voicecli.engines.qwen import QwenEngine
-    from voicecli.engines.qwen_fast import QwenFastEngine
-    from voicecli.engines.voxtral import VoxtralEngine
     from voicecli.env import coerce_bool_env
 
-    registry: dict[str, type[TTSEngine]] = {
-        "qwen": QwenEngine,
-        "qwen-fast": QwenFastEngine,
-        "chatterbox": ChatterboxEngine,
-        "chatterbox-turbo": ChatterboxTurboEngine,
-        "voxtral": VoxtralEngine,
-    }
+    registry: dict[str, type[TTSEngine]] = {}
+
+    # Try to load real engines — skip if torch unavailable
+    try:
+        from voicecli.engines.chatterbox import ChatterboxEngine
+        from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
+        from voicecli.engines.qwen import QwenEngine
+        from voicecli.engines.qwen_fast import QwenFastEngine
+        from voicecli.engines.voxtral import VoxtralEngine
+
+        registry.update(
+            {
+                "qwen": QwenEngine,
+                "qwen-fast": QwenFastEngine,
+                "chatterbox": ChatterboxEngine,
+                "chatterbox-turbo": ChatterboxTurboEngine,
+                "voxtral": VoxtralEngine,
+            }
+        )
+    except ImportError as e:
+        log.debug("Skipping real engines: %s", e)
+
     if coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         from voicecli.engines.mock import MockEngine
 
