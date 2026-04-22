@@ -98,21 +98,34 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
     MockEngine is gated by ``VOICECLI_ENABLE_MOCK_ENGINE`` — unset in prod,
     set to "1" in the e2e docker-compose files so the NATS satellite can
     answer round-trip requests without loading a real model.
+
+    Real engine imports are wrapped in try/except to handle missing torch.
+    If ImportError occurs (torch not installed), real engines are skipped.
     """
-    from voicecli.engines.chatterbox import ChatterboxEngine
-    from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
-    from voicecli.engines.qwen import QwenEngine
-    from voicecli.engines.qwen_fast import QwenFastEngine
-    from voicecli.engines.voxtral import VoxtralEngine
     from voicecli.env import coerce_bool_env
 
-    registry: dict[str, type[TTSEngine]] = {
-        "qwen": QwenEngine,
-        "qwen-fast": QwenFastEngine,
-        "chatterbox": ChatterboxEngine,
-        "chatterbox-turbo": ChatterboxTurboEngine,
-        "voxtral": VoxtralEngine,
-    }
+    registry: dict[str, type[TTSEngine]] = {}
+
+    # Try to load real engines — skip if torch unavailable
+    try:
+        from voicecli.engines.chatterbox import ChatterboxEngine
+        from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
+        from voicecli.engines.qwen import QwenEngine
+        from voicecli.engines.qwen_fast import QwenFastEngine
+        from voicecli.engines.voxtral import VoxtralEngine
+
+        registry.update(
+            {
+                "qwen": QwenEngine,
+                "qwen-fast": QwenFastEngine,
+                "chatterbox": ChatterboxEngine,
+                "chatterbox-turbo": ChatterboxTurboEngine,
+                "voxtral": VoxtralEngine,
+            }
+        )
+    except ImportError:
+        pass  # torch not installed — real engines unavailable
+
     if coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         from voicecli.engines.mock import MockEngine
 
