@@ -86,6 +86,11 @@ QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})
 
 def get_engine(name: str) -> TTSEngine:
     engines = _get_registry()
+    if not engines:
+        raise ValueError(
+            "No engines available. Install torch for real engines, "
+            "or set VOICECLI_ENABLE_MOCK_ENGINE=1 for mock engine."
+        )
     if name not in engines:
         raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
     return engines[name]()
