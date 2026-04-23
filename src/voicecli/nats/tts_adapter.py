@@ -171,9 +171,16 @@ class TtsNatsAdapter(NatsAdapterBase):
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
 
     def heartbeat_payload(self) -> dict:
+        from voicecli.model_registry import model_registry
+
         payload = super().heartbeat_payload()
-        payload["model_loaded"] = self.model_loaded
+        payload["model_loaded"] = model_registry.loaded_engines()
         payload["active_requests"] = self.max_concurrent - self._sem._value
+
+        # Add VRAM metrics
+        payload["vram_free_mb"] = model_registry.vram_free_mb()
+        payload["vram_status"] = model_registry.vram_status()
+
         return payload
 
     def _extra_subjects(self) -> list[str]:

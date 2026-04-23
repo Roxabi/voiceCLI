@@ -94,12 +94,12 @@ class TestResolveEngine:
 
     def test_toml_engine_fallback_when_no_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _require_imports()
-        # Arrange — no env vars; load_config returns toml engine
+        # Arrange — no env vars; load_tts_config returns toml engine
         monkeypatch.delenv("VOICECLI_ENGINE", raising=False)
         monkeypatch.delenv("LYRA_TTS_ENGINE", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_config",
-            lambda: {"defaults": {"engine": "toml-engine"}},
+            "voicecli.config.load_tts_config",
+            lambda: {"default_engine": "toml-engine"},
         )
 
         # Act
@@ -114,8 +114,8 @@ class TestResolveEngine:
         monkeypatch.delenv("VOICECLI_ENGINE", raising=False)
         monkeypatch.delenv("LYRA_TTS_ENGINE", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_config",
-            lambda: {},
+            "voicecli.config.load_tts_config",
+            lambda: {"default_engine": None},
         )
 
         # Act
@@ -128,14 +128,14 @@ class TestResolveEngine:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _require_imports()
-        # Arrange — no env vars; load_config raises
+        # Arrange — no env vars; load_tts_config raises
         monkeypatch.delenv("VOICECLI_ENGINE", raising=False)
         monkeypatch.delenv("LYRA_TTS_ENGINE", raising=False)
 
         def _raise():
             raise RuntimeError("config file not found")
 
-        monkeypatch.setattr("voicecli.config.load_config", _raise)
+        monkeypatch.setattr("voicecli.config.load_tts_config", _raise)
 
         # Act — must not raise; exception is swallowed
         result = _resolve_engine(None)

@@ -12,9 +12,11 @@ from voicecli.utils import UNRESTRICTED
 
 def test_import_lightweight():
     """Importing voicecli should NOT trigger heavy imports (torch, soundfile, etc.)."""
-    # Unload voicecli modules to test fresh import
+    # Unload voicecli modules and heavy deps to test fresh import
     mods_to_remove = [k for k in sys.modules if k.startswith("voicecli")]
-    saved = {k: sys.modules.pop(k) for k in mods_to_remove}
+    # Also remove heavy deps that may have been loaded by other tests
+    heavy_mods = ["torch", "soundfile", "faster_whisper"]
+    saved = {k: sys.modules.pop(k) for k in mods_to_remove + heavy_mods if k in sys.modules}
     try:
         import voicecli  # noqa: F811
 
