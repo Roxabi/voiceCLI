@@ -106,10 +106,10 @@ class ModelRegistry:
                 raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
 
             # Load engine outside main lock (30s operation)
-            # Note: VRAM check moved outside load_lock to avoid deadlock on OOM
             engine = engines[name]()
 
-            # Check VRAM and evict if needed (outside load_lock to avoid blocking on OOM)
+            # Check VRAM and evict if needed
+            # Note: load_lock is released on exception, preventing deadlock
             self._ensure_vram(name)
 
             # Insert into cache
