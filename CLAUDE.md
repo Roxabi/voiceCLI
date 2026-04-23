@@ -136,3 +136,17 @@ make -C ~/projects stt start
 | **allow-coexist** | Large-VRAM dev boxes (RTX 5070 Ti 16GB, …) only | `--allow-coexist` ∨ `VOICECLI_ALLOW_COEXIST=1` |
 
 ¬allow-coexist on RTX 3080 (10GB) prod — OOMs under concurrent synthesis. Full guard + exit codes: [`docs/NATS-SERVE.md#vram-sequencing`](docs/NATS-SERVE.md#vram-sequencing).
+
+### Container deployment (Quadlet)
+
+Production hosts can run voiceCLI as a Podman container managed by systemd via Quadlet. Unit files in `deploy/quadlet/` define TTS and STT NATS satellites with GPU passthrough.
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Multi-stage build for CUDA 12.4 + uv + extras |
+| `deploy/entrypoint.sh` | Mode selector (`tts` \| `stt`) → `nats-serve` |
+| `deploy/quadlet/voicecli-tts.container` | TTS satellite systemd unit |
+| `deploy/quadlet/voicecli-stt.container` | STT satellite systemd unit |
+| `deploy/quadlet/voicecli-models.volume` | Shared HuggingFace cache volume |
+
+Full Quadlet setup: [`docs/NATS-SERVE.md#quadlet-deployment-podman--systemd`](docs/NATS-SERVE.md#quadlet-deployment-podman--systemd).

@@ -1,0 +1,21 @@
+[Unit]
+Description=voiceCLI STT NATS worker
+
+[Container]
+Image=ghcr.io/roxabi/voicecli:0.5.0
+Volume=voicecli-models:/home/appuser/.cache/huggingface
+Volume=voicecli-models:/home/appuser/.cache/voicecli
+Secret=voicecli-stt.seed,type=mount,target=/home/appuser/.config/voicecli/nkeys/seed.seed,mode=0400
+Device=nvidia.com/gpu=all
+Environment=NATS_URL=nats://nats.internal:4222
+HealthCmd=bash -c "nvidia-smi && pgrep -f 'voicecli nats-serve' || exit 1"
+HealthInterval=30s
+NoNewPrivileges=true
+DropCapability=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
