@@ -80,7 +80,10 @@ class TestModelRegistryCore:
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
-        with patch("voicecli.engine._get_registry") as mock_reg:
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
             # Act
             first = registry.get("mock")
@@ -109,7 +112,10 @@ class TestModelRegistryCore:
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
-        with patch("voicecli.engine._get_registry") as mock_reg:
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
             # Act
             registry.get("mock")
@@ -129,7 +135,10 @@ class TestModelRegistryVRAM:
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
-        with patch("voicecli.engine._get_registry") as mock_reg:
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
             registry.get("mock")
 
@@ -147,7 +156,10 @@ class TestModelRegistryVRAM:
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
-        with patch("voicecli.engine._get_registry") as mock_reg:
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
             registry.get("mock")
 
@@ -215,6 +227,7 @@ class TestModelRegistryThreadSafety:
         registry = ModelRegistry()
         load_count = 0
         lock = threading.Lock()
+        results = []
 
         def make_engine():
             nonlocal load_count
@@ -222,20 +235,23 @@ class TestModelRegistryThreadSafety:
                 load_count += 1
             return MagicMock()
 
-        results = []
+        # Mock VRAM check to always return sufficient
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
+            mock_reg.return_value = {"mock": make_engine}
 
-        def get_engine():
-            with patch("voicecli.engine._get_registry") as mock_reg:
-                mock_reg.return_value = {"mock": make_engine}
+            def get_engine():
                 results.append(registry.get("mock"))
 
-        # Act - run two threads concurrently
-        t1 = threading.Thread(target=get_engine)
-        t2 = threading.Thread(target=get_engine)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+            # Act - run two threads concurrently
+            t1 = threading.Thread(target=get_engine)
+            t2 = threading.Thread(target=get_engine)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
 
         # Assert - engine loaded exactly once
         assert load_count == 1
@@ -250,18 +266,25 @@ class TestModelRegistryThreadSafety:
         registry = ModelRegistry()
         results = {}
 
-        def get_engine(name):
-            with patch("voicecli.engine._get_registry") as mock_reg:
-                mock_reg.return_value = {name: MagicMock}
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=True),
+        ):
+            mock_reg.return_value = {
+                "engine1": MagicMock,
+                "engine2": MagicMock,
+            }
+
+            def get_engine(name):
                 results[name] = registry.get(name)
 
-        # Act - run threads concurrently
-        t1 = threading.Thread(target=get_engine, args=("engine1",))
-        t2 = threading.Thread(target=get_engine, args=("engine2",))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+            # Act - run threads concurrently
+            t1 = threading.Thread(target=get_engine, args=("engine1",))
+            t2 = threading.Thread(target=get_engine, args=("engine2",))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
 
         # Assert - both engines cached
         assert "engine1" in results
