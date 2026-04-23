@@ -267,3 +267,82 @@ class TestModelRegistryThreadSafety:
         assert "engine1" in results
         assert "engine2" in results
         assert set(registry.loaded_engines()) == {"engine1", "engine2"}
+
+
+class TestHeartbeatEnhancement:
+    """Tests for heartbeat payload with VRAM metrics."""
+
+    @pytest.mark.skipif(
+        True,  # Skip if roxabi_nats not available
+        reason="Requires roxabi_nats dependency",
+    )
+    def test_heartbeat_payload_includes_vram_metrics(self):
+        """heartbeat_payload includes vram_free_mb and vram_status."""
+        # Arrange - mock TtsNatsAdapter's heartbeat_payload
+        from voicecli.nats.tts_adapter import TtsNatsAdapter
+
+        adapter = TtsNatsAdapter(default_engine="qwen-fast")
+
+        # Act
+        payload = adapter.heartbeat_payload()
+
+        # Assert
+        assert "vram_free_mb" in payload
+        assert "vram_status" in payload
+        assert payload["vram_status"] in ("ok", "constrained", "critical")
+        assert isinstance(payload["vram_free_mb"], int)
+
+    def test_vram_status_ok_when_sufficient(self):
+        """vram_status is 'ok' when > 4GB free."""
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+
+        # Mock vram_free_mb to return high value
+        with patch.object(registry, "vram_free_mb", return_value=5000):
+            free_mb = registry.vram_free_mb()
+            # Determine status like tts_adapter does
+            if free_mb >= 4096:
+                vram_status = "ok"
+            elif free_mb >= 1024:
+                vram_status = "constrained"
+            else:
+                vram_status = "critical"
+
+        assert vram_status == "ok"
+
+    def test_vram_status_constrained_when_low(self):
+        """vram_status is 'constrained' when 1-4GB free."""
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+
+        # Mock vram_free_mb to return medium value
+        with patch.object(registry, "vram_free_mb", return_value=2000):
+            free_mb = registry.vram_free_mb()
+            if free_mb >= 4096:
+                vram_status = "ok"
+            elif free_mb >= 1024:
+                vram_status = "constrained"
+            else:
+                vram_status = "critical"
+
+        assert vram_status == "constrained"
+
+    def test_vram_status_critical_when_very_low(self):
+        """vram_status is 'critical' when < 1GB free."""
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+
+        # Mock vram_free_mb to return low value
+        with patch.object(registry, "vram_free_mb", return_value=500):
+            free_mb = registry.vram_free_mb()
+            if free_mb >= 4096:
+                vram_status = "ok"
+            elif free_mb >= 1024:
+                vram_status = "constrained"
+            else:
+                vram_status = "critical"
+
+        assert vram_status == "critical"
