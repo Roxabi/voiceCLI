@@ -20,10 +20,10 @@ def _resolve_engine(cli_value: str | None = None) -> str:
         if v:
             return v
     try:
-        from voicecli.config import load_config
+        from voicecli.config import load_tts_config
 
-        cfg = load_config()
-        toml_engine = cfg.get("defaults", {}).get("engine")
+        cfg = load_tts_config()
+        toml_engine = cfg.get("default_engine")
         if toml_engine:
             return toml_engine
     except Exception as e:
