@@ -457,3 +457,106 @@ the engine registry (and the STT transcribe short-circuit) when the
 unset, so `mock` is absent from `voicecli.engine.available_engines()` and any
 request carrying `engine: "mock"` is rejected with `engine_unavailable`. The
 `mock_engine` pytest fixture sets the var for the test scope.
+
+---
+
+## Quadlet deployment (Podman + systemd)
+
+For production hosts running Podman with systemd integration, voiceCLI provides
+Quadlet unit files in `deploy/quadlet/`. These enable native systemd management
+of containerized NATS satellites without manual podman commands.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `voicecli-tts.container` | TTS satellite as a systemd service |
+| `voicecli-stt.container` | STT satellite as a systemd service |
+| `voicecli-models.volume` | Shared volume for HuggingFace model cache |
+
+### Installation
+
+1. Copy Quadlet units to `~/.config/containers/systemd/` (user) or
+   `/etc/containers/systemd/` (root):
+
+   ```bash
+   mkdir -p ~/.config/containers/systemd
+   cp deploy/quadlet/*.container deploy/quadlet/*.volume ~/.config/containers/systemd/
+   ```
+
+2. Create the NKey seed secrets (one per satellite):
+
+   ```bash
+   printf 'SU...' > ~/.local/share/voicecli/nkeys/voicecli-tts.seed
+   chmod 600 ~/.local/share/voicecli/nkeys/voicecli-tts.seed
+
+   printf 'SU...' > ~/.local/share/voicecli/nkeys/voicecli-stt.seed
+   chmod 600 ~/.local/share/voicecli/nkeys/voicecli-stt.seed
+   ```
+
+3. Register secrets with Podman (required for Quadlet `Secret=` directive):
+
+   ```bash
+   podman secret create voicecli-tts.seed ~/.local/share/voicecli/nkeys/voicecli-tts.seed
+   podman secret create voicecli-stt.seed ~/.local/share/voicecli/nkeys/voicecli-stt.seed
+   ```
+
+4. Reload systemd and start the service(s):
+
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user start voicecli-tts
+   # or for STT:
+   systemctl --user start voicecli-stt
+   ```
+
+### Pre-seeding models
+
+On first run, each satellite downloads its model (~7 GB for TTS, ~2 GB for STT).
+To avoid a cold-start delay on production hosts, pre-seed the shared volume:
+
+```bash
+# Build the image locally first
+podman build -t voicecli:latest .
+
+# Run a one-shot container to populate the cache
+podman run --rm -v voicecli-models:/root/.cache/huggingface voicecli:latest uv run voicecli --help
+# The TTS/STT model will download on first synthesis/transcription
+```
+
+Alternatively, copy an existing cache from another host:
+
+```bash
+podman volume create voicecli-models
+podman run --rm -v voicecli-models:/data alpine tar xf - -C /data < cache.tar
+```
+
+### Resource considerations
+
+The TTS and STT satellites both require GPU access. On single-GPU hosts with
+limited VRAM (e.g. RTX 3080 10 GB), run only one satellite at a time or use
+`VOICECLI_MAX_CONCURRENT=1` on the STT satellite — see
+[STT — Required supervisord stanza](#stt--required-supervisord-stanza) for the
+supervisord equivalent.
+
+Quadlet does not directly support `exitcodes=` for restart policy tuning. The
+`Restart=on-failure` directive in the Quadlet files restarts on non-zero exits,
+which includes exit codes 3 (drain timeout) and 78 (VRAM guard). This is
+acceptable for containerized deployments where the orchestration layer handles
+restart throttling.
+
+### Image registry
+
+The Quadlet units reference `ghcr.io/roxabi/voicecli:latest`. For production,
+pin to a specific digest:
+
+```ini
+Image=ghcr.io/roxabi/voicecli@sha256:<digest>
+```
+
+Build and push from the repo root:
+
+```bash
+podman build -t ghcr.io/roxabi/voicecli:latest .
+podman push ghcr.io/roxabi/voicecli:latest
+```

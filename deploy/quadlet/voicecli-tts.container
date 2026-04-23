@@ -1,0 +1,19 @@
+[Unit]
+Description=voiceCLI TTS NATS worker
+
+[Container]
+Image=ghcr.io/roxabi/voicecli:latest
+Volume=voicecli-models:/root/.cache/huggingface
+Volume=voicecli-models:/root/.cache/voicecli
+Secret=voicecli-tts.seed,type=mount,target=/root/.config/voicecli/nkeys/seed.seed
+Device=nvidia.com/gpu=all
+Environment=NATS_URL=nats://nats.internal:4222
+HealthCmd=nvidia-smi
+HealthInterval=30s
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
