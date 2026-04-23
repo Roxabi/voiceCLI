@@ -22,6 +22,9 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).
 
+# voicecli.api is NOT imported at module level — deferred to keep startup fast
+# and avoid pulling torch when only inspecting the adapter (e.g. for --help).
+
 log = logging.getLogger(__name__)
 
 SUBJECT = "lyra.voice.tts.request"
@@ -171,9 +174,25 @@ class TtsNatsAdapter(NatsAdapterBase):
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
 
     def heartbeat_payload(self) -> dict:
+        from voicecli.model_registry import model_registry
+
         payload = super().heartbeat_payload()
-        payload["model_loaded"] = self.model_loaded
+        payload["model_loaded"] = model_registry.loaded_engines()
         payload["active_requests"] = self.max_concurrent - self._sem._value
+
+        # Add VRAM metrics
+        vram_free_mb = model_registry.vram_free_mb()
+        payload["vram_free_mb"] = vram_free_mb
+
+        # Determine VRAM status based on free memory
+        if vram_free_mb >= 4096:  # > 4GB
+            vram_status = "ok"
+        elif vram_free_mb >= 1024:  # > 1GB
+            vram_status = "constrained"
+        else:
+            vram_status = "critical"
+        payload["vram_status"] = vram_status
+
         return payload
 
     def _extra_subjects(self) -> list[str]:

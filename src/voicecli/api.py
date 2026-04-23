@@ -767,7 +767,13 @@ def generate(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    eng = get_engine(r_engine)
+    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
+    if _skip_daemon:
+        from voicecli.model_registry import model_registry
+
+        eng = model_registry.get(r_engine)
+    else:
+        eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
 
@@ -934,7 +940,13 @@ def clone(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    eng = get_engine(r_engine)
+    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
+    if _skip_daemon:
+        from voicecli.model_registry import model_registry
+
+        eng = model_registry.get(r_engine)
+    else:
+        eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
 
