@@ -13,3 +13,14 @@ def mock_engine(monkeypatch):
     """
     monkeypatch.setenv("VOICECLI_ENABLE_MOCK_ENGINE", "1")
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_model_registry():
+    """Clear model_registry cache before each test to prevent state leakage."""
+    from voicecli.model_registry import model_registry
+
+    # Clear the cache
+    with model_registry._lock:
+        model_registry._cache.clear()
+    yield

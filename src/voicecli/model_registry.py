@@ -27,6 +27,7 @@ class ModelRegistry:
         _cache: OrderedDict mapping engine names to instances (LRU order).
         _max_cached: Maximum number of engines to cache before eviction.
         _lock: Thread lock for concurrent access safety.
+        _loading: Dict of engine names to locks for in-progress loads.
     """
 
     def __init__(self, max_cached: int = 2) -> None:
@@ -38,6 +39,7 @@ class ModelRegistry:
         self._cache: OrderedDict[str, TTSEngine] = OrderedDict()
         self._max_cached = max_cached
         self._lock = threading.Lock()
+        self._loading: dict[str, threading.Lock] = {}
 
     def get(self, name: str) -> TTSEngine:
         """Get engine by name. Loads if not cached. Thread-safe.
@@ -57,27 +59,39 @@ class ModelRegistry:
             if name in self._cache:
                 self._cache.move_to_end(name)  # O(1) LRU touch
                 return self._cache[name]
+            # Get or create per-engine loading lock
+            if name not in self._loading:
+                self._loading[name] = threading.Lock()
+            load_lock = self._loading[name]
 
-        # Cache miss - validate engine exists
-        from voicecli.engine import _get_registry
+        # Acquire per-engine lock to serialize loads
+        with load_lock:
+            # Double-check after acquiring load lock (another thread may have loaded)
+            with self._lock:
+                if name in self._cache:
+                    self._cache.move_to_end(name)
+                    return self._cache[name]
 
-        engines = _get_registry()
-        if name not in engines:
-            raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
+            # Cache miss - validate engine exists
+            from voicecli.engine import _get_registry
 
-        # Check VRAM and evict if needed
-        self._ensure_vram(name)
+            engines = _get_registry()
+            if name not in engines:
+                raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
 
-        # Load engine outside lock (30s operation)
-        engine = engines[name]()
+            # Check VRAM and evict if needed
+            self._ensure_vram(name)
 
-        # Insert into cache
-        with self._lock:
-            if name not in self._cache:  # Double-check after lock
-                self._cache[name] = engine
-            self._cache.move_to_end(name)
+            # Load engine outside main lock (30s operation)
+            engine = engines[name]()
 
-        return engine
+            # Insert into cache
+            with self._lock:
+                if name not in self._cache:  # Triple-check after lock
+                    self._cache[name] = engine
+                self._cache.move_to_end(name)
+
+            return engine
 
     def loaded_engines(self) -> list[str]:
         """Return list of currently cached engine names in LRU order."""
