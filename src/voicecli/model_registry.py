@@ -8,12 +8,19 @@ ADR-002: VRAM model management for NATS TTS satellite.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from voicecli.engine import TTSEngine
+
+log = logging.getLogger(__name__)
+
+# VRAM status thresholds (shared with tts_adapter)
+VRAM_OK_MB = 4096
+VRAM_CONSTRAINED_MB = 1024
 
 
 class InsufficientVRAMError(RuntimeError):
@@ -35,11 +42,30 @@ class ModelRegistry:
 
         Args:
             max_cached: Maximum engines to keep in cache (default 2).
+
+        Raises:
+            ValueError: If max_cached < 1.
         """
+        if max_cached < 1:
+            raise ValueError(f"max_cached must be >= 1, got {max_cached}")
         self._cache: OrderedDict[str, TTSEngine] = OrderedDict()
         self._max_cached = max_cached
         self._lock = threading.Lock()
         self._loading: dict[str, threading.Lock] = {}
+
+    def configure(self, max_cached: int) -> None:
+        """Configure the registry. Thread-safe.
+
+        Args:
+            max_cached: Maximum engines to keep in cache.
+
+        Raises:
+            ValueError: If max_cached < 1.
+        """
+        if max_cached < 1:
+            raise ValueError(f"max_cached must be >= 1, got {max_cached}")
+        with self._lock:
+            self._max_cached = max_cached
 
     def get(self, name: str) -> TTSEngine:
         """Get engine by name. Loads if not cached. Thread-safe.
@@ -79,16 +105,19 @@ class ModelRegistry:
             if name not in engines:
                 raise ValueError(f"Unknown engine '{name}'. Available: {list(engines.keys())}")
 
-            # Check VRAM and evict if needed
-            self._ensure_vram(name)
-
             # Load engine outside main lock (30s operation)
+            # Note: VRAM check moved outside load_lock to avoid deadlock on OOM
             engine = engines[name]()
+
+            # Check VRAM and evict if needed (outside load_lock to avoid blocking on OOM)
+            self._ensure_vram(name)
 
             # Insert into cache
             with self._lock:
                 if name not in self._cache:  # Triple-check after lock
                     self._cache[name] = engine
+                    # Cleanup loading lock after successful load
+                    self._loading.pop(name, None)
                 self._cache.move_to_end(name)
 
             return engine
@@ -126,16 +155,23 @@ class ModelRegistry:
                 return 0
             free_bytes, _ = torch.cuda.mem_get_info()
             return free_bytes // (1024 * 1024)
-        except Exception:
+        except Exception as e:
+            log.debug("VRAM check failed: %s", e)
             return 0
 
-    def _touch(self, name: str) -> None:
-        """Move engine to end of LRU order (most recently used).
+    def vram_status(self) -> str:
+        """Return VRAM status string based on free memory.
 
-        Args:
-            name: Engine name currently in cache.
+        Returns:
+            "ok" if > 4GB free, "constrained" if 1-4GB, "critical" if < 1GB.
         """
-        self._cache.move_to_end(name)
+        free_mb = self.vram_free_mb()
+        if free_mb >= VRAM_OK_MB:
+            return "ok"
+        elif free_mb >= VRAM_CONSTRAINED_MB:
+            return "constrained"
+        else:
+            return "critical"
 
     def _ensure_vram(self, required: str) -> None:
         """Evict until enough VRAM for required engine.
@@ -156,6 +192,7 @@ class ModelRegistry:
             return
 
         # Evict until we have enough VRAM
+        # Hold lock during entire eviction loop to prevent race conditions
         while not self._has_vram(required_gb):
             with self._lock:
                 if not self._cache:
@@ -163,19 +200,10 @@ class ModelRegistry:
                         f"Not enough VRAM for '{required}' even after evicting all engines. "
                         f"Need {required_gb:.1f} GB."
                     )
-            self._evict_oldest()
-
-    def _evict_oldest(self) -> None:
-        """Evict least-recently-used engine from cache.
-
-        Note:
-            Does nothing if cache is empty.
-        """
-        with self._lock:
-            if not self._cache:
-                return
-            _, engine = self._cache.popitem(last=False)
-        self._release_engine(engine)
+                # Pop oldest item while holding lock
+                _, engine = self._cache.popitem(last=False)
+            # Release engine VRAM outside lock
+            self._release_engine(engine)
 
     def _has_vram(self, required_gb: float) -> bool:
         """Check if free VRAM is sufficient.

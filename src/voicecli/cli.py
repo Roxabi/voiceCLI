@@ -1370,7 +1370,7 @@ def nats_serve_tts(
     nats_cfg = load_nats_config()
     from voicecli.model_registry import model_registry
 
-    model_registry._max_cached = nats_cfg["max_cached_engines"]
+    model_registry.configure(max_cached=nats_cfg["max_cached_engines"])
     log.info("model_registry configured: max_cached=%d", model_registry._max_cached)
 
     resolved_engine = _resolve_engine(engine)
