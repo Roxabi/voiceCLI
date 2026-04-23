@@ -136,6 +136,11 @@ class ModelRegistry:
 
         required_gb = VRAM_REQUIRED_GB.get(required, VRAM_REQUIRED_GB_DEFAULT)
 
+        # Skip VRAM check if CUDA unavailable (returns 0 from vram_free_mb)
+        # This allows tests and CPU-only environments to work
+        if self.vram_free_mb() == 0:
+            return
+
         # Evict until we have enough VRAM
         while not self._has_vram(required_gb):
             with self._lock:
