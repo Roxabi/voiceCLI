@@ -179,6 +179,9 @@ class TestModelRegistryVRAM:
         with (
             patch("voicecli.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=False),
+            patch.object(
+                registry, "vram_free_mb", return_value=1000
+            ),  # Non-zero to trigger VRAM check
         ):
             mock_reg.return_value = {}
 
@@ -198,6 +201,9 @@ class TestModelRegistryVRAM:
         with (
             patch("voicecli.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram") as mock_has_vram,
+            patch.object(
+                registry, "vram_free_mb", return_value=1000
+            ),  # Non-zero to trigger VRAM check
         ):
             mock_reg.return_value = {
                 "engine1": lambda: mock_engine1,
