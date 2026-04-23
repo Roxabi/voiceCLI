@@ -1,0 +1,305 @@
+---
+title: "ADR-002: VRAM model management for NATS TTS satellite"
+description: Implement a singleton model cache with LRU eviction to prevent VRAM exhaustion when the NATS TTS satellite handles requests for different engines.
+---
+
+## Status
+
+Proposed
+
+## Context
+
+The voiceCLI NATS TTS satellite (`voicecli nats-serve tts`) handles synthesis requests from the Lyra hub. Each request can specify any engine: `chatterbox`, `qwen-fast`, `qwen`, `voxtral`.
+
+**Current architecture:**
+
+```
+TtsNatsAdapter.handle()
+  → api.generate(engine=name)
+    → get_engine(name)
+      → engines[name]()  # NEW instance every request
+```
+
+The `get_engine()` factory creates a fresh `TTSEngine` instance per call. Each engine has lazy model loading (`_model = None` until first use), but the instances themselves are not shared. When a request for `qwen-fast` follows a request for `chatterbox`, two model instances coexist in VRAM.
+
+**VRAM constraints:**
+
+| Engine | VRAM Required | Notes |
+|---|---|---|
+| qwen | ~7.4 GB | Full model |
+| qwen-fast | ~7.4 GB | CUDA-graph variant (same VRAM) |
+| chatterbox | ~2.0 GB | Multilingual |
+| chatterbox-turbo | ~2.0 GB | English-only |
+| voxtral | ~4.0 GB | 4B int4 quantized |
+| whisper-STT | ~2.5 GB | STT daemon (separate) |
+
+**Production hardware:**
+- M₁ (RTX 3080): 10 GB — can fit 1 large model OR 2 small models
+- M₂ (RTX 5070 Ti): 16 GB — more headroom, can fit 2 large models
+
+**Failure mode:**
+1. Request arrives for `chatterbox` → model loads (~2 GB)
+2. Request arrives for `qwen-fast` → model loads (~7.4 GB)
+3. Total: ~9.4 GB on 10 GB GPU → CUDA OOM
+
+The existing `max_concurrent=1` Semaphore serializes requests but does nothing for VRAM accumulation.
+
+**Existing patterns in codebase:**
+- Socket daemon (`daemon.py`) has singleton engine cache: `engines: dict[str, object]`
+- Socket daemon has `_has_vram()` pre-check before loading new engines
+- Socket daemon has `_vram_cleanup()` (gc.collect + torch.cuda.empty_cache) after jobs
+- Engine classes have lazy `_load_model()` with `cuda_guard` VRAM check
+
+## Options Considered
+
+### Option A: Singleton model cache (in-process LRU)
+
+Add a module-level engine cache in `engine.py` or a dedicated `ModelRegistry` class. All callers share cached instances. Evict old models when VRAM is insufficient.
+
+```python
+# engine.py
+_model_cache: dict[str, TTSEngine] = {}
+_cache_order: list[str] = []  # LRU tracking
+_max_cached = 2  # configurable
+
+def get_or_load_engine(name: str, evict_if_needed: bool = True) -> TTSEngine:
+    if name in _model_cache:
+        _touch_lru(name)
+        return _model_cache[name]
+
+    if evict_if_needed and not _has_vram(name):
+        _evict_oldest_until_fits(name)
+
+    engine = _get_registry()[name]()
+    _model_cache[name] = engine
+    _cache_order.append(name)
+    return engine
+
+def _evict_oldest_until_fits(required: str) -> None:
+    while _cache_order and not _has_vram(required):
+        oldest = _cache_order.pop(0)
+        del _model_cache[oldest]
+        _vram_cleanup()
+```
+
+- **Pros:** Minimal latency for repeated same-engine requests; works with existing NATS pattern; transparent to callers
+- **Cons:** Shared mutable state; eviction logic adds complexity; must handle concurrent access; unload may interrupt in-progress generation (if not coordinated with Semaphore)
+
+### Option B: Explicit unload on engine switch
+
+Detect when the requested engine differs from the currently loaded one. Unload the old engine before loading the new one.
+
+```python
+class TtsNatsAdapter:
+    def __init__(self, ...):
+        self._current_engine: str | None = None
+        self._engine_instance: TTSEngine | None = None
+
+    async def _run_synthesis(self, msg, payload, ...):
+        engine = payload.get("engine") or self.default_engine
+
+        if self._current_engine != engine:
+            self._unload_current_engine()
+            self._engine_instance = get_engine(engine)
+            self._current_engine = engine
+
+        # use self._engine_instance...
+
+    def _unload_current_engine(self):
+        if self._engine_instance:
+            # Delete model refs and cleanup
+            self._engine_instance._model = None
+            self._engine_instance._clone_model = None
+            del self._engine_instance
+            _vram_cleanup()
+```
+
+- **Pros:** Simple; guaranteed single-model occupancy; no cache complexity
+- **Cons:** High latency on every engine switch (30-60s load time); wasteful if requests alternate between engines frequently
+- **Risk:** If STT daemon shares the GPU, unload+reload may still OOM if STT holds VRAM
+
+### Option C: VRAM-aware loading with reject
+
+Check free VRAM before loading. If insufficient, reject the request with a clear error. Caller (hub) must retry after freeing VRAM.
+
+```python
+def get_engine_with_vram_check(name: str) -> TTSEngine:
+    from voicecli.engine import check_vram
+
+    try:
+        check_vram(name)  # raises RuntimeError if insufficient
+    except RuntimeError:
+        raise EngineLoadError(f"Insufficient VRAM for {name}")
+
+    return get_engine(name)
+```
+
+- **Pros:** Simplest implementation; safe; no eviction complexity
+- **Cons:** Pushes problem to caller; poor UX (request fails); does not solve the core problem (still OOMs under concurrent different-engine requests)
+- **Note:** Already implemented as `cuda_guard` / `check_vram` in `engine.py` — but not used by NATS adapter
+
+### Option D: Fixed engine per daemon
+
+Daemon serves ONE engine only. Requests for other engines are rejected with `engine_unavailable`.
+
+```bash
+# supervisor config
+[program:voicecli_tts_qwen]
+command=voicecli nats-serve tts --engine qwen-fast
+# ...
+
+[program:voicecli_tts_chatterbox]
+command=voicecli nats-serve tts --engine chatterbox --port 4223
+# ...
+```
+
+- **Pros:** Simplest; guaranteed VRAM safety; each daemon pre-loads its engine
+- **Cons:** Requires multiple daemon processes; hub must route to correct daemon; wastes memory on machines with single GPU; does not scale to 5 engines
+
+### Option E: Multi-daemon architecture with GPU partitioning
+
+Run separate daemons for each engine, each pinned to a different CUDA device or using `CUDA_VISIBLE_DEVICES` partitioning.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 voicecli nats-serve tts --engine qwen-fast --port 4222 &
+CUDA_VISIBLE_DEVICES=1 voicecli nats-serve tts --engine chatterbox --port 4223 &
+```
+
+- **Pros:** Complete isolation; no eviction logic needed
+- **Cons:** Requires multi-GPU hardware (not available on M₁ or M₂); over-engineered for single-GPU setups; hub routing complexity
+
+## Decision
+
+**Option A: Singleton model cache with LRU eviction** — adapted from the socket daemon pattern.
+
+This provides the best balance:
+- **Low latency:** Repeated requests for the same engine hit the cache (0ms load time)
+- **VRAM safety:** Eviction before load prevents OOM
+- **Backward compatible:** Wraps existing `get_engine()` factory
+- **Unified pattern:** Both socket daemon and NATS satellite use the same cache
+
+**Implementation plan:**
+
+1. Create `ModelRegistry` class in `voicecli/model_registry.py`
+2. Singleton instance at module level
+3. Integrate with `TtsNatsAdapter` via dependency injection or direct import
+4. Heartbeat reports `model_loaded` list (already exists in adapter)
+5. Coordinate eviction with the `max_concurrent=1` Semaphore — eviction happens BEFORE acquiring semaphore for new engine
+
+**Key invariant:** Only ONE engine can be loading/evicting at a time. The existing `max_concurrent=1` + eviction-before-acquire ensures no race conditions.
+
+```python
+# model_registry.py
+class ModelRegistry:
+    def __init__(self, max_cached: int = 2):
+        self._cache: dict[str, TTSEngine] = {}
+        self._order: list[str] = []
+        self._max_cached = max_cached
+        self._lock = threading.Lock()
+
+    def get(self, name: str) -> TTSEngine:
+        with self._lock:
+            if name in self._cache:
+                self._touch(name)
+                return self._cache[name]
+
+            self._ensure_vram(name)
+            engine = _get_registry()[name]()
+            self._cache[name] = engine
+            self._order.append(name)
+            return engine
+
+    def _ensure_vram(self, required: str) -> None:
+        """Evict oldest engines until VRAM is sufficient."""
+        while self._order and not _has_vram(required):
+            oldest = self._order.pop(0)
+            engine = self._cache.pop(oldest)
+            # Clear model refs to allow GC
+            engine._model = None
+            engine._clone_model = None
+            del engine
+            _vram_cleanup()
+
+    def loaded_engines(self) -> list[str]:
+        with self._lock:
+            return list(self._order)
+```
+
+**Integration with NATS adapter:**
+
+```python
+# tts_adapter.py
+from voicecli.model_registry import model_registry
+
+class TtsNatsAdapter:
+    async def _run_synthesis(self, msg, payload, request_id, text, engine):
+        # Get engine from registry (may evict old engine)
+        eng = model_registry.get(engine)
+        self.model_loaded = engine  # for heartbeat
+        # ... rest of synthesis
+```
+
+**Configuration:**
+
+```toml
+# voicecli.toml
+[nats]
+max_cached_engines = 2  # default; RTX 3080 can fit 2 small or 1 large
+```
+
+## Consequences
+
+### Positive
+
+- Repeated requests for the same engine are instant (no reload latency)
+- VRAM exhaustion is prevented proactively by eviction
+- Unifies socket daemon and NATS satellite behavior (both use registry)
+- Heartbeat exposes loaded engines for monitoring
+- Graceful degradation: under memory pressure, evicts least-recently-used
+
+### Negative
+
+- Adds shared mutable state (mitigated by lock)
+- Eviction may cause ~30s latency if a user alternates between 3+ engines rapidly
+- First request for an engine still incurs load time (inherent, not solvable without pre-loading)
+
+### Neutral
+
+- Configuration required for `max_cached_engines` on constrained GPUs
+- Monitoring should alert when eviction frequency is high (indicates need for more VRAM or fewer engines)
+
+## Implementation Notes
+
+### Coordination with STT daemon
+
+The STT daemon (`voicecli stt-serve`) loads a Whisper model (~2.5 GB). On RTX 3080:
+- STT + 1 large TTS engine = ~10 GB (fits tightly)
+- STT + 2 small TTS engines = ~6.5 GB (fits)
+
+The registry should account for STT VRAM usage when deciding to load/evict. Options:
+1. **Conservative:** Assume STT is always running; reserve 3 GB for it
+2. **Dynamic:** Query `nvidia-smi` for actual free VRAM (already done by `check_vram`)
+
+Current `check_vram()` uses `torch.cuda.mem_get_info()` which reports actual free memory, so it naturally accounts for STT daemon usage.
+
+### Unload semantics
+
+Engine instances hold references to PyTorch models. Simply `del engine` does not immediately free VRAM. Required cleanup:
+
+1. Set `engine._model = None` and `engine._clone_model = None`
+2. `del engine` to drop the reference
+3. `gc.collect()` to trigger Python finalizers
+4. `torch.cuda.empty_cache()` to return memory to CUDA allocator
+
+This is already implemented in `daemon._vram_cleanup()` and will be reused.
+
+### Future: Pre-loading
+
+If latency on first request is unacceptable, the registry could support pre-loading:
+
+```python
+# At daemon startup
+model_registry.warmup(["qwen-fast", "chatterbox"])
+```
+
+This would load multiple engines at startup (if VRAM permits) rather than on first request.
