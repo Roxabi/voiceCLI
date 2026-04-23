@@ -5,6 +5,7 @@ Tests for load_nats_config and load_tts_config default values and clamping.
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -115,3 +116,154 @@ class TestModelRegistryCore:
 
         # Assert
         assert registry.loaded_engines() == ["mock"]
+
+
+class TestModelRegistryVRAM:
+    """Tests for VRAM-aware eviction."""
+
+    def test_evict_removes_engine_from_cache(self):
+        """evict() removes specified engine from cache."""
+        # Arrange
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+        mock_engine = MagicMock()
+
+        with patch("voicecli.engine._get_registry") as mock_reg:
+            mock_reg.return_value = {"mock": lambda: mock_engine}
+            registry.get("mock")
+
+        # Act
+        registry.evict("mock")
+
+        # Assert
+        assert registry.loaded_engines() == []
+
+    def test_evict_is_noop_for_uncached_engine(self):
+        """evict() for non-cached engine is safe no-op."""
+        # Arrange
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+        mock_engine = MagicMock()
+
+        with patch("voicecli.engine._get_registry") as mock_reg:
+            mock_reg.return_value = {"mock": lambda: mock_engine}
+            registry.get("mock")
+
+        # Act - should not raise
+        registry.evict("nonexistent")
+
+        # Assert - mock still cached
+        assert registry.loaded_engines() == ["mock"]
+
+    def test_ensure_vram_raises_when_cache_empty(self):
+        """InsufficientVRAMError raised when cache empty and VRAM insufficient."""
+        # Arrange
+        from voicecli.model_registry import InsufficientVRAMError, ModelRegistry
+
+        registry = ModelRegistry()
+
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram", return_value=False),
+        ):
+            mock_reg.return_value = {}
+
+            # Act + Assert
+            with pytest.raises(InsufficientVRAMError, match="Not enough VRAM"):
+                registry._ensure_vram("qwen")
+
+    def test_ensure_vram_evicts_until_sufficient(self):
+        """_ensure_vram evicts LRU engines until VRAM sufficient."""
+        # Arrange
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+        mock_engine1 = MagicMock()
+        mock_engine2 = MagicMock()
+
+        with (
+            patch("voicecli.engine._get_registry") as mock_reg,
+            patch.object(registry, "_has_vram") as mock_has_vram,
+        ):
+            mock_reg.return_value = {
+                "engine1": lambda: mock_engine1,
+                "engine2": lambda: mock_engine2,
+            }
+            # First get: has VRAM, _ensure_vram for engine2: no VRAM, then yes after eviction
+            mock_has_vram.side_effect = [True, False, True]
+
+            # Load first engine (VRAM available)
+            registry.get("engine1")
+
+            # Act - should evict engine1 before loading engine2
+            registry._ensure_vram("engine2")
+
+        # Assert - cache should be empty (evicted, not yet loaded)
+        assert registry.loaded_engines() == []
+
+
+class TestModelRegistryThreadSafety:
+    """Tests for thread-safe operations."""
+
+    def test_concurrent_get_same_engine_loads_once(self):
+        """Two concurrent get() for same engine load exactly one model."""
+        # Arrange
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+        load_count = 0
+        lock = threading.Lock()
+
+        def make_engine():
+            nonlocal load_count
+            with lock:
+                load_count += 1
+            return MagicMock()
+
+        results = []
+
+        def get_engine():
+            with patch("voicecli.engine._get_registry") as mock_reg:
+                mock_reg.return_value = {"mock": make_engine}
+                results.append(registry.get("mock"))
+
+        # Act - run two threads concurrently
+        t1 = threading.Thread(target=get_engine)
+        t2 = threading.Thread(target=get_engine)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # Assert - engine loaded exactly once
+        assert load_count == 1
+        # Both get same instance
+        assert results[0] is results[1]
+
+    def test_concurrent_get_different_engines(self):
+        """Concurrent get() for different engines both succeed."""
+        # Arrange
+        from voicecli.model_registry import ModelRegistry
+
+        registry = ModelRegistry()
+        results = {}
+
+        def get_engine(name):
+            with patch("voicecli.engine._get_registry") as mock_reg:
+                mock_reg.return_value = {name: MagicMock}
+                results[name] = registry.get(name)
+
+        # Act - run threads concurrently
+        t1 = threading.Thread(target=get_engine, args=("engine1",))
+        t2 = threading.Thread(target=get_engine, args=("engine2",))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # Assert - both engines cached
+        assert "engine1" in results
+        assert "engine2" in results
+        assert set(registry.loaded_engines()) == {"engine1", "engine2"}
