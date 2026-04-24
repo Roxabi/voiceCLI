@@ -5,7 +5,7 @@ ENV UV_VERSION=0.6.17
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv git curl ca-certificates && \
     curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" | \
-    tar -xzf - -C /usr/local/bin uv && \
+    tar -xzf - --strip-components=1 -C /usr/local/bin uv-x86_64-unknown-linux-gnu/uv && \
     rm -rf /var/lib/apt/lists/* && \
     chmod +x /usr/local/bin/uv
 
