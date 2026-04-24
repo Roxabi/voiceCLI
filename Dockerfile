@@ -1,34 +1,60 @@
-FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04
+# syntax=docker/dockerfile:1
+# ── build stage ──────────────────────────────────────────────────────────────
+FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS builder
 
-# Install uv with pinned version (avoid curl | sh supply chain risk)
-ENV UV_VERSION=0.6.17
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+# uv from official OCI artifact (digest-pinned via manifest, no curl|tar)
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /usr/local/bin/
+
+# Build deps: Python + audio build deps + Cython compiler
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-venv git curl ca-certificates && \
-    curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" | \
-    tar -xzf - --strip-components=1 -C /usr/local/bin uv-x86_64-unknown-linux-gnu/uv && \
-    rm -rf /var/lib/apt/lists/* && \
-    chmod +x /usr/local/bin/uv
-
-# Create non-root user with home directory
-RUN useradd -r -m -d /home/appuser -s /bin/bash appuser
+        python3-venv python3-dev \
+        gcc g++ \
+        portaudio19-dev \
+        git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy dependency files first for layer caching
-COPY --chown=appuser:appuser pyproject.toml uv.lock ./
-RUN uv sync --frozen --extra voxtral --extra nats
+# Layer-cache: install deps before copying source
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --extra voxtral --extra nats
 
-# Copy source and set ownership
-COPY --chown=appuser:appuser . .
-
-# Entrypoint
-COPY --chown=appuser:appuser deploy/entrypoint.sh /entrypoint.sh
+# Copy source into venv location (no rebuild of deps)
+COPY src/ ./src/
+COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER appuser
+# ── runtime stage ─────────────────────────────────────────────────────────────
+FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS runtime
+
+# Runtime deps only: portaudio shared lib + TLS roots
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libportaudio2 \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Fixed UID/GID 1501 — distinct from lyra (1500); deterministic on shared hosts
+RUN groupadd -r -g 1501 voicecli && \
+    useradd -r -u 1501 -g voicecli -m -d /home/voicecli -s /bin/bash voicecli
+
+# Copy venv + source from builder
+COPY --from=builder --chown=voicecli:voicecli /app /app
+COPY --from=builder /entrypoint.sh /entrypoint.sh
+
+# Ensure venv binaries are on PATH
+ENV PATH="/app/.venv/bin:$PATH" \
+    VIRTUAL_ENV="/app/.venv" \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+USER voicecli
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD voicecli --version || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tts"]
-
-# Health check — GPU visibility + process check
-HEALTHCHECK CMD nvidia-smi && pgrep -f "voicecli nats-serve" || exit 1
