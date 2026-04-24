@@ -2,19 +2,19 @@
 # ── build stage ──────────────────────────────────────────────────────────────
 FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS builder
 
-ENV UV_VERSION=0.11.7 \
-    UV_LINK_MODE=copy \
+ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Build deps: uv toolchain + Python + audio build deps
+# uv from official OCI artifact (digest-pinned via manifest, no curl|tar)
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /usr/local/bin/
+
+# Build deps: Python + audio build deps + Cython compiler
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-venv python3-dev \
         gcc g++ \
         portaudio19-dev \
-        git curl ca-certificates && \
-    curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" | \
-        tar -xzf - --strip-components=1 -C /usr/local/bin "uv-x86_64-unknown-linux-gnu/uv" && \
+        git ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
