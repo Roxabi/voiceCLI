@@ -3,8 +3,7 @@
 FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS builder
 
 ENV UV_LINK_MODE=copy \
-    UV_COMPILE_BYTECODE=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    UV_COMPILE_BYTECODE=1
 
 # uv from official OCI artifact (digest-pinned via manifest, no curl|tar)
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /usr/local/bin/
@@ -47,7 +46,8 @@ COPY --from=builder /entrypoint.sh /entrypoint.sh
 
 # Ensure venv binaries are on PATH
 ENV PATH="/app/.venv/bin:$PATH" \
-    VIRTUAL_ENV="/app/.venv"
+    VIRTUAL_ENV="/app/.venv" \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
