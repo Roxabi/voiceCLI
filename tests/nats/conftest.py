@@ -11,6 +11,7 @@ single coroutine that awaits the sequential operations instead.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Generator
 
@@ -24,6 +25,23 @@ __all__ = [
     "live_socket_path",
     "stale_socket_path",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _restore_umask() -> Generator[None, None, None]:
+    """Save/restore process umask around each test.
+
+    `test_connect` invokes `nats-serve` via CliRunner, which calls
+    `os.umask(0o077)` in the worker process. That leaks into every subsequent
+    test collected by the same pytest worker — any test that relies on
+    `mkdir(mode=...)` landing at the requested mode breaks silently.
+    """
+    original = os.umask(0o022)
+    os.umask(original)
+    try:
+        yield
+    finally:
+        os.umask(original)
 
 
 @pytest.fixture

@@ -327,9 +327,10 @@ class TestTtsNatsAdapter:
             asyncio.run(adapter.handle(msg, payload))
 
         assert msg.last_reply()["ok"] is True
-        assert observed.get("mode") == 0o600, (
+        assert "mode" in observed, "base64.b64encode was never called — sniff never ran"
+        assert observed["mode"] == 0o600, (
             f"synthesized WAV mode at read_bytes was "
-            f"{oct(observed.get('mode', 0))}, expected 0o600 (issue #60)"
+            f"{oct(observed['mode'])}, expected 0o600 (issue #60)"
         )
 
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:

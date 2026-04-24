@@ -242,7 +242,7 @@ class SttNatsAdapter(NatsAdapterBase):
                 return
 
             out_path.write_bytes(audio_bytes)
-            out_path.chmod(0o600)  # #60: explicit belt-and-suspenders over umask 0o077
+            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
 
             # Fix #1: warm up the model once; distinguish load failures from inference failures.
             # _load_model() handles the mock env-gate short-circuit internally.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from pathlib import Path
 
 TEMP_ROOT = Path("/tmp/voicecli-nats")
@@ -18,6 +19,10 @@ def scoped_path(request_id: str, ext: str) -> Path:
     """
     if "\x00" in request_id:
         raise ValueError(f"escapes temp root: {request_id!r} (null byte)")
+    # issue #60: tighten umask at the abstraction boundary so every nats-serve
+    # subcommand (and any future caller) inherits 0o600 file writes without
+    # having to remember the call. Idempotent.
+    os.umask(0o077)
     TEMP_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Python's mkdir(mode=..., exist_ok=True) only applies mode at creation time;
     # a dir that already exists with looser perms is silently reused. Enforce mode
