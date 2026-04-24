@@ -1,5 +1,7 @@
 [Unit]
 Description=voiceCLI STT NATS worker
+Wants=lyra-nats.service
+After=lyra-nats.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

@@ -332,7 +332,7 @@ voicecli nats-serve stt --model large-v3-turbo        # override STT model
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://nats.internal:4222` |
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://lyra-nats:4222` |
 | `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to NKey seed file — must be `0600` |
 | `NATS_CA_CERT` | — (optional) | PEM CA certificate for TLS verification |
 | `VOICECLI_ENGINE` / `LYRA_TTS_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, …) |
