@@ -13,18 +13,22 @@ Network=voicecli.network
 NoNewPrivileges=true
 ReadOnly=true
 DropCapability=all
+# TODO(phase4): remove PublishPort + retire this NATS container once Lyra's
+# shared NATS on 4222 is live (ADR-055 D2 Option C consolidation path).
 # Per ADR-055 D2 — port 4224 on host during Phase 2 migration window.
 # Continues the coexistence pattern (Lyra Quadlet NATS on 4223, host nats.service on 4222).
-# Phase 4 consolidation: voiceCLI workers and lyra-hub both point to shared NATS on 4222.
 PublishPort=127.0.0.1:4224:4222
-# Shared NATS config from Lyra (ADR-055 D5 — Lyra is the infra SSoT).
-# The config is generic (port + include nkeys/auth.conf + limits); per-project
-# customization lives in auth.conf (delivered via Podman secret below).
-Volume=%h/projects/lyra/deploy/nats/nats-container.conf:/etc/nats/nats.conf:ro,z
+# Per-project snapshot of nats-container.conf (copied from Lyra upstream).
+# Copying (not bind-mounting Lyra's tree) avoids cross-repo runtime coupling
+# and SELinux :z relabel conflicts with Lyra's own NATS container.
+# Re-sync manually if Lyra updates its config: `cp ~/projects/lyra/deploy/nats/nats-container.conf deploy/nats/`.
+Volume=%h/projects/voiceCLI/deploy/nats/nats-container.conf:/etc/nats/nats.conf:ro,z
 # ADR-054 Decision 5: auth.conf (pubkeys only) delivered as Podman secret.
 # Bootstrap: `make quadlet-secrets-install` — see docs/DEPLOYMENT-quadlet.md §Provisioning.
 Secret=voicecli-nats-auth,type=mount,target=/etc/nats/nkeys/auth.conf,mode=0444
-Exec=nats-server -js -c /etc/nats/nats.conf
+# JetStream disabled — voiceCLI workers use request/reply semantics only (no streams/KV).
+# Adding -js would require mounting a writable volume for /data, which ReadOnly=true forbids.
+Exec=nats-server -c /etc/nats/nats.conf
 
 [Service]
 Restart=always

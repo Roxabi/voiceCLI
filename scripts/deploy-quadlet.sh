@@ -11,13 +11,20 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 export PATH="$HOME/.local/bin:$PATH"
 source "$HOME/.local/bin/env" 2>/dev/null || true  # uv
+# Fail loudly if uv is missing — non-interactive systemd sessions don't source dotfiles.
+command -v uv >/dev/null 2>&1 || {
+    echo "ERROR: 'uv' not found on PATH. Install it at \$HOME/.local/bin/ or adjust PATH." >&2
+    exit 1
+}
 
 # ── Project variables ─────────────────────────────────────────────────────────
 
 PROJECT="voicecli"
 PROJECT_DIR="$HOME/projects/voiceCLI"
 PROJECT_BRANCH="staging"
-IMAGE="ghcr.io/roxabi/voicecli:latest"
+# ADR-055 D1: locally-built image. deploy-lib.sh's build_image() tags this; the
+# Quadlet units reference the same localhost/voicecli:latest. No registry pull.
+IMAGE="localhost/voicecli:latest"
 DOCKERFILE="Dockerfile"
 # voiceCLI has no hub — NATS is the hub; workers subscribe to the queue group.
 HUB_SERVICE=""

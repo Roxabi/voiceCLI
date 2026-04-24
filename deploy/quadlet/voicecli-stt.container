@@ -6,20 +6,27 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Container]
-Image=ghcr.io/roxabi/voicecli:0.5.0
+# ADR-055 D1: locally-built image. `make quadlet-build` (or deploy-quadlet.sh)
+# builds from this repo's Dockerfile and tags as localhost/voicecli:latest.
+Image=localhost/voicecli:latest
 ContainerName=voicecli-stt
 Network=voicecli.network
 Volume=voicecli-models:/home/appuser/.cache/huggingface
 Volume=voicecli-models:/home/appuser/.cache/voicecli
 Secret=voicecli-nats-stt,type=mount,target=/home/appuser/.config/voicecli/nkeys/seed.seed,mode=0400
 Device=nvidia.com/gpu=all
+# ADR-054 D2: UserNS=keep-id maps container appuser UID to host UID so the
+# mounted nkey seed and model caches are readable. Verify appuser UID in the
+# image matches host UID 1000 — adjust with `keep-id:uid=N,gid=N` if not.
+UserNS=keep-id
 # Intra-network NATS — voicecli-nats.container hostname resolves via voicecli.network.
 # Phase 4: switch to nats://lyra-nats:4222 when consolidating on shared NATS (ADR-055 D2).
 Environment=NATS_URL=nats://voicecli-nats:4222
 HealthCmd=bash -c "nvidia-smi && pgrep -f 'voicecli nats-serve' || exit 1"
 HealthInterval=30s
 NoNewPrivileges=true
-DropCapability=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE
+# Drop everything; GPU/CDI device access is granted via Device= directive above.
+DropCapability=all
 
 [Service]
 Restart=on-failure
