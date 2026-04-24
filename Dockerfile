@@ -1,4 +1,4 @@
-FROM docker.io/nvidia/cuda:12.4-runtime-ubuntu24.04
+FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04
 
 # Install uv with pinned version (avoid curl | sh supply chain risk)
 ENV UV_VERSION=0.6.17
