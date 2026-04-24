@@ -20,7 +20,7 @@ WORKDIR /app
 
 # Layer-cache: install deps before copying source
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --extra voxtral --extra nats
+RUN uv sync --frozen --no-dev --extra nats
 
 # Copy source into venv location (no rebuild of deps)
 COPY src/ ./src/
