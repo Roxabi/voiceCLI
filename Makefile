@@ -7,7 +7,9 @@ HUB_SERVICES   := tts stt
 QUADLET_DIR        ?= $(HOME)/.config/containers/systemd
 VOICECLI_NKEYS_DIR ?= $(HOME)/.voicecli/nkeys
 
-.PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install
+DOCKER_IMAGE ?= localhost/voicecli:test
+
+.PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install docker-build docker-smoke
 
 register:
 	@echo "Registering voiceCLI with supervisor hub..."
@@ -58,3 +60,15 @@ quadlet-secrets-install:  ## (re)create Podman secrets from $(VOICECLI_NKEYS_DIR
 	 podman secret create --replace voicecli-nats-stt  "$(VOICECLI_NKEYS_DIR)/voice-stt.seed"; \
 	 podman secret create --replace voicecli-nats-tts  "$(VOICECLI_NKEYS_DIR)/voice-tts.seed"
 	@echo "Podman secrets installed. Verify: podman secret ls"
+
+docker-build:  ## build runtime image locally as $(DOCKER_IMAGE)
+	podman build -t "$(DOCKER_IMAGE)" .
+
+docker-smoke: docker-build  ## local CI-equivalent smoke: exec, venv python, entrypoint wiring
+	@echo "── 1/3: voicecli --version ──"
+	@podman run --rm --entrypoint= "$(DOCKER_IMAGE)" voicecli --version
+	@echo "── 2/3: venv python resolves ──"
+	@podman run --rm --entrypoint=/bin/sh "$(DOCKER_IMAGE)" -c 'head -1 /app/.venv/bin/voicecli && /app/.venv/bin/python --version'
+	@echo "── 3/3: nats-serve --help (entrypoint codepath, no NATS needed) ──"
+	@podman run --rm --entrypoint= "$(DOCKER_IMAGE)" voicecli nats-serve --help | head -5
+	@echo "✓ smoke passed"
