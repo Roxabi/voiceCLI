@@ -5,7 +5,7 @@ MODE="${1:-tts}"
 
 case "$MODE" in
     tts|stt)
-        exec uv run voicecli nats-serve "$MODE"
+        exec voicecli nats-serve "$MODE"
         ;;
     *)
         echo "Unknown mode: $MODE" >&2
