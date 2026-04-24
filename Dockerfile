@@ -30,8 +30,9 @@ RUN chmod +x /entrypoint.sh
 # ── runtime stage ─────────────────────────────────────────────────────────────
 FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS runtime
 
-# Runtime deps only: portaudio shared lib + TLS roots
+# Runtime deps only: python (venv binaries symlink to /usr/bin/python3) + portaudio shared lib + TLS roots
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
         libportaudio2 \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
