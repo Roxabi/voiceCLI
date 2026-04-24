@@ -155,9 +155,13 @@ class TestTempRootMode:
 
         import voicecli.nats.tempdir as tempdir_mod
 
-        # Arrange — pre-create the sandbox with world-readable perms
+        # Arrange — pre-create the sandbox with world-readable perms. The
+        # explicit chmod after mkdir is required because other tests in this
+        # suite (test_connect invokes nats-serve which sets umask 0o077) can
+        # leave a tightened process umask that would mask mkdir's mode.
         sandbox = tmp_path / "voicecli-nats"
         sandbox.mkdir(mode=0o755)
+        sandbox.chmod(0o755)
         monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", sandbox)
         assert stat.S_IMODE(os.stat(sandbox).st_mode) == 0o755
 

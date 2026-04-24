@@ -1363,6 +1363,11 @@ def nats_serve_tts(
     from voicecli.nats.config import _resolve_engine
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
+    # Synthesized WAVs land in /tmp/voicecli-nats/ (shared /tmp on prod hosts).
+    # Default umask 0o022 produces world-readable 0o644 — tighten so every write
+    # from this process (final WAV, chunk files, concat output) is 0o600.
+    os.umask(0o077)
+
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
 
@@ -1435,6 +1440,10 @@ def nats_serve_stt(
 
     from voicecli.nats.config import _resolve_model
     from voicecli.nats.stt_adapter import SttNatsAdapter
+
+    # Inbound audio lands in /tmp/voicecli-nats/ (shared /tmp on prod hosts).
+    # Tighten umask so written payloads are 0o600 instead of inheriting 0o644.
+    os.umask(0o077)
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.stt")

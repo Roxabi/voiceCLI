@@ -562,6 +562,46 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 17: temp file cleaned up on successful transcription
     # ------------------------------------------------------------------
+    def test_inbound_audio_written_with_mode_0o600(self, tmp_path: Path) -> None:
+        """Issue #60: inbound audio must be 0o600 on disk, not world-readable 0o644.
+
+        Intercepts api.transcribe to stat the temp file at the exact moment
+        _run_transcription hands it to the engine — the finally block cleans it up
+        before handle() returns, so a post-hoc stat would see nothing.
+        """
+        _require_imports()
+        import os
+        import stat as _stat
+
+        request_id = "req-mode-0600"
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id=request_id)
+        temp_file = tmp_path / f"{request_id}.wav"
+
+        observed: dict[str, int] = {}
+
+        def _sniff_transcribe(audio_path, **kwargs):
+            observed["mode"] = _stat.S_IMODE(os.stat(audio_path).st_mode)
+            return _fake_result()
+
+        import voicecli.api as _api  # noqa: F401
+        import voicecli.nats.stt_adapter as _mod
+
+        _mod.api = _api  # type: ignore[attr-defined]
+
+        with patch("voicecli.nats.stt_adapter.api.transcribe", side_effect=_sniff_transcribe):
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        assert msg.last_reply()["ok"] is True
+        assert not temp_file.exists()  # cleanup still works
+        assert observed.get("mode") == 0o600, (
+            f"inbound audio mode at transcribe was "
+            f"{oct(observed.get('mode', 0))}, expected 0o600 (issue #60)"
+        )
+
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
         _require_imports()
         # Arrange

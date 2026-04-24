@@ -274,6 +274,64 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "capacity_exceeded"
 
+    def test_synthesized_wav_written_with_mode_0o600(self, tmp_path: Path) -> None:
+        """Issue #60: synthesized WAV must be 0o600 before read_bytes, not 0o644.
+
+        Intercepts base64.b64encode to snapshot the file mode at the exact moment
+        _run_synthesis reads the finished WAV — the adapter's finally block removes
+        the file before handle() returns, so a post-hoc stat would see nothing.
+        """
+        _require_imports()
+        import base64 as _b64
+        import os
+        import stat as _stat
+
+        request_id = "req-mode-0600"
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id=request_id)
+
+        wav_bytes = (
+            b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
+            b"\x01\x00\x01\x00\x80>\x00\x00\x00}\x00\x00"
+            b"\x02\x00\x10\x00data\x00\x00\x00\x00"
+        )
+        out_path = tmp_path / f"{request_id}.wav"
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            out = Path(kwargs["output"])
+            out.write_bytes(wav_bytes)
+            # Simulate the real umask=0o022 leak — force 0o644 so the chmod in
+            # _run_synthesis is what closes the gap, not test-harness luck.
+            out.chmod(0o644)
+            return None
+
+        observed: dict[str, int] = {}
+        real_b64encode = _b64.b64encode
+
+        def _sniff(buf: bytes) -> bytes:
+            if out_path.exists():
+                observed["mode"] = _stat.S_IMODE(os.stat(out_path).st_mode)
+            return real_b64encode(buf)
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+            patch("voicecli.nats.tts_adapter.base64.b64encode", side_effect=_sniff),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        assert msg.last_reply()["ok"] is True
+        assert observed.get("mode") == 0o600, (
+            f"synthesized WAV mode at read_bytes was "
+            f"{oct(observed.get('mode', 0))}, expected 0o600 (issue #60)"
+        )
+
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
         _require_imports()
         # Arrange

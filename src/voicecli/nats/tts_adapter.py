@@ -341,6 +341,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                 _concat_wav_chunks(chunks, out_path)
                 _cleanup_chunks(out_path, chunks)
 
+            out_path.chmod(0o600)  # #60: explicit belt-and-suspenders over umask 0o077
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
             duration_ms = _wav_duration_ms(out_path)
             waveform_b64 = _wav_waveform_b64(out_path)
