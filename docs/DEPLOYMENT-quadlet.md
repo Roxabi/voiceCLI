@@ -9,65 +9,42 @@ Production deploys voiceCLI as systemd-managed Podman containers per
 [ADR-055 — Quadlet ecosystem conventions](../../lyra/docs/architecture/adr/055-quadlet-ecosystem-conventions.mdx).
 
 voiceCLI is the second project to adopt the pattern (after Lyra); the shared
-deploy library and image-naming convention come from ADR-055 D1 / D5. The
-`nats-container.conf` is snapshotted from Lyra at commit time (not
-bind-mounted live) to avoid cross-repo runtime coupling — re-sync by hand if
-Lyra updates upstream.
+deploy library and image-naming convention come from ADR-055 D1 / D5.
 
 ## Topology
 
 | Unit | Purpose |
 |---|---|
-| `voicecli.network`         | Per-project bridge (ADR-055 D3) — isolates voiceCLI workers until Phase 4 consolidation |
 | `voicecli-models.volume`   | Named volume for HuggingFace + voicecli model caches |
-| `voicecli-nats.container`  | NATS server — port 4224 on host (ADR-055 D2 Phase 2 window). JetStream disabled (request/reply only). |
 | `voicecli-stt.container`   | STT worker — subscribes to `lyra.voice.stt.request` queue group (namespace matches Lyra's ACL matrix) |
 | `voicecli-tts.container`   | TTS worker — subscribes to `lyra.voice.tts.request` queue group |
 
-Workers connect to NATS via `nats://voicecli-nats:4222` over `voicecli.network`.
-The host exposes NATS on `127.0.0.1:4224` so Lyra (during Phase 3 cutover) and
-debug tooling can reach it.
+Workers run on `roxabi.network` (shared with lyra) and connect to the lyra-managed
+NATS server via `NATS_URL=nats://lyra-nats:4222` (no TLS). voiceCLI no longer ships
+its own NATS container — NATS is provided by the `lyra` project
+(`lyra-nats.container` Quadlet unit in that repo).
+
+The retired `voicecli.network` and `voicecli-nats.container` units have been removed.
+The `voicecli-nats-auth` secret is no longer needed.
 
 ## Provisioning
 
-### 1. NATS nkey seeds
+### 1. Ensure lyra-nats is running
+
+voiceCLI workers depend on the shared NATS server managed by the `lyra` project.
+Before starting voiceCLI, confirm it is up:
+
+```bash
+systemctl --user status lyra-nats
+```
+
+If it is not running, start it from the lyra repo first (`systemctl --user start lyra-nats`).
+
+### 2. NATS nkey seeds
 
 Seeds live at `~/.voicecli/nkeys/voice-{stt,tts}.seed` on the host (ADR-055 D4).
 They are created once by Lyra's `gen-nkeys.sh`; relocation from the old
 `~/.lyra/nkeys/` path is covered by the runbook below.
-
-### 2. Build the voicecli-auth.conf
-
-`auth.conf` carries the voice-stt / voice-tts pubkeys for voicecli-nats to
-enforce ACLs. It must live at `~/.voicecli/nkeys/voicecli-auth.conf`
-(user-owned, rootless — matches ADR-055 D4). **Today this file is hand-crafted**
-— a `gen-nkeys.sh` flag to emit the voicecli subset is a tracked follow-up
-(see [lyra#TBD](https://github.com/Roxabi/lyra/issues); update this link when
-the issue is filed).
-
-Until that ships, extract the two voice-* blocks from Lyra's
-`/etc/nats/nkeys/auth.conf` by hand:
-
-```bash
-# Starting point: Lyra's full auth.conf already contains the voice-* pubkeys
-sudo cat /etc/nats/nkeys/auth.conf    # inspect the blocks you want
-
-# Compose the voicecli subset (rootless target)
-mkdir -p ~/.voicecli/nkeys
-cat > ~/.voicecli/nkeys/voicecli-auth.conf <<'EOF'
-authorization {
-  default_permissions: {
-    publish:   { deny: [">"] }
-    subscribe: { deny: [">"] }
-  }
-  users: [
-    { nkey: "U<voice-stt pubkey>", permissions: { subscribe: { allow: ["lyra.voice.stt.request"] }, publish: { allow: ["lyra.voice.stt.heartbeat"] }, allow_responses: true } }
-    { nkey: "U<voice-tts pubkey>", permissions: { subscribe: { allow: ["lyra.voice.tts.request"] }, publish: { allow: ["lyra.voice.tts.heartbeat"] }, allow_responses: true } }
-  ]
-}
-EOF
-chmod 600 ~/.voicecli/nkeys/voicecli-auth.conf
-```
 
 Canonical ACLs are in Lyra's `deploy/nats/acl-matrix.json` under the
 `voice-stt` and `voice-tts` identities.
@@ -76,23 +53,26 @@ Canonical ACLs are in Lyra's `deploy/nats/acl-matrix.json` under the
 
 ```bash
 make quadlet-install
-# copies deploy/quadlet/*.{network,container,volume} → ~/.config/containers/systemd/
+# copies deploy/quadlet/*.{container,volume} → ~/.config/containers/systemd/
 # reloads systemd --user
 ```
 
 ### 4. Podman secrets
 
+Two seed secrets are required (no `voicecli-nats-auth` — that secret was part of
+the retired per-project NATS topology):
+
 ```bash
 make quadlet-secrets-install
-# creates: voicecli-nats-auth, voicecli-nats-stt, voicecli-nats-tts
+# creates: voicecli-nats-stt, voicecli-nats-tts
 # stops services before replace and restarts after (avoids mid-rotation mismatch)
 ```
 
 ### 5. Start services
 
 ```bash
-systemctl --user start voicecli-nats voicecli-stt voicecli-tts
-systemctl --user status voicecli-{nats,stt,tts}
+systemctl --user start voicecli-tts voicecli-stt
+systemctl --user status voicecli-{tts,stt}
 ```
 
 ## Deploy pipeline
@@ -139,24 +119,24 @@ chmod 600 ~/.voicecli/nkeys/*.seed
 
 ## Cutover checklist (supervisord → Quadlet)
 
+- [ ] `systemctl --user status lyra-nats` — lyra-nats is up and healthy
 - [ ] `~/.voicecli/nkeys/voice-{stt,tts}.seed` exists, 0600
-- [ ] `~/.voicecli/nkeys/voicecli-auth.conf` exists, 0600, contains voice-stt + voice-tts blocks
 - [ ] `make quadlet-install` ran without error; units in `~/.config/containers/systemd/`
-- [ ] `make quadlet-secrets-install` ran; `podman secret ls` shows voicecli-nats-{auth,stt,tts}
-- [ ] `systemctl --user start voicecli-nats` succeeds; health probe clean
-- [ ] `systemctl --user start voicecli-stt voicecli-tts` succeeds; containers report `Running`
+- [ ] `make quadlet-secrets-install` ran; `podman secret ls` shows voicecli-nats-{stt,tts}
+- [ ] `systemctl --user start voicecli-tts voicecli-stt` succeeds; containers report `Running`
 - [ ] `UserNS=keep-id` maps voicecli image `appuser` UID → host UID correctly (verify with `podman exec voicecli-stt id`)
 - [ ] End-to-end: Lyra hub publishes a `voice.stt.request`, receives a reply
 - [ ] Disable + remove old supervisord confs: `supervisorctl stop voicecli_stt voicecli_tts && rm supervisor/conf.d/voicecli_{stt,tts}.conf`
 - [ ] Remove voiceCLI from Lyra's `deploy.sh` EXTRA_REPOS once autonomous `voicecli-deploy.timer` is in place
 
-## Phase 4 consolidation (future)
+## Ecosystem note
 
-When Lyra's Quadlet NATS migrates from port 4223 → 4222 and becomes the
-shared bus, voiceCLI workers flip `NATS_URL` from `nats://voicecli-nats:4222`
-→ `nats://lyra-nats:4222` (requires joining `roxabi.network`), and
-`voicecli-nats.container` + `voicecli-nats-auth` secret are retired. The
-voice-stt / voice-tts pubkeys move into Lyra's unified `auth.conf`.
+The big-bang NATS consolidation that produced this topology is documented in the
+sibling Lyra repo:
+[`docs/ops/bigbang-nats-consolidation.md`](https://github.com/Roxabi/lyra/blob/staging/docs/ops/bigbang-nats-consolidation.md).
+
+That runbook covers the full cutover sequence, rollback procedure, and the
+post-cutover cleanup steps for both repos (Lyra #919 / voiceCLI #107).
 
 ## References
 

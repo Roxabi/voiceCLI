@@ -1,7 +1,7 @@
 [Unit]
 Description=voiceCLI TTS NATS worker
-After=voicecli-nats.service
-Requires=voicecli-nats.service
+Wants=lyra-nats.service
+After=lyra-nats.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -9,16 +9,15 @@ StartLimitBurst=5
 # ADR-055 D1: locally-built image (see voicecli-stt.container for rationale).
 Image=localhost/voicecli:latest
 ContainerName=voicecli-tts
-Network=voicecli.network
+Network=roxabi.network
 Volume=voicecli-models:/home/appuser/.cache/huggingface
 Volume=voicecli-models:/home/appuser/.cache/voicecli
 Secret=voicecli-nats-tts,type=mount,target=/home/appuser/.config/voicecli/nkeys/seed.seed,mode=0400
 Device=nvidia.com/gpu=all
 # ADR-054 D2: map appuser to host UID for readable seed/cache mounts.
 UserNS=keep-id
-# Intra-network NATS — voicecli-nats.container hostname resolves via voicecli.network.
-# Phase 4: switch to nats://lyra-nats:4222 when consolidating on shared NATS (ADR-055 D2).
-Environment=NATS_URL=nats://voicecli-nats:4222
+# Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
+Environment=NATS_URL=nats://lyra-nats:4222
 HealthCmd=bash -c "nvidia-smi && pgrep -f 'voicecli nats-serve' || exit 1"
 HealthInterval=30s
 NoNewPrivileges=true

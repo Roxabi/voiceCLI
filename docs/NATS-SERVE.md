@@ -43,7 +43,7 @@ export them in the shell environment before running `voicecli nats-serve`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://nats.internal:4222` |
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://127.0.0.1:4222` |
 | `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to the NKey seed file. **File permissions must be `0600`** — the satellite refuses to start if the file is world- or group-readable. |
 | `NATS_CA_CERT` | — (optional) | Path to a PEM CA certificate for TLS verification |
 | `VOICECLI_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, etc.) |
@@ -135,7 +135,7 @@ command=voicecli nats-serve tts
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts (e.g. RTX 3080 10 GB). Setting it bypasses the VRAM-sequencing guard and
 ; will cause CUDA OOM under concurrent synthesis. See VRAM sequencing section above.
-environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
@@ -182,7 +182,7 @@ The satellite logs its startup sequence to stdout. A healthy start looks like:
 
 ```
 INFO  vram-guard: no live socket daemon detected — proceeding
-INFO  nats: connected to nats://nats.internal:4222
+INFO  nats: connected to nats://127.0.0.1:4222
 INFO  engine: model loaded in 12.3s (qwen-fast)
 INFO  nats-serve: joined queue group tts-workers — ready
 ```
@@ -197,7 +197,7 @@ Use the NATS CLI to publish a test request directly to the TTS subject and obser
 the satellite picks it up:
 
 ```bash
-nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":"qwen-fast"}' --server nats://nats.internal:4222
+nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":"qwen-fast"}' --server nats://127.0.0.1:4222
 ```
 
 If no reply arrives within the timeout, the satellite is either not running, not connected
@@ -372,7 +372,7 @@ Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
 command=voicecli nats-serve stt
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts. Bypasses the VRAM-sequencing guard and risks OOM. See VRAM sequencing above.
-environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
