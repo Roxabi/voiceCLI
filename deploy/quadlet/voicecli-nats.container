@@ -1,0 +1,36 @@
+[Unit]
+Description=voiceCLI NATS server
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Container]
+# Pinned by digest — bump alongside Lyra's nats.container to stay in sync.
+# Matches lyra/deploy/quadlet/nats.container (2.10.29-alpine).
+Image=docker.io/library/nats:2.10.29-alpine@sha256:b83efabe3e7def1e0a4a31ec6e078999bb17c80363f881df35edc70fcb6bb927
+ContainerName=voicecli-nats
+Network=voicecli.network
+# Hardening — defense in depth.
+NoNewPrivileges=true
+ReadOnly=true
+DropCapability=all
+# Per ADR-055 D2 — port 4224 on host during Phase 2 migration window.
+# Continues the coexistence pattern (Lyra Quadlet NATS on 4223, host nats.service on 4222).
+# Phase 4 consolidation: voiceCLI workers and lyra-hub both point to shared NATS on 4222.
+PublishPort=127.0.0.1:4224:4222
+# Shared NATS config from Lyra (ADR-055 D5 — Lyra is the infra SSoT).
+# The config is generic (port + include nkeys/auth.conf + limits); per-project
+# customization lives in auth.conf (delivered via Podman secret below).
+Volume=%h/projects/lyra/deploy/nats/nats-container.conf:/etc/nats/nats.conf:ro,z
+# ADR-054 Decision 5: auth.conf (pubkeys only) delivered as Podman secret.
+# Bootstrap: `make quadlet-secrets-install` — see docs/DEPLOYMENT-quadlet.md §Provisioning.
+Secret=voicecli-nats-auth,type=mount,target=/etc/nats/nkeys/auth.conf,mode=0444
+Exec=nats-server -js -c /etc/nats/nats.conf
+
+[Service]
+Restart=always
+RestartSec=5
+# NATS is lightweight; 1 core is plenty for TTS/STT request volume.
+CPUQuota=100%
+
+[Install]
+WantedBy=default.target

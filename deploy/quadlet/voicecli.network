@@ -1,0 +1,9 @@
+[Unit]
+Description=voiceCLI container bridge network
+
+[Network]
+Driver=bridge
+# Per-project network per ADR-055 D3 (NATS-using projects) — Phase 2 isolation.
+# Phase 4 consolidation: projects migrate to roxabi.network shared with Lyra.
+# No Internal=true — workers need outbound (HuggingFace model pulls on cold start).
+Label=app=voicecli
