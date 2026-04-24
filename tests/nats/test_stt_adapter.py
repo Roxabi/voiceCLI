@@ -562,6 +562,59 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 17: temp file cleaned up on successful transcription
     # ------------------------------------------------------------------
+    def test_inbound_audio_written_with_mode_0o600(self, tmp_path: Path) -> None:
+        """Issue #60: inbound audio must be 0o600 on disk, not world-readable 0o644.
+
+        Intercepts `Path.write_bytes` to widen mode to 0o644 after the adapter's
+        own write, so the assertion proves the adapter's explicit `chmod(0o600)`
+        closes the gap — not that umask happened to already be 0o077.
+        """
+        _require_imports()
+        import os
+        import stat as _stat
+
+        request_id = "req-mode-0600"
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id=request_id)
+        temp_file = tmp_path / f"{request_id}.wav"
+
+        observed: dict[str, int] = {}
+
+        def _sniff_transcribe(audio_path, **kwargs):
+            observed["mode"] = _stat.S_IMODE(os.stat(audio_path).st_mode)
+            return _fake_result()
+
+        import voicecli.api as _api  # noqa: F401
+        import voicecli.nats.stt_adapter as _mod
+
+        _mod.api = _api  # type: ignore[attr-defined]
+
+        original_write_bytes = Path.write_bytes
+
+        def _write_bytes_leak(self: Path, data: bytes) -> int:
+            """Simulate the pre-fix vulnerable state: file lands 0o644 on disk."""
+            result = original_write_bytes(self, data)
+            if self == temp_file:
+                self.chmod(0o644)
+            return result
+
+        with (
+            patch("voicecli.nats.stt_adapter.api.transcribe", side_effect=_sniff_transcribe),
+            patch.object(Path, "write_bytes", _write_bytes_leak),
+            _patch_scoped_path(tmp_path),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        assert msg.last_reply()["ok"] is True
+        assert not temp_file.exists()  # cleanup still works
+        assert "mode" in observed, "api.transcribe was never called — sniff never ran"
+        assert observed["mode"] == 0o600, (
+            f"inbound audio mode at transcribe was "
+            f"{oct(observed['mode'])}, expected 0o600 (issue #60)"
+        )
+
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
         _require_imports()
         # Arrange

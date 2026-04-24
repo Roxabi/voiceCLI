@@ -338,9 +338,14 @@ class TtsNatsAdapter(NatsAdapterBase):
             # Detect and concatenate chunks into out_path before encoding.
             chunks = _collect_chunked_output(out_path)
             if chunks:
+                # issue #60: explicitly tighten each chunk before it is read or
+                # deleted, so chunk confidentiality does not rely solely on umask.
+                for c in chunks:
+                    c.chmod(0o600)
                 _concat_wav_chunks(chunks, out_path)
                 _cleanup_chunks(out_path, chunks)
 
+            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
             duration_ms = _wav_duration_ms(out_path)
             waveform_b64 = _wav_waveform_b64(out_path)
