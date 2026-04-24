@@ -55,11 +55,13 @@ quadlet-install:  ## install Quadlet units to $(QUADLET_DIR) + reload
 quadlet-secrets-install:  ## (re)create Podman secrets from $(VOICECLI_NKEYS_DIR) + $(NATS_AUTH_CONF)
 	@test -d "$(VOICECLI_NKEYS_DIR)" || { echo "ERROR: $(VOICECLI_NKEYS_DIR) not found. Run the seed-relocation runbook first (docs/DEPLOYMENT-quadlet.md)."; exit 1; }
 	@test -f "$(NATS_AUTH_CONF)"     || { echo "ERROR: $(NATS_AUTH_CONF) not found. See docs/DEPLOYMENT-quadlet.md §Provisioning."; exit 1; }
-	@# Stop services so mid-rotation restart doesn't mount mixed auth.conf/seed state.
-	@systemctl --user stop voicecli-nats voicecli-stt voicecli-tts 2>/dev/null || true
-	@podman secret create --replace voicecli-nats-auth "$(NATS_AUTH_CONF)"
-	@podman secret create --replace voicecli-nats-stt  "$(VOICECLI_NKEYS_DIR)/voice-stt.seed"
-	@podman secret create --replace voicecli-nats-tts  "$(VOICECLI_NKEYS_DIR)/voice-tts.seed"
-	@systemctl --user start voicecli-nats voicecli-stt voicecli-tts 2>/dev/null || \
-	  echo "Note: services not auto-restarted (not yet enabled). Start manually: systemctl --user start voicecli-nats voicecli-stt voicecli-tts"
+	@# Single shell block with EXIT trap — always attempts restart, even on failure.
+	@# Prevents services being left stopped with a partial secret rotation.
+	@set -e; \
+	 SVCS="voicecli-nats voicecli-stt voicecli-tts"; \
+	 trap 'systemctl --user start $$SVCS 2>/dev/null || echo "WARNING: services not restarted automatically. Start manually: systemctl --user start $$SVCS"' EXIT; \
+	 systemctl --user stop $$SVCS 2>/dev/null || true; \
+	 podman secret create --replace voicecli-nats-auth "$(NATS_AUTH_CONF)"; \
+	 podman secret create --replace voicecli-nats-stt  "$(VOICECLI_NKEYS_DIR)/voice-stt.seed"; \
+	 podman secret create --replace voicecli-nats-tts  "$(VOICECLI_NKEYS_DIR)/voice-tts.seed"
 	@echo "Podman secrets installed. Verify: podman secret ls"

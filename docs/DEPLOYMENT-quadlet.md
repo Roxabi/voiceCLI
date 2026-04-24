@@ -21,8 +21,8 @@ Lyra updates upstream.
 | `voicecli.network`         | Per-project bridge (ADR-055 D3) — isolates voiceCLI workers until Phase 4 consolidation |
 | `voicecli-models.volume`   | Named volume for HuggingFace + voicecli model caches |
 | `voicecli-nats.container`  | NATS server — port 4224 on host (ADR-055 D2 Phase 2 window). JetStream disabled (request/reply only). |
-| `voicecli-stt.container`   | STT worker — subscribes to `voice.stt.request` queue group |
-| `voicecli-tts.container`   | TTS worker — subscribes to `voice.tts.request` queue group |
+| `voicecli-stt.container`   | STT worker — subscribes to `lyra.voice.stt.request` queue group (namespace matches Lyra's ACL matrix) |
+| `voicecli-tts.container`   | TTS worker — subscribes to `lyra.voice.tts.request` queue group |
 
 Workers connect to NATS via `nats://voicecli-nats:4222` over `voicecli.network`.
 The host exposes NATS on `127.0.0.1:4224` so Lyra (during Phase 3 cutover) and
