@@ -6,18 +6,14 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Container]
-# ADR-055 D1: locally-built image. `make quadlet-build` (or deploy-quadlet.sh)
-# builds from this repo's Dockerfile and tags as localhost/voicecli:latest.
-Image=localhost/voicecli:latest
+Image=ghcr.io/roxabi/voicecli:staging
 ContainerName=voicecli-stt
 Network=roxabi.network
-Volume=voicecli-models:/home/appuser/.cache/huggingface
-Volume=voicecli-models:/home/appuser/.cache/voicecli
-Secret=voicecli-nats-stt,type=mount,target=/home/appuser/.config/voicecli/nkeys/seed.seed,mode=0400
+Volume=voicecli-models:/home/voicecli/.cache/huggingface
+Volume=voicecli-models:/home/voicecli/.cache/voicecli
+Secret=voicecli-nats-stt,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400
 Device=nvidia.com/gpu=all
-# ADR-054 D2: UserNS=keep-id maps container appuser UID to host UID so the
-# mounted nkey seed and model caches are readable. Verify appuser UID in the
-# image matches host UID 1000 — adjust with `keep-id:uid=N,gid=N` if not.
+# UID 1501 fixed in image; keep-id maps voicecli user to host UID for readable mounts.
 UserNS=keep-id
 # Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
 Environment=NATS_URL=nats://lyra-nats:4222
