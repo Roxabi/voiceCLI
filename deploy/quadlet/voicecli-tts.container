@@ -11,12 +11,13 @@ ContainerName=voicecli-tts
 Network=roxabi.network
 Volume=voicecli-models:/home/voicecli/.cache/huggingface
 Volume=voicecli-models:/home/voicecli/.cache/voicecli
-Secret=voicecli-nats-tts,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400
+Secret=voicecli-nats-tts,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400,uid=1501,gid=1501
 Device=nvidia.com/gpu=all
 # UID 1501 fixed in image; anchor mapping so secret mount (uid=1501) is readable inside.
 UserNS=keep-id:uid=1501,gid=1501
 # Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
 Environment=NATS_URL=nats://lyra-nats:4222
+Environment=NATS_NKEY_SEED_PATH=/home/voicecli/.config/voicecli/nkeys/seed.seed
 HealthCmd=bash -c "nvidia-smi && pgrep -f 'voicecli nats-serve' || exit 1"
 HealthInterval=30s
 NoNewPrivileges=true
