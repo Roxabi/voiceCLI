@@ -13,7 +13,7 @@ Volume=voicecli-models:/home/voicecli/.cache/huggingface
 Volume=voicecli-models:/home/voicecli/.cache/voicecli
 Exec=stt
 Secret=voicecli-nats-stt,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400,uid=1501,gid=1501
-Device=nvidia.com/gpu=all
+AddDevice=nvidia.com/gpu=all
 # UID 1501 fixed in image; anchor mapping so secret mount (uid=1501) is readable inside.
 UserNS=keep-id:uid=1501,gid=1501
 # Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
@@ -22,7 +22,7 @@ Environment=NATS_NKEY_SEED_PATH=/home/voicecli/.config/voicecli/nkeys/seed.seed
 HealthCmd=bash -c "nvidia-smi && pgrep -f 'voicecli nats-serve' || exit 1"
 HealthInterval=30s
 NoNewPrivileges=true
-# Drop everything; GPU/CDI device access is granted via Device= directive above.
+# Drop everything; GPU/CDI device access is granted via AddDevice= directive above.
 DropCapability=all
 
 [Service]
