@@ -20,18 +20,39 @@ WORKDIR /app
 # (they live in /usr/local/lib/python3.12/dist-packages, not the venv).
 RUN uv venv --system-site-packages /app/.venv
 
+# Packages already present in ml-base's system site-packages — skip to avoid
+# duplicating ~5 GB of NVIDIA CUDA libs and triton in the venv.
+# Shell variable used (not ARG/ENV) so word-splitting works correctly in RUN.
+RUN UV_SKIP="--no-install-package torch \
+    --no-install-package torchaudio \
+    --no-install-package triton \
+    --no-install-package nvidia-cublas-cu12 \
+    --no-install-package nvidia-cuda-cupti-cu12 \
+    --no-install-package nvidia-cuda-nvrtc-cu12 \
+    --no-install-package nvidia-cuda-runtime-cu12 \
+    --no-install-package nvidia-cudnn-cu12 \
+    --no-install-package nvidia-cufft-cu12 \
+    --no-install-package nvidia-cufile-cu12 \
+    --no-install-package nvidia-curand-cu12 \
+    --no-install-package nvidia-cusolver-cu12 \
+    --no-install-package nvidia-cusparse-cu12 \
+    --no-install-package nvidia-cusparselt-cu12 \
+    --no-install-package nvidia-nccl-cu12 \
+    --no-install-package nvidia-nvjitlink-cu12 \
+    --no-install-package nvidia-nvtx-cu12 \
+    --no-install-package nvidia-nvshmem-cu12" && \
+    echo "$UV_SKIP" > /uv-skip-flags
+
 # Layer-cache: install deps without project first (deps don't change when src does).
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project \
-        --no-install-package torch \
-        --no-install-package torchaudio \
+        $(cat /uv-skip-flags) \
         --extra tts --extra stt --extra nats
 
 # Now copy source and install the project itself.
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev \
-        --no-install-package torch \
-        --no-install-package torchaudio \
+        $(cat /uv-skip-flags) \
         --extra tts --extra stt --extra nats
 
 COPY deploy/entrypoint.sh /entrypoint.sh
