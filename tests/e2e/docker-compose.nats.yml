@@ -9,6 +9,9 @@ services:
 
   voicecli-tts:
     image: ghcr.io/roxabi/voicecli-mock:staging
+    # Run as host uid so the bind-mounted nkey seed (0o600 on host) is readable.
+    # roxabi_nats enforces 0o600/0o400, so chmod 0o644 is rejected.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     depends_on: [nats]
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
@@ -20,6 +23,7 @@ services:
 
   voicecli-stt:
     image: ghcr.io/roxabi/voicecli-mock:staging
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     depends_on: [nats]
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"

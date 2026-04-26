@@ -76,6 +76,9 @@ def compose_stack(nkey_seed: tuple[Path, str], nats_conf: Path):
         "REPO_ROOT": str(REPO_ROOT),
         "SEED_PATH": str(seed_path),
         "NATS_CONF_PATH": str(nats_conf),
+        # Pass host uid/gid so containers can read the 0o600 seed bind-mount.
+        "HOST_UID": str(os.getuid()),
+        "HOST_GID": str(os.getgid()),
     }
 
     up = subprocess.run(
