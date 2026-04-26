@@ -1,17 +1,13 @@
 # syntax=docker/dockerfile:1
 # ── build stage ──────────────────────────────────────────────────────────────
-FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS builder
+ARG ML_BASE_TAG=cu128-py312-torch2.7.1
+FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS builder
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
 
-# uv from official OCI artifact (digest-pinned via manifest, no curl|tar)
-COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /usr/local/bin/
-
-# Build deps: Python + audio build deps + Cython compiler
+# Build deps: audio build deps only — ml-base already supplies python3.12 + uv + toolchain
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3-venv python3-dev \
-        gcc g++ \
         portaudio19-dev \
         git ca-certificates && \
     rm -rf /var/lib/apt/lists/*
@@ -20,7 +16,10 @@ WORKDIR /app
 
 # Layer-cache: install deps before copying source
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --extra nats
+RUN uv sync --frozen --no-dev \
+        --no-install-package torch \
+        --no-install-package torchaudio \
+        --extra tts --extra stt --extra nats
 
 # Copy source into venv location (no rebuild of deps)
 COPY src/ ./src/
@@ -28,10 +27,11 @@ COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # ── runtime stage ─────────────────────────────────────────────────────────────
-FROM docker.io/nvidia/cuda:12.5.1-runtime-ubuntu24.04 AS runtime
+FROM docker.io/nvidia/cuda:12.8.1-cudnn9-runtime-ubuntu24.04 AS runtime
 
-# Runtime deps only: portaudio shared lib + TLS roots
+# Runtime deps: python3 (ubuntu24.04 default is 3.12) + portaudio shared lib + TLS roots
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
         libportaudio2 \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
