@@ -25,6 +25,9 @@ DropCapability=all
 [Service]
 Restart=on-failure
 RestartSec=10
+# Exits 3 (drain timeout) and 78 (VRAM-sequencing guard) are intentional —
+# do not restart-loop on them. Mirrors supervisord's `exitcodes=0,3,78`.
+RestartForceExitStatus=3 78
 
 [Install]
 WantedBy=default.target
