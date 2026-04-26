@@ -65,6 +65,25 @@ def resolve_language(language: str) -> str:
     return "en"
 
 
+# Reverse map: ISO 639-1 code → canonical full language name (e.g. 'fr' → 'french')
+_ISO_TO_FULL: dict[str, str] = {
+    code: name for name, code in LANG_MAP.items() if name != "français"
+}
+
+
+def to_full_language_name(language: str) -> str:
+    """Normalize a language string to a full name (e.g. 'fr' → 'french', 'French' → 'french').
+
+    Required by engines (e.g. Qwen3 TTS) that reject ISO codes.
+    """
+    lang = language.lower().strip()
+    if lang in LANG_MAP:
+        return lang
+    if lang in _ISO_TO_FULL:
+        return _ISO_TO_FULL[lang]
+    return language
+
+
 def default_output_path(
     prefix: str = "voicecli",
     fmt: str = "wav",
