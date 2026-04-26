@@ -81,8 +81,10 @@ def compose_stack(nkey_seed: tuple[Path, str], nats_conf: Path):
         "HOST_GID": str(os.getgid()),
     }
 
+    # -p e2e: pin project name so CI teardown (`docker compose -p e2e ...`)
+    # targets the same stack the fixture brought up.
     up = subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d"],
+        ["docker", "compose", "-p", "e2e", "-f", str(COMPOSE_FILE), "up", "-d"],
         env=env,
         capture_output=True,
         text=True,
@@ -95,7 +97,7 @@ def compose_stack(nkey_seed: tuple[Path, str], nats_conf: Path):
         yield env
     finally:
         subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE_FILE), "down", "-v"],
+            ["docker", "compose", "-p", "e2e", "-f", str(COMPOSE_FILE), "down", "-v"],
             env=env,
             capture_output=True,
             text=True,
