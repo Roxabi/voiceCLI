@@ -21,6 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("torch", reason="torch is opt-in via [stt]/[tts]/[all] extras")
+
 
 # ---------------------------------------------------------------------------
 # Helpers

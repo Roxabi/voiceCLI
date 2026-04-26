@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("torch", reason="torch is opt-in via [stt]/[tts]/[all] extras")
+
 
 class TestVramCleanup:
     def test_calls_gc_collect(self):
