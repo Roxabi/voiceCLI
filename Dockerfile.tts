@@ -87,8 +87,6 @@ WORKDIR /app
 
 USER voicecli
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD voicecli --version || exit 1
-
+# Healthcheck delegated to deployment layer (Quadlet HealthCmd or orchestrator probe)
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tts"]

@@ -21,13 +21,6 @@ jobs:
       dockerfile_path: Dockerfile.stt
       release_please_component: voicecli
 
-  publish-all:
-    uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
-    with:
-      image_name: ghcr.io/roxabi/voicecli
-      dockerfile_path: Dockerfile.all
-      release_please_component: voicecli
-
   publish-mock:
     uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
     with:

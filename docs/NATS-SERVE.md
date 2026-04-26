@@ -548,13 +548,14 @@ restart throttling.
 
 ### Image registry
 
-Three production images are published from this repo:
+Two production images are published from this repo:
 
 | Image | Contents | Use Case |
 |---|---|---|
-| `ghcr.io/roxabi/voicecli-tts:staging` | TTS engines (qwen, chatterbox) + NATS | TTS satellite only |
-| `ghcr.io/roxabi/voicecli-stt:staging` | STT engine (faster-whisper) + NATS | STT satellite only |
-| `ghcr.io/roxabi/voicecli:staging` | All engines (TTS + STT) + NATS | Both on same host |
+| `ghcr.io/roxabi/voicecli-tts:staging` | TTS engines (qwen, chatterbox) + NATS | TTS satellite |
+| `ghcr.io/roxabi/voicecli-stt:staging` | STT engine (faster-whisper) + NATS | STT satellite |
+
+To run both TTS and STT on the same host, deploy two containers (one for each).
 
 The Quadlet units reference the dedicated images:
 - `voicecli-tts.container` → `ghcr.io/roxabi/voicecli-tts:staging`
