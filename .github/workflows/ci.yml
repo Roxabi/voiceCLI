@@ -21,7 +21,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y portaudio19-dev libcairo2-dev libgirepository-2.0-dev gir1.2-gtk-3.0
       - name: Install dependencies
-        run: uv sync --dev --extra nats
+        # --extra all pulls torch/transformers/faster_whisper so pyright resolves
+        # imports gated behind opt-in extras (post-#116 ml-base migration).
+        run: uv sync --dev --extra all
       - name: Lint
         run: uv run ruff check .
       - name: Format check
@@ -56,6 +58,11 @@ jobs:
             echo "::error::seed-shaped file committed under tests/e2e/"
             exit 1
           fi
+      - name: Build voicecli-mock image (PR-local)
+        # publish.yml only pushes to ghcr on staging push, so PR builds must
+        # build the mock image locally and tag it as the staging ref the
+        # compose file expects.
+        run: docker build -f Dockerfile.mock -t ghcr.io/roxabi/voicecli-mock:staging .
       - name: Run E2E tests
         run: pytest tests/e2e/ -v
       - name: Dump compose logs on failure
