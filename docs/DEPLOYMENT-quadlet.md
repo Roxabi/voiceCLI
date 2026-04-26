@@ -86,7 +86,7 @@ systemctl --user is-active podman-auto-update.timer  # verify timer is active
 podman auto-update --dry-run                          # check pending updates
 ```
 
-Containers with `Label=io.containers.autoupdate=registry` pull new digests from `ghcr.io/roxabi/voicecli:staging` and restart automatically. No manual intervention after a staging merge.
+Containers with `Label=io.containers.autoupdate=registry` pull new digests from `ghcr.io/roxabi/voicecli-tts:staging` and `ghcr.io/roxabi/voicecli-stt:staging` and restart automatically. No manual intervention after a staging merge.
 
 See [Lyra's container-publishing.md](../../lyra/docs/ops/container-publishing.md#auto-update-flow) for full details.
 

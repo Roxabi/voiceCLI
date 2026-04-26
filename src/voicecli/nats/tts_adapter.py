@@ -210,6 +210,21 @@ class TtsNatsAdapter(NatsAdapterBase):
     def _extra_subjects(self) -> list[str]:
         return [f"{self.subject}.{self._worker_id}"]
 
+    async def run(self, nats_url: str, stop: asyncio.Event | None = None) -> None:
+        asyncio.create_task(self._prewarm())
+        await super().run(nats_url, stop)
+
+    async def _prewarm(self) -> None:
+        loop = asyncio.get_running_loop()
+        log.info("TTS pre-warm: loading engine=%s", self.default_engine)
+        try:
+            from voicecli.model_registry import model_registry
+
+            await loop.run_in_executor(self._executor, model_registry.get, self.default_engine)
+            log.info("TTS pre-warm complete: engine=%s loaded", self.default_engine)
+        except Exception:
+            log.warning("TTS pre-warm failed — first request will trigger cold load", exc_info=True)
+
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
