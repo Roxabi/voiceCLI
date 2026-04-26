@@ -6,32 +6,45 @@ FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS builder
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
 
-# Build deps: audio build deps only — ml-base already supplies python3.12 + uv + toolchain
+# Build deps: ml-base supplies python3.12 + uv + torch but no C toolchain.
+# pyaudio + nkeys + sox build wheels from source → need gcc + python headers.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ python3-dev \
         portaudio19-dev \
         git ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Layer-cache: install deps before copying source
-COPY pyproject.toml uv.lock ./
+# Use system-site-packages so the venv inherits torch + flash-attn from ml-base
+# (they live in /usr/local/lib/python3.12/dist-packages, not the venv).
+RUN uv venv --system-site-packages /app/.venv
+
+# Layer-cache: install deps without project first (deps don't change when src does).
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project \
+        --no-install-package torch \
+        --no-install-package torchaudio \
+        --extra tts --extra stt --extra nats
+
+# Now copy source and install the project itself.
+COPY src/ ./src/
 RUN uv sync --frozen --no-dev \
         --no-install-package torch \
         --no-install-package torchaudio \
         --extra tts --extra stt --extra nats
 
-# Copy source into venv location (no rebuild of deps)
-COPY src/ ./src/
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # ── runtime stage ─────────────────────────────────────────────────────────────
-FROM docker.io/nvidia/cuda:12.8.1-cudnn9-runtime-ubuntu24.04 AS runtime
+# Use ml-base as runtime base — it ships torch + flash-attn + python that the
+# venv inherits via --system-site-packages. Multi-stage still buys us no leak
+# of gcc/g++/python3-dev/portaudio19-dev/git into prod (those are builder-only).
+FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS runtime
 
-# Runtime deps: python3 (ubuntu24.04 default is 3.12) + portaudio shared lib + TLS roots
+# Runtime deps: portaudio shared lib for pyaudio + TLS roots.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 \
         libportaudio2 \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
