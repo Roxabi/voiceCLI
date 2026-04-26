@@ -3,6 +3,27 @@ title: Configuration
 description: voicecli.toml reference and configuration resolution
 ---
 
+## Install Profiles
+
+ML libraries (torch, torchaudio) are optional extras — choose the profile that
+matches your use case. `uv sync` with no extras installs only the CLI core.
+
+| Profile | Command | What is installed |
+|---------|---------|-------------------|
+| **TTS dev** | `uv sync --extra tts` | Qwen3-TTS, faster-qwen3-tts, Chatterbox, torch, torchaudio |
+| **STT dev** | `uv sync --extra stt` | Faster Whisper, torch, torchaudio |
+| **Mock E2E / NATS satellite** | `uv sync --extra nats` | roxabi-nats, nats-py, nkeys, nvidia-ml-py (no torch) |
+| **Full** | `uv sync --extra all` | Everything above combined (`tts + stt + nats`) |
+| **Voxtral** | `uv sync --extra voxtral` | voxtral-tts (int4), scipy |
+| **Hotkey** | `uv sync --extra hotkey` | pynput |
+| **Overlay** | `uv sync --extra overlay` | PyGObject, pycairo |
+
+**Docker image:** the `ghcr.io/roxabi/ml-base` base image ships torch and
+torchaudio prebuilt for CUDA 12.8. The Dockerfile installs voicecli with
+`--no-install-package torch torchaudio` so the pre-built wheels are used
+instead of pulling from PyPI. Editable installs outside Docker resolve torch
+via the `pytorch-cu128` index already declared in `pyproject.toml`.
+
 ## Config File
 
 voiceCLI uses `voicecli.toml` (gitignored). Copy from `voicecli.example.toml` and customize.

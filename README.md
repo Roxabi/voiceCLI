@@ -36,10 +36,30 @@ flowchart LR
 
 ## Install
 
+> **Breaking change in v0.3:** `uv sync` alone no longer installs any engine. Choose an extra
+> that matches your use case — torch and ML libraries are now opt-in.
+
 ```bash
 git clone <repo-url> && cd voiceCLI
-uv sync
+
+# Full install — TTS + STT + NATS satellite
+uv sync --extra all
+
+# TTS only (Qwen3, Chatterbox, torch)
+uv sync --extra tts
+
+# STT only (Faster Whisper, torch)
+uv sync --extra stt
+
+# Mock E2E / NATS satellite only (no heavy ML deps)
+uv sync --extra nats
 ```
+
+**Docker users:** torch and torchaudio are preinstalled in the base image
+(`ghcr.io/roxabi/ml-base`), so the container build skips them. For editable
+installs outside Docker, `uv` resolves torch automatically from the
+`pytorch-cu128` index already declared in `pyproject.toml` — no extra index
+configuration needed.
 
 ## Quick Start
 
