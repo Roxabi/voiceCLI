@@ -13,6 +13,12 @@ engine = "qwen"
 # chunked = false
 # chunk_size = 500
 
+# ── NATS satellite settings ───────────────────────────────────────────────────
+# [nats]
+# max_cached_engines = 2   # engines to keep hot (LRU cache). Default: 2.
+#                          # Per-request engine switching is supported — the satellite
+#                          # hot-swaps engines via LRU eviction with VRAM awareness.
+
 # ── Voxtral-specific defaults (also settable via --flow-steps / --cfg-alpha) ──
 # flow_steps = 8               # ODE solver steps (3=fast, 8=quality)  [Voxtral]
 # cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)  [Voxtral]

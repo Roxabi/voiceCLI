@@ -215,7 +215,7 @@ ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-c
 | `contract_version` | string | Defensive read — logged at WARN once per worker if ≠ `"1"`, request still processed. Outgoing replies always stamp `"1"`. |
 | `request_id` | string | Required. Rejected with `malformed_request` if missing or not matching `^[A-Za-z0-9_-]{1,128}$`. Echoed in every reply. |
 | `text` | string | Required. Rejected with `malformed_request` if missing, empty, or not a string. Forwarded as the first positional arg of `api.generate`. |
-| `engine` | string | Optional; falls back to `default_engine` from satellite startup. Validated via `validate_nats_token`; unknown engine → `engine_unavailable`. |
+| `engine` | string | Optional; falls back to `default_engine` from satellite startup. **Per-request switching supported** — the satellite hot-swaps engines via LRU cache (see [Engine hot-swapping](#engine-hot-swapping)). Validated via `validate_nats_token`; unknown engine → `engine_unavailable`. |
 | `language` | string | Forwarded to `api.generate(language=…)`. |
 | `voice` | string | Forwarded to `api.generate(voice=…)`. |
 | `speed` | float | Forwarded through `**kwargs`; `translate.py` strips for engines that do not consume it. |
@@ -242,6 +242,78 @@ ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-c
 | `duration_ms` | Computed from the WAV header; `0` if unreadable. |
 | `waveform_b64` | Optional. 256-byte amplitude array (base64), computed from the generated WAV for Discord voice-message rendering. Omitted when the WAV is unreadable or the sample width is unsupported. |
 | `error` | Error code on failure (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `synthesis_failed`). |
+
+---
+
+## Engine hot-swapping
+
+The TTS satellite supports **per-request engine switching** — a single satellite can serve
+requests for `qwen`, `qwen-fast`, `chatterbox`, `chatterbox-turbo`, and `voxtral` interchangeably.
+The `model_registry` module manages an LRU cache with VRAM-aware eviction.
+
+### How it works
+
+1. Request arrives with `engine` field (or falls back to `default_engine`)
+2. `model_registry.get(engine)` checks the LRU cache
+3. **Cache hit** → returns cached engine (fast, no VRAM change)
+4. **Cache miss** → loads engine, evicts LRU if cache full, checks VRAM before load
+5. If VRAM insufficient even after full eviction → returns `engine_unavailable`
+
+### Configuration
+
+In `voicecli.toml`:
+
+```toml
+[nats]
+max_cached_engines = 2  # keep N engines hot (default: 2)
+```
+
+Higher values keep more engines hot but require more VRAM. On a 10 GB GPU, 2 engines
+is the practical limit (qwen-fast ~3.5 GB + chatterbox ~1.8 GB = ~5.3 GB steady-state).
+
+### Heartbeat visibility
+
+The satellite reports loaded engines in each heartbeat:
+
+```json
+{
+  "model_loaded": ["qwen-fast", "chatterbox"],
+  "vram_free_mb": 4200,
+  "vram_status": "ok"
+}
+```
+
+### VRAM eviction behavior
+
+When a new engine is requested and VRAM is constrained:
+
+| Condition | Action |
+|-----------|--------|
+| Cache has room | Load engine, add to cache |
+| Cache full, VRAM OK | Evict LRU engine, load new one |
+| Cache full, VRAM constrained | Evict LRU, check VRAM, repeat until space |
+| All evicted, still insufficient | Return `engine_unavailable` |
+
+The heartbeat `vram_status` field reflects current state:
+- `"ok"` — >4 GB free
+- `"constrained"` — 1–4 GB free
+- `"critical"` — <1 GB free
+
+### Example: multi-engine request flow
+
+```bash
+# Request 1: qwen-fast (loads into cache, ~30s cold start)
+nats req lyra.voice.tts.request '{"request_id":"1","text":"hello","engine":"qwen-fast"}'
+
+# Request 2: chatterbox (loads into cache, qwen-fast stays hot)
+nats req lyra.voice.tts.request '{"request_id":"2","text":"hello","engine":"chatterbox"}'
+
+# Request 3: qwen-fast (cache hit, instant)
+nats req lyra.voice.tts.request '{"request_id":"3","text":"hello","engine":"qwen-fast"}'
+
+# Request 4: voxtral (evicts LRU — chatterbox if qwen-fast was touched more recently)
+nats req lyra.voice.tts.request '{"request_id":"4","text":"hello","engine":"voxtral"}'
+```
 
 ---
 

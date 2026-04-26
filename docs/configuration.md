@@ -87,3 +87,25 @@ default_mode = "default"          # Starting mode on daemon launch
 | `default_mode` | `"default"` | Initial STT mode; cycle with `Alt+Shift+Tab` |
 
 Requires daemon restart after changes. See [dictation-setup.md](./dictation-setup.md) for the full WSL2 setup.
+
+## NATS Satellite Config (`[nats]`)
+
+For distributed TTS/STT deployment via NATS. The satellite supports **per-request engine switching** — one satellite can serve multiple engines via LRU cache with VRAM-aware eviction.
+
+```toml
+[nats]
+max_cached_engines = 2   # engines to keep hot (LRU cache). Default: 2.
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `max_cached_engines` | `2` | Maximum engines cached in VRAM. Evicts LRU when full. |
+
+**How per-request switching works:**
+
+1. Request arrives with `engine` field (or falls back to `default_engine`)
+2. Cache hit → instant (no VRAM change)
+3. Cache miss → load engine, evict LRU if needed
+4. VRAM insufficient → return `engine_unavailable`
+
+See [NATS-SERVE.md](./NATS-SERVE.md#engine-hot-swapping) for full details.
