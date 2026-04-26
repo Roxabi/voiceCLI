@@ -8,11 +8,13 @@ import functools
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Any
 
+from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
 from voicecli.nats.queue_groups import STT_WORKERS
-from voicecli.nats.reply import build_reply, encode_reply
 from voicecli.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
@@ -74,6 +76,28 @@ def _ext_from_mime(mime_type: str | None) -> str:
     return _MIME_TO_EXT.get(mime_type.lower().split(";")[0].strip(), "wav")
 
 
+def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:
+    if not request_id:
+        m = SttResponse.model_construct(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id="",
+            error=error,
+        )
+    else:
+        m = SttResponse(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id=request_id,
+            error=error,
+        )
+    return m.model_dump_json(exclude_none=True).encode()
+
+
 class SttNatsAdapter(NatsAdapterBase):
     def __init__(
         self,
@@ -112,35 +136,23 @@ class SttNatsAdapter(NatsAdapterBase):
         return [f"{self.subject}.{self._worker_id}"]
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
+        trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(
-                msg, encode_reply(build_reply(ok=False, request_id="", error="malformed_request"))
-            )
+            await self.reply(msg, _err_stt(trace_id, "", "malformed_request"))
             return
 
         # Reject path-traversal or oversized request IDs at ingestion
         if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
             await self.reply(
                 msg,
-                encode_reply(
-                    build_reply(
-                        ok=False,
-                        request_id=request_id[:64] if request_id else "",
-                        error="malformed_request",
-                    )
-                ),
+                _err_stt(trace_id, request_id[:64] if request_id else "", "malformed_request"),
             )
             return
 
         audio_b64 = payload.get("audio_b64")
         if not audio_b64 or not isinstance(audio_b64, str):
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="malformed_request")
-                ),
-            )
+            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
             return
 
         for key, expected_types in (
@@ -154,20 +166,10 @@ class SttNatsAdapter(NatsAdapterBase):
                 continue
             if key == "language_detection_segments" and isinstance(val, bool):
                 # bool is a subclass of int in Python; reject separately
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="malformed_request")
-                    ),
-                )
+                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
                 return
             if not isinstance(val, expected_types):
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="malformed_request")
-                    ),
-                )
+                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
                 return
 
         overrides = {
@@ -186,20 +188,19 @@ class SttNatsAdapter(NatsAdapterBase):
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
-                    ),
-                )
+                await self.reply(msg, _err_stt(trace_id, request_id, "capacity_exceeded"))
                 return
             try:
-                await self._run_transcription(msg, payload, request_id, audio_b64, overrides)
+                await self._run_transcription(
+                    msg, payload, request_id, audio_b64, overrides, trace_id
+                )
             finally:
                 self._sem.release()
         else:
             async with self._sem:
-                await self._run_transcription(msg, payload, request_id, audio_b64, overrides)
+                await self._run_transcription(
+                    msg, payload, request_id, audio_b64, overrides, trace_id
+                )
 
     async def _run_transcription(
         self,
@@ -208,6 +209,7 @@ class SttNatsAdapter(NatsAdapterBase):
         request_id: str,
         audio_b64: str,
         overrides: dict,
+        trace_id: str,
     ) -> None:
         ext = _ext_from_mime(payload.get("mime_type"))
         out_path = scoped_path(request_id, ext)
@@ -218,12 +220,7 @@ class SttNatsAdapter(NatsAdapterBase):
                     "payload_too_large",
                     extra={"request_id": request_id, "size": len(audio_b64)},
                 )
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="payload_too_large")
-                    ),
-                )
+                await self.reply(msg, _err_stt(trace_id, request_id, "payload_too_large"))
                 cleanup(out_path)
                 return
 
@@ -232,12 +229,7 @@ class SttNatsAdapter(NatsAdapterBase):
                 audio_bytes = base64.b64decode(audio_b64, validate=True)
             except Exception:
                 log.warning("audio_decode_failed", extra={"request_id": request_id})
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="audio_decode_failed")
-                    ),
-                )
+                await self.reply(msg, _err_stt(trace_id, request_id, "audio_decode_failed"))
                 # Fix #4: remove redundant cleanup(out_path) here; finally block handles it
                 return
 
@@ -257,12 +249,7 @@ class SttNatsAdapter(NatsAdapterBase):
                     self.model_loaded = self.default_model
                 except Exception:
                     log.exception("model_load_failed", extra={"request_id": request_id})
-                    await self.reply(
-                        msg,
-                        encode_reply(
-                            build_reply(ok=False, request_id=request_id, error="model_load_failed")
-                        ),
-                    )
+                    await self.reply(msg, _err_stt(trace_id, request_id, "model_load_failed"))
                     return
 
             from voicecli import api
@@ -279,23 +266,19 @@ class SttNatsAdapter(NatsAdapterBase):
             duration_seconds = _duration_from_segments(result.segments)
             await self.reply(
                 msg,
-                encode_reply(
-                    build_reply(
-                        ok=True,
-                        request_id=request_id,
-                        text=result.text,
-                        language=result.language,
-                        duration_seconds=duration_seconds,
-                    )
-                ),
+                SttResponse(
+                    contract_version=CONTRACT_VERSION,
+                    trace_id=trace_id,
+                    issued_at=datetime.now(timezone.utc),
+                    ok=True,
+                    request_id=request_id,
+                    text=result.text,
+                    language=result.language,
+                    duration_seconds=duration_seconds,
+                ).model_dump_json(exclude_none=True).encode(),
             )
         except Exception:
             log.exception("transcription_failed", extra={"request_id": request_id})
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="transcription_failed")
-                ),
-            )
+            await self.reply(msg, _err_stt(trace_id, request_id, "transcription_failed"))
         finally:
             cleanup(out_path)

@@ -23,7 +23,6 @@ import pytest
 
 try:
     from voicecli.nats.config import _resolve_engine
-    from voicecli.nats.reply import build_reply  # noqa: F401
     from voicecli.nats.tempdir import scoped_path  # noqa: F401
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
@@ -32,7 +31,6 @@ except ImportError as _e:
     _IMPORT_ERROR = _e
     TtsNatsAdapter = None  # type: ignore[assignment,misc]
     _resolve_engine = None  # type: ignore[assignment]
-    build_reply = None  # type: ignore[assignment]
     scoped_path = None  # type: ignore[assignment]
 
 
@@ -71,6 +69,7 @@ def _valid_payload(
 ) -> dict:
     return {
         "contract_version": contract_version,
+        "trace_id": "test-trace-001",
         "request_id": request_id,
         "text": text,
         "engine": engine,

@@ -85,6 +85,7 @@ def _valid_payload(
 ) -> dict:
     payload: dict = {
         "contract_version": contract_version,
+        "trace_id": "test-trace-001",
         "request_id": request_id,
         "audio_b64": audio_b64 if audio_b64 is not None else _valid_audio_b64(),
         "mime_type": mime_type,
