@@ -87,7 +87,7 @@ def test_clone_no_ref_no_active_raises_valueerror():
         clone("Hello")
 
 
-def test_invalid_engine_raises_valueerror():
+def test_invalid_engine_raises_valueerror(mock_engine):
     """generate() with an invalid engine name should raise ValueError."""
     from voicecli.api import generate
 
@@ -129,7 +129,7 @@ def test_path_params_accept_str_and_path(tmp_path):
         assert isinstance(result, TTSResult)
 
 
-def test_list_engines_returns_strings():
+def test_list_engines_returns_strings(mock_engine):
     """list_engines() should return a list of engine key strings."""
     from voicecli.api import list_engines
 
@@ -137,10 +137,10 @@ def test_list_engines_returns_strings():
     assert isinstance(engines, list)
     assert len(engines) > 0
     assert all(isinstance(e, str) for e in engines)
-    assert "qwen" in engines
+    assert "mock" in engines
 
 
-def test_list_voices_invalid_raises_valueerror():
+def test_list_voices_invalid_raises_valueerror(mock_engine):
     """list_voices() with an invalid engine should raise ValueError."""
     from voicecli.api import list_voices
 

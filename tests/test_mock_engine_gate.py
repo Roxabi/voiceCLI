@@ -27,7 +27,11 @@ def test_registry_excludes_mock_when_env_unset(monkeypatch):
     monkeypatch.delenv("VOICECLI_ENABLE_MOCK_ENGINE", raising=False)
     assert "mock" not in available_engines()
 
-    with pytest.raises(ValueError, match="Unknown engine 'mock'"):
+    # Without the gate, get_engine("mock") raises ValueError. Exact wording
+    # depends on whether torch is installed: real engines registered →
+    # "Unknown engine 'mock'"; torch absent (slim install) → "No engines
+    # available". Both confirm the gate excludes mock.
+    with pytest.raises(ValueError, match=r"(Unknown engine 'mock'|No engines available)"):
         get_engine("mock")
 
 
