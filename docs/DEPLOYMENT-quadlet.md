@@ -77,16 +77,20 @@ systemctl --user status voicecli-{tts,stt}
 
 ## Deploy pipeline
 
-**Phase 2 (now):** auto-deploy on M₁ runs via Lyra's timer
-(`lyra-deploy.timer` → `lyra-deploy.service`). Lyra's `deploy.sh` iterates
-over enrolled repos including voiceCLI, pulls, tests, and restarts services.
-This orchestration is **temporary** — the ADR-055 D6 end state is autonomous
-per-project deploys.
+### Automatic (recommended)
 
-**Phase 3 exit criterion:** once voiceCLI is fully Quadlet-deployed and the
-cutover checklist below is complete, add `voicecli-deploy.{timer,service}`
-units and remove voiceCLI from Lyra's `deploy.sh` iteration. This is tracked
-as a follow-up (see [lyra#TBD](https://github.com/Roxabi/lyra/issues)).
+Since #929, prod uses `podman auto-update` to automatically pull new images from GHCR. The timer fires every 5 minutes:
+
+```bash
+systemctl --user is-active podman-auto-update.timer  # verify timer is active
+podman auto-update --dry-run                          # check pending updates
+```
+
+Containers with `Label=io.containers.autoupdate=registry` pull new digests from `ghcr.io/roxabi/voicecli:staging` and restart automatically. No manual intervention after a staging merge.
+
+See [Lyra's container-publishing.md](../../lyra/docs/ops/container-publishing.md#auto-update-flow) for full details.
+
+### Manual fallback
 
 `scripts/deploy-quadlet.sh` sources the shared library from
 `~/.local/lib/roxabi/deploy-lib.sh` (installed by Lyra's
