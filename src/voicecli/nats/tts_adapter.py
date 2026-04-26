@@ -10,13 +10,15 @@ import re
 import struct
 import wave
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
 from roxabi_nats._validate import validate_nats_token
 from voicecli.nats.queue_groups import TTS_WORKERS
-from voicecli.nats.reply import build_reply, encode_reply
 from voicecli.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
@@ -32,6 +34,28 @@ def _engine_available(engine: str) -> bool:
     from voicecli.engine import _get_registry
 
     return engine in _get_registry()
+
+
+def _err_tts(trace_id: str, request_id: str, error: str) -> bytes:
+    if not request_id:
+        m = TtsResponse.model_construct(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id="",
+            error=error,
+        )
+    else:
+        m = TtsResponse(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id=request_id,
+            error=error,
+        )
+    return m.model_dump_json(exclude_none=True).encode()
 
 
 def _collect_chunked_output(out_path: Path) -> list[Path]:
@@ -187,56 +211,34 @@ class TtsNatsAdapter(NatsAdapterBase):
         return [f"{self.subject}.{self._worker_id}"]
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
+        trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(
-                msg, encode_reply(build_reply(ok=False, request_id="", error="malformed_request"))
-            )
+            await self.reply(msg, _err_tts(trace_id, "", "malformed_request"))
             return
 
         # Reject path-traversal or oversized request IDs at ingestion (Fix 2)
         if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
             await self.reply(
                 msg,
-                encode_reply(
-                    build_reply(
-                        ok=False,
-                        request_id=request_id[:64] if request_id else "",
-                        error="malformed_request",
-                    )
-                ),
+                _err_tts(trace_id, request_id[:64] if request_id else "", "malformed_request"),
             )
             return
 
         # Validate text field early to avoid KeyError being masked as synthesis_failed (Fix 8)
         text = payload.get("text")
         if not text or not isinstance(text, str):
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="malformed_request")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
             return
 
         engine = payload.get("engine") or self.default_engine
         try:
             validate_nats_token(engine, kind="engine")
         except ValueError:
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="malformed_request")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
             return
         if not _engine_available(engine):
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="engine_unavailable")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "engine_unavailable"))
             return
 
         if self.reject_when_full:
@@ -244,23 +246,25 @@ class TtsNatsAdapter(NatsAdapterBase):
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
-                    ),
-                )
+                await self.reply(msg, _err_tts(trace_id, request_id, "capacity_exceeded"))
                 return
             try:
-                await self._run_synthesis(msg, payload, request_id, text, engine)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
             finally:
                 self._sem.release()
         else:
             async with self._sem:
-                await self._run_synthesis(msg, payload, request_id, text, engine)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
 
     async def _run_synthesis(
-        self, msg: Any, payload: dict, request_id: str, text: str, engine: str
+        self,
+        msg: Any,
+        payload: dict,
+        request_id: str,
+        text: str,
+        engine: str,
+        *,
+        trace_id: str,
     ) -> None:
         out_path = scoped_path(request_id, "wav")
         try:
@@ -349,24 +353,24 @@ class TtsNatsAdapter(NatsAdapterBase):
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
             duration_ms = _wav_duration_ms(out_path)
             waveform_b64 = _wav_waveform_b64(out_path)
-            reply_fields: dict[str, Any] = {
-                "audio_b64": audio_b64,
-                "mime_type": "audio/wav",
-                "duration_ms": duration_ms,
-            }
-            if waveform_b64 is not None:
-                reply_fields["waveform_b64"] = waveform_b64
             await self.reply(
                 msg,
-                encode_reply(build_reply(ok=True, request_id=request_id, **reply_fields)),
+                TtsResponse(
+                    contract_version=CONTRACT_VERSION,
+                    trace_id=trace_id,
+                    issued_at=datetime.now(timezone.utc),
+                    ok=True,
+                    request_id=request_id,
+                    audio_b64=audio_b64,
+                    mime_type="audio/wav",
+                    duration_ms=duration_ms,
+                    waveform_b64=waveform_b64,
+                )
+                .model_dump_json(exclude_none=True)
+                .encode(),
             )
         except Exception:
             log.exception("synthesis_failed", extra={"request_id": request_id})
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="synthesis_failed")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "synthesis_failed"))
         finally:
             cleanup(out_path)

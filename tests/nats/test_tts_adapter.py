@@ -23,7 +23,6 @@ import pytest
 
 try:
     from voicecli.nats.config import _resolve_engine
-    from voicecli.nats.reply import build_reply  # noqa: F401
     from voicecli.nats.tempdir import scoped_path  # noqa: F401
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
@@ -32,7 +31,6 @@ except ImportError as _e:
     _IMPORT_ERROR = _e
     TtsNatsAdapter = None  # type: ignore[assignment,misc]
     _resolve_engine = None  # type: ignore[assignment]
-    build_reply = None  # type: ignore[assignment]
     scoped_path = None  # type: ignore[assignment]
 
 
@@ -68,13 +66,17 @@ def _valid_payload(
     text: str = "Hello world",
     engine: str = "mock",
     contract_version: str = "1",
+    trace_id: str | None = "test-trace-001",
 ) -> dict:
-    return {
+    payload = {
         "contract_version": contract_version,
         "request_id": request_id,
         "text": text,
         "engine": engine,
     }
+    if trace_id is not None:
+        payload["trace_id"] = trace_id
+    return payload
 
 
 def _stub_engine_factory(
@@ -146,10 +148,35 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is True
         assert reply["contract_version"] == "1"
         assert reply["request_id"] == "req-001"
+        assert reply["trace_id"] == "test-trace-001"
+        from datetime import datetime as _dt
+
+        _iat = _dt.fromisoformat(reply["issued_at"])
+        assert _iat.tzinfo is not None
         assert reply["mime_type"] == "audio/wav"
         assert "audio_b64" in reply
         base64.b64decode(reply["audio_b64"])  # must not raise
         assert isinstance(reply.get("duration_ms"), (int, float))
+
+    def test_reply_uses_unknown_trace_id_when_absent(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-notrace", trace_id=None)
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+        ):
+            with patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert reply["trace_id"] == "unknown"
 
     def test_handle_unknown_engine_returns_engine_unavailable(self, tmp_path: Path) -> None:
         _require_imports()
@@ -232,6 +259,8 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
         assert reply["request_id"] == ""
+        assert "trace_id" in reply
+        assert "issued_at" in reply
 
     def test_max_concurrent_default_is_1_for_tts(self) -> None:
         _require_imports()
