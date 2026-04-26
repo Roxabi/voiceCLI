@@ -275,7 +275,9 @@ class SttNatsAdapter(NatsAdapterBase):
                     text=result.text,
                     language=result.language,
                     duration_seconds=duration_seconds,
-                ).model_dump_json(exclude_none=True).encode(),
+                )
+                .model_dump_json(exclude_none=True)
+                .encode(),
             )
         except Exception:
             log.exception("transcription_failed", extra={"request_id": request_id})

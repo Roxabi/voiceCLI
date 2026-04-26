@@ -364,7 +364,9 @@ class TtsNatsAdapter(NatsAdapterBase):
                     mime_type="audio/wav",
                     duration_ms=duration_ms,
                     waveform_b64=waveform_b64,
-                ).model_dump_json(exclude_none=True).encode(),
+                )
+                .model_dump_json(exclude_none=True)
+                .encode(),
             )
         except Exception:
             log.exception("synthesis_failed", extra={"request_id": request_id})
