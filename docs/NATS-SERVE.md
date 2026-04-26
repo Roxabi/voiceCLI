@@ -548,19 +548,29 @@ restart throttling.
 
 ### Image registry
 
-The Quadlet units reference `ghcr.io/roxabi/voicecli:staging` — the rolling tag
-that `publish.yml` pushes on every staging branch update. For production, pin
-to a specific digest:
+Three production images are published from this repo:
+
+| Image | Contents | Use Case |
+|---|---|---|
+| `ghcr.io/roxabi/voicecli-tts:staging` | TTS engines (qwen, chatterbox) + NATS | TTS satellite only |
+| `ghcr.io/roxabi/voicecli-stt:staging` | STT engine (faster-whisper) + NATS | STT satellite only |
+| `ghcr.io/roxabi/voicecli:staging` | All engines (TTS + STT) + NATS | Both on same host |
+
+The Quadlet units reference the dedicated images:
+- `voicecli-tts.container` → `ghcr.io/roxabi/voicecli-tts:staging`
+- `voicecli-stt.container` → `ghcr.io/roxabi/voicecli-stt:staging`
+
+For production, pin to a specific digest:
 
 ```ini
-Image=ghcr.io/roxabi/voicecli@sha256:<digest>
+Image=ghcr.io/roxabi/voicecli-tts@sha256:<digest>
 ```
 
 Build and push from the repo root:
 
 ```bash
-podman build -t ghcr.io/roxabi/voicecli:staging .
-podman push ghcr.io/roxabi/voicecli:staging
+podman build -f Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
+podman push ghcr.io/roxabi/voicecli-tts:staging
 ```
 
 ### Drain-and-swap upgrade protocol
@@ -576,7 +586,7 @@ rollback path.
 ```bash
 # Capture the digest currently in use so we can roll back atomically.
 CURRENT=$(podman inspect voicecli-tts --format '{{.ImageDigest}}')
-podman tag "ghcr.io/roxabi/voicecli@${CURRENT}" ghcr.io/roxabi/voicecli:staging-prev
+podman tag "ghcr.io/roxabi/voicecli-tts@${CURRENT}" ghcr.io/roxabi/voicecli-tts:staging-prev
 ```
 
 **Drain — let in-flight work finish before pulling:**
@@ -597,10 +607,11 @@ journalctl --user -u voicecli-tts.service -n 50 | grep -E 'drain|exit'
 # Expect: "drained N in-flight requests, exiting cleanly" → exit 0
 ```
 
-**Swap — pull the new image and reload Quadlet:**
+**Swap — pull the new images and reload Quadlet:**
 
 ```bash
-podman pull ghcr.io/roxabi/voicecli:staging
+podman pull ghcr.io/roxabi/voicecli-tts:staging
+podman pull ghcr.io/roxabi/voicecli-stt:staging
 # Quadlet generates systemd units from .container files at daemon-reload time;
 # re-run after pulling so the new image digest is picked up.
 systemctl --user daemon-reload
@@ -619,12 +630,13 @@ nats req voicecli.tts.qwen.generate '{"text":"smoke","voice":"Cherry"}' --timeou
 
 ```bash
 systemctl --user stop voicecli-tts.service voicecli-stt.service
-# Repoint the rolling tag back to the previous digest.
-podman tag ghcr.io/roxabi/voicecli:staging-prev ghcr.io/roxabi/voicecli:staging
+# Repoint the rolling tags back to the previous digests.
+podman tag ghcr.io/roxabi/voicecli-tts:staging-prev ghcr.io/roxabi/voicecli-tts:staging
+podman tag ghcr.io/roxabi/voicecli-stt:staging-prev ghcr.io/roxabi/voicecli-stt:staging
 systemctl --user daemon-reload
 systemctl --user start voicecli-tts.service voicecli-stt.service
 ```
 
-The `:staging-prev` tag survives `podman pull :staging` (only the rolling tag
+The `:staging-prev` tags survive `podman pull :staging` (only the rolling tag
 is overwritten), so a rollback is always one `podman tag` away until the next
 swap re-tags `:staging-prev`.
