@@ -192,14 +192,14 @@ class SttNatsAdapter(NatsAdapterBase):
                 return
             try:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id
+                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
                 )
             finally:
                 self._sem.release()
         else:
             async with self._sem:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id
+                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
                 )
 
     async def _run_transcription(
@@ -209,6 +209,7 @@ class SttNatsAdapter(NatsAdapterBase):
         request_id: str,
         audio_b64: str,
         overrides: dict,
+        *,
         trace_id: str,
     ) -> None:
         ext = _ext_from_mime(payload.get("mime_type"))

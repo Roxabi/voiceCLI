@@ -82,14 +82,16 @@ def _valid_payload(
     audio_b64: str | None = None,
     contract_version: str = "1",
     mime_type: str = "audio/wav",
+    trace_id: str | None = "test-trace-001",
 ) -> dict:
     payload: dict = {
         "contract_version": contract_version,
-        "trace_id": "test-trace-001",
         "request_id": request_id,
         "audio_b64": audio_b64 if audio_b64 is not None else _valid_audio_b64(),
         "mime_type": mime_type,
     }
+    if trace_id is not None:
+        payload["trace_id"] = trace_id
     return payload
 
 
@@ -167,10 +169,30 @@ class TestSttNatsAdapter:
         assert reply["ok"] is True
         assert reply["contract_version"] == "1"
         assert reply["request_id"] == "req-001"
+        assert reply["trace_id"] == "test-trace-001"
+        from datetime import datetime as _dt
+
+        _iat = _dt.fromisoformat(reply["issued_at"])
+        assert _iat.tzinfo is not None
         assert reply["text"] == "hello world"
         assert reply["language"] == "en"
         assert reply["duration_seconds"] == pytest.approx(2.5)
         mock_transcribe.assert_called_once()
+
+    def test_reply_uses_unknown_trace_id_when_absent(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-notrace", trace_id=None)
+
+        with _patch_transcribe(_fake_result()) as _:
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert reply["trace_id"] == "unknown"
 
     # ------------------------------------------------------------------
     # Case 2: missing request_id
@@ -190,6 +212,8 @@ class TestSttNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
         assert reply["request_id"] == ""
+        assert "trace_id" in reply
+        assert "issued_at" in reply
 
     # ------------------------------------------------------------------
     # Case 3: request_id with invalid characters

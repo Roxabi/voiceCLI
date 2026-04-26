@@ -249,12 +249,12 @@ class TtsNatsAdapter(NatsAdapterBase):
                 await self.reply(msg, _err_tts(trace_id, request_id, "capacity_exceeded"))
                 return
             try:
-                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
             finally:
                 self._sem.release()
         else:
             async with self._sem:
-                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
 
     async def _run_synthesis(
         self,
@@ -263,6 +263,7 @@ class TtsNatsAdapter(NatsAdapterBase):
         request_id: str,
         text: str,
         engine: str,
+        *,
         trace_id: str,
     ) -> None:
         out_path = scoped_path(request_id, "wav")
