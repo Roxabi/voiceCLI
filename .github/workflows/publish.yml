@@ -7,10 +7,18 @@ permissions:
   contents: read
   packages: write
 jobs:
-  publish:
+  publish-tts:
     uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
     with:
-      image_name: ghcr.io/roxabi/voicecli
+      image_name: ghcr.io/roxabi/voicecli-tts
+      dockerfile_path: Dockerfile.tts
+      release_please_component: voicecli
+
+  publish-stt:
+    uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
+    with:
+      image_name: ghcr.io/roxabi/voicecli-stt
+      dockerfile_path: Dockerfile.stt
       release_please_component: voicecli
 
   publish-mock:

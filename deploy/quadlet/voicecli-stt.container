@@ -6,7 +6,7 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Container]
-Image=ghcr.io/roxabi/voicecli:staging
+Image=ghcr.io/roxabi/voicecli-stt:staging
 ContainerName=voicecli-stt
 Network=roxabi.network
 Volume=voicecli-models:/home/voicecli/.cache/huggingface

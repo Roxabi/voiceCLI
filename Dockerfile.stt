@@ -47,13 +47,13 @@ RUN UV_SKIP="--no-install-package torch \
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project \
         $(cat /uv-skip-flags) \
-        --extra tts --extra stt --extra nats
+        --extra stt --extra nats
 
 # Now copy source and install the project itself.
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev \
         $(cat /uv-skip-flags) \
-        --extra tts --extra stt --extra nats
+        --extra stt --extra nats
 
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -87,8 +87,6 @@ WORKDIR /app
 
 USER voicecli
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD voicecli --version || exit 1
-
+# Healthcheck delegated to deployment layer (Quadlet HealthCmd or orchestrator probe)
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["tts"]
+CMD ["stt"]
