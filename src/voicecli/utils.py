@@ -66,9 +66,7 @@ def resolve_language(language: str) -> str:
 
 
 # Reverse map: ISO 639-1 code → canonical full language name (e.g. 'fr' → 'french')
-_ISO_TO_FULL: dict[str, str] = {
-    code: name for name, code in LANG_MAP.items() if name != "français"
-}
+_ISO_TO_FULL: dict[str, str] = {code: name for name, code in LANG_MAP.items() if name != "français"}
 
 
 def to_full_language_name(language: str) -> str:
