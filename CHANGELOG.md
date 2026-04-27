@@ -3,6 +3,36 @@
 All notable changes to this project will be documented in this file.
 Entries are generated automatically by `/promote` and committed to staging before the promotion PR.
 
+## [0.3.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v0.3.0) (2026-04-27)
+
+### Features
+
+- feat(deploy): add container form factor for Quadlet deployment (#101)
+- feat(model-registry): add LRU eviction for VRAM management (#100)
+- feat(quadlet): voiceCLI Phase 2 Quadlet infrastructure — ADR-055 (#105)
+- feat(quadlet): repoint workers to lyra-nats on roxabi.network (#107)
+- feat(ops): adopt cross-project container publishing pattern (#112)
+- feat(infra): migrate to shared roxabi-ml-base image + torch as extra (#118)
+- feat(docker): split production image into TTS and STT variants (#122)
+
+### Bug Fixes
+
+- fix(nats): tighten /tmp/voicecli-nats file perms to 0o600 (#103)
+- fix(nkeys): relocate NATS seed paths to ~/.voicecli/nkeys/ — ADR-055 D4 (#104)
+- fix(docker): fully qualify base images to docker.io/* (#108)
+- fix(docker): correct nvidia/cuda base tag (#109)
+- fix(docker): fix uv tarball extraction path (#110)
+- fix(docker): drop uv run from entrypoint (#113)
+- fix(docker): drop --extra voxtral from default image (#114)
+- fix(nats): use roxabi-contracts TtsResponse/SttResponse in adapters (#120)
+
+### Refactors
+
+- refactor: split oversized modules to meet 300-line file-length gate (#130)
+- chore: drain-and-swap docs + post-merge review fixes (#119)
+
+---
+
 ## [0.2.1](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.0...voicecli/v0.2.1) (2026-04-22)
 
 
