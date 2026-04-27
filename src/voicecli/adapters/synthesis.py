@@ -139,7 +139,7 @@ class DaemonSynthesisAdapter:
 
         # Fallback to local engine
         eng = get_engine(engine)
-        if kwargs.get("fast") and engine in QWEN_ENGINES:
+        if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
             eng._small = True
         return eng.generate(
             text,
@@ -198,7 +198,7 @@ class DaemonSynthesisAdapter:
 
         # Fallback to local engine
         eng = get_engine(engine)
-        if kwargs.get("fast") and engine in QWEN_ENGINES:
+        if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
             eng._small = True
         return eng.clone(
             text,
@@ -245,7 +245,7 @@ class LocalSynthesisAdapter:
         from voicecli.engine import QWEN_ENGINES
 
         eng = self._registry.get(engine)
-        if kwargs.get("fast") and engine in QWEN_ENGINES:
+        if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
             eng._small = True
         return eng.generate(
             text,
@@ -281,7 +281,7 @@ class LocalSynthesisAdapter:
         from voicecli.engine import QWEN_ENGINES
 
         eng = self._registry.get(engine)
-        if kwargs.get("fast") and engine in QWEN_ENGINES:
+        if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
             eng._small = True
         return eng.clone(
             text,

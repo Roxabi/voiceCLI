@@ -11,6 +11,7 @@ type = layers
 layers =
     voicecli.cli | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay
     voicecli.api
+    voicecli.adapters
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes
 ignore_imports =
