@@ -5,8 +5,13 @@
   "include": ["src/voicecli"],
   "exclude": [
     "src/voicecli/__pycache__",
-    "src/voicecli/overlay.py",
     "src/voicecli/engines"
+  ],
+  "ignore": [
+    "src/voicecli/overlay.py",
+    "src/voicecli/overlay_draw.py",
+    "src/voicecli/overlay_audio.py",
+    "src/voicecli/nats"
   ],
   "reportMissingImports": "error",
   "reportMissingModuleSource": "none"

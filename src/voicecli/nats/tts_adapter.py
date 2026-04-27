@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import logging
 import re
-import struct
-import wave
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
@@ -20,6 +16,13 @@ from roxabi_nats import NatsAdapterBase
 from roxabi_nats._validate import validate_nats_token
 from voicecli.nats.queue_groups import TTS_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
+from voicecli.nats.tts_wav_utils import (
+    cleanup_chunks,
+    collect_chunked_output,
+    concat_wav_chunks,
+    wav_duration_ms,
+    wav_waveform_b64,
+)
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).
@@ -56,115 +59,6 @@ def _err_tts(trace_id: str, request_id: str, error: str) -> bytes:
             error=error,
         )
     return m.model_dump_json(exclude_none=True).encode()
-
-
-def _collect_chunked_output(out_path: Path) -> list[Path]:
-    """Return sorted chunk paths if a .done marker exists, else empty list.
-
-    When api.generate() runs in chunked mode it writes:
-        {stem}_001.wav, {stem}_002.wav, … {stem}_NNN.wav
-        {stem}.done  (sentinel written after all chunks)
-
-    The adapter expects a single file at *out_path* ({stem}.wav). If the
-    engine wrote chunks instead, this function returns them in order so the
-    caller can concatenate them.
-    """
-    done_path = out_path.with_suffix(".done")
-    if not done_path.exists():
-        return []
-    stem = out_path.stem
-    parent = out_path.parent
-    chunks = sorted(parent.glob(f"{stem}_*.wav"))
-    return chunks
-
-
-def _concat_wav_chunks(chunks: list[Path], out_path: Path) -> None:
-    """Concatenate WAV chunk files into *out_path* using the stdlib wave module.
-
-    All chunks must share the same format (channels, sample width, frame rate).
-    Raises ValueError if the chunk list is empty or format is inconsistent.
-    """
-    if not chunks:
-        raise ValueError("concat_wav_chunks: chunk list is empty")
-
-    with wave.open(str(chunks[0]), "rb") as first:
-        params = first.getparams()
-
-    with wave.open(str(out_path), "wb") as out_wav:
-        out_wav.setparams(params)
-        for chunk_path in chunks:
-            with wave.open(str(chunk_path), "rb") as chunk_wav:
-                if (
-                    chunk_wav.getnchannels() != params.nchannels
-                    or chunk_wav.getsampwidth() != params.sampwidth
-                    or chunk_wav.getframerate() != params.framerate
-                ):
-                    raise ValueError(
-                        f"chunk format mismatch in {chunk_path}: "
-                        f"expected {params.nchannels}ch/{params.sampwidth}sw/{params.framerate}Hz"
-                    )
-                out_wav.writeframes(chunk_wav.readframes(chunk_wav.getnframes()))
-
-
-def _cleanup_chunks(out_path: Path, chunks: list[Path]) -> None:
-    """Remove chunk files and the .done sentinel. Idempotent."""
-    done_path = out_path.with_suffix(".done")
-    for p in [*chunks, done_path]:
-        with contextlib.suppress(FileNotFoundError):
-            p.unlink()
-
-
-def _wav_duration_ms(path: Path) -> int:
-    """Read WAV header to compute duration in milliseconds. Returns 0 on failure."""
-    try:
-        with wave.open(str(path), "rb") as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            if rate > 0:
-                return int(frames / rate * 1000)
-    except Exception:
-        pass
-    return 0
-
-
-def _wav_waveform_b64(path: Path, num_samples: int = 256) -> str | None:
-    """Compute a 256-byte amplitude waveform from a WAV file.
-
-    Mirrors lyra's `_wav_waveform_b64` so Discord voice-message waveforms
-    can be rendered without a second decoding pass hub-side.
-    Returns None on any error (field is optional in ADR-044).
-    """
-    try:
-        with wave.open(str(path), "rb") as wf:
-            n_channels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            n_frames = wf.getnframes()
-            raw = wf.readframes(n_frames)
-
-        if sampwidth == 1:
-            samples = [raw[i] - 128 for i in range(0, len(raw), n_channels)]
-            max_val = 128
-        elif sampwidth == 2:
-            samples = [
-                struct.unpack_from("<h", raw, i)[0] for i in range(0, len(raw) - 1, 2 * n_channels)
-            ]
-            max_val = 32768
-        else:
-            return None
-
-        if not samples:
-            return None
-
-        chunk = max(1, len(samples) // num_samples)
-        waveform = bytearray()
-        for i in range(num_samples):
-            sl = samples[i * chunk : i * chunk + chunk]
-            amp = sum(abs(x) for x in sl) // len(sl) if sl else 0
-            waveform.append(min(255, int(amp * 255 / max_val)))
-        return base64.b64encode(bytes(waveform)).decode("ascii")
-    except Exception:
-        log.warning("waveform_b64 computation failed", exc_info=True)
-        return None
 
 
 class TtsNatsAdapter(NatsAdapterBase):
@@ -355,19 +249,26 @@ class TtsNatsAdapter(NatsAdapterBase):
             # If the engine ran in chunked mode it writes {stem}_NNN.wav files
             # plus a {stem}.done sentinel instead of {stem}.wav directly.
             # Detect and concatenate chunks into out_path before encoding.
-            chunks = _collect_chunked_output(out_path)
+            chunks = collect_chunked_output(out_path)
             if chunks:
                 # issue #60: explicitly tighten each chunk before it is read or
                 # deleted, so chunk confidentiality does not rely solely on umask.
                 for c in chunks:
                     c.chmod(0o600)
-                _concat_wav_chunks(chunks, out_path)
-                _cleanup_chunks(out_path, chunks)
+                concat_wav_chunks(chunks, out_path)
+                cleanup_chunks(out_path, chunks)
 
             out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
-            duration_ms = _wav_duration_ms(out_path)
-            waveform_b64 = _wav_waveform_b64(out_path)
+            duration_ms = wav_duration_ms(out_path)
+            waveform_b64 = wav_waveform_b64(out_path)
+            reply_fields: dict[str, Any] = {
+                "audio_b64": audio_b64,
+                "mime_type": "audio/wav",
+                "duration_ms": duration_ms,
+            }
+            if waveform_b64 is not None:
+                reply_fields["waveform_b64"] = waveform_b64
             await self.reply(
                 msg,
                 TtsResponse(

@@ -26,6 +26,10 @@ ignore_imports =
     voicecli.cli -> voicecli.listen
     # Transitional: voicecli.daemon imports voicecli.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-059)
     voicecli.daemon -> voicecli.engine
+    # Transitional: daemon_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
+    voicecli.daemon -> voicecli.daemon_protocol
+    # Transitional: daemon_protocol directly loads engines — covered by the same SynthesisPort ADR-059 wiring work as daemon
+    voicecli.daemon_protocol -> voicecli.engine
     # Transitional: voicecli.stt_daemon imports voicecli.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-059)
     voicecli.stt_daemon -> voicecli.transcribe
     # Transitional: voicecli.model_registry imports voicecli.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
