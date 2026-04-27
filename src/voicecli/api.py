@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import logging
 import math
-import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from voicecli.ports.synthesis import SynthesisPort
 
 from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
@@ -383,84 +385,6 @@ def _resolve_ref(ref: Path | str | None) -> Path:
     return active
 
 
-# ── Daemon helpers ───────────────────────────────────────────────────────────
-# TODO: ADR-059 wire SynthesisPort — replace direct daemon.py / model_registry
-#       coupling below with a SynthesisPort implementation injected at call
-#       sites (generate, clone). See voicecli.ports.synthesis.SynthesisPort.
-
-_DAEMON_WAIT_SECS = 60.0
-_DAEMON_POLL_INTERVAL = 2.0
-
-
-def _wait_for_daemon_socket(timeout: float = _DAEMON_WAIT_SECS) -> bool:
-    """Block until the daemon socket appears (or timeout expires).
-
-    Prints a single warning on the first poll so the caller knows why it waits.
-    Returns True if the socket is available, False if the timeout elapsed.
-    """
-    from voicecli.daemon import SOCKET_PATH
-
-    if SOCKET_PATH.exists():
-        return True
-    print(
-        f"[voicecli] daemon socket not found — waiting up to {timeout:.0f}s...",
-        flush=True,
-    )
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        time.sleep(_DAEMON_POLL_INTERVAL)
-        if SOCKET_PATH.exists():
-            return True
-    return False
-
-
-def _try_daemon(request: dict) -> Path | None:
-    """Send request to daemon. Returns WAV path on success, None on failure."""
-    from voicecli.daemon import SOCKET_PATH, daemon_request
-
-    if not SOCKET_PATH.exists():
-        return None
-    try:
-        resp = daemon_request(request, timeout=300)
-        if resp.get("status") == "ok":
-            return Path(resp["path"])
-        log.error("daemon error: %s", resp.get("message", "unknown error"))
-    except Exception:
-        log.exception("daemon request failed")
-    return None
-
-
-def _make_chunk_daemon_fn(engine_name: str):
-    """Return a daemon_fn for chunked generation/cloning."""
-
-    def daemon_fn(method: str, text: str, voice, chunk_path: Path, **kwargs) -> bool:
-        req: dict = {
-            "action": method,
-            "engine": engine_name,
-            "text": text,
-            "voice": voice,
-            "output_path": str(chunk_path.resolve()),
-            "language": kwargs.get("language"),
-            "instruct": kwargs.get("instruct"),
-            "exaggeration": kwargs.get("exaggeration"),
-            "cfg_weight": kwargs.get("cfg_weight"),
-            "segment_gap": kwargs.get("segment_gap"),
-            "crossfade": kwargs.get("crossfade"),
-            "segments": [],
-        }
-        if method == "clone":
-            ref = kwargs.get("ref_audio")
-            req["ref_audio"] = str(ref.resolve()) if ref else None
-            req["ref_text"] = kwargs.get("ref_text")
-        if not _wait_for_daemon_socket():
-            return False
-        if _try_daemon(req) is None:
-            return False
-        return True
-
-    return daemon_fn
-
-
 # ── Chunked output helpers ──────────────────────────────────────────────────
 
 
@@ -471,7 +395,7 @@ def _emit_chunk(
     voice,
     out: Path,
     index: int,
-    total: int,
+    _total: int,
     *,
     mp3: bool = False,
     daemon_fn=None,
@@ -682,7 +606,7 @@ def generate(
     crossfade: int | None = None,
     plain: bool = False,
     allowed_base: Path | _Unrestricted = OUTPUT_DIR,
-    _skip_daemon: bool = False,
+    _synthesis: "SynthesisPort | None" = None,
     **kwargs,
 ) -> TTSResult:
     """Generate speech from text or a markdown file using a built-in voice.
@@ -704,6 +628,8 @@ def generate(
         allowed_base: Base directory ``output`` must stay within
             (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
             has already vetted the path (CLI ``--output``, server scratch dir).
+        _synthesis: SynthesisPort implementation to use. If None, defaults to
+            DaemonSynthesisAdapter (daemon socket with local engine fallback).
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -726,8 +652,14 @@ def generate(
         extra_kwargs=kwargs,
     )
 
-    from voicecli.engine import QWEN_ENGINES, get_engine
+    from voicecli.engine import QWEN_ENGINES
     from voicecli.utils import build_output_prefix, default_output_path
+
+    if _synthesis is None:
+        from voicecli.adapters.synthesis import DaemonSynthesisAdapter  # type: ignore[import-not-found]
+
+        _synthesis = DaemonSynthesisAdapter()
+    assert _synthesis is not None
 
     config_path = Path(config) if config is not None else None
 
@@ -770,22 +702,17 @@ def generate(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
-    if _skip_daemon:
-        from voicecli.model_registry import model_registry
-
-        eng = model_registry.get(r_engine)
-    else:
-        eng = get_engine(r_engine)
-    if r_fast and r_engine in QWEN_ENGINES:
-        eng._small = True
-
     if r_chunked:
+        chunk_fn = getattr(_synthesis, "_chunk_fn", None)
         daemon_fn = (
-            _make_chunk_daemon_fn(r_engine)
-            if r_engine in QWEN_ENGINES and not _skip_daemon
-            else None
+            chunk_fn(r_engine) if r_engine in QWEN_ENGINES and chunk_fn is not None else None
         )
+        # _emit_chunk needs a local engine fallback; provide a thin shim via the adapter
+        from voicecli.engine import get_engine
+
+        eng = get_engine(r_engine)
+        if r_fast and r_engine in QWEN_ENGINES:
+            eng._small = True
         chunk_paths = _generate_chunked(
             eng,
             r_text,
@@ -800,41 +727,27 @@ def generate(
         )
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-    if r_engine in QWEN_ENGINES and not _skip_daemon and _wait_for_daemon_socket():
-        daemon_result = _try_daemon(
-            {
-                "action": "generate",
-                "engine": r_engine,
-                "text": r_text,
-                "voice": r_voice,
-                "output_path": str(out.resolve()),
-                "language": r_language,
-                "instruct": extra.get("instruct"),
-                "exaggeration": extra.get("exaggeration"),
-                "cfg_weight": extra.get("cfg_weight"),
-                "segment_gap": extra.get("segment_gap"),
-                "crossfade": extra.get("crossfade"),
-                "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
-            }
-        )
-        if daemon_result:
-            out = daemon_result
-            mp3_path = None
-            if r_mp3:
-                from voicecli.utils import wav_to_mp3
+    result = _synthesis.generate(
+        r_engine,
+        r_text,
+        r_voice,
+        out,
+        language=r_language,
+        fast=r_fast,
+        **extra,
+    )
+    if result is not None:
+        out = result
+        mp3_path = None
+        if r_mp3:
+            from voicecli.utils import wav_to_mp3
 
-                mp3_path = wav_to_mp3(out)
-            return TTSResult(wav_path=out, mp3_path=mp3_path)
+            mp3_path = wav_to_mp3(out)
+        return TTSResult(wav_path=out, mp3_path=mp3_path)
 
-    out = eng.generate(r_text, r_voice, out, language=r_language, **extra)
-
-    mp3_path = None
-    if r_mp3:
-        from voicecli.utils import wav_to_mp3
-
-        mp3_path = wav_to_mp3(out)
-
-    return TTSResult(wav_path=out, mp3_path=mp3_path)
+    # Adapter returned None — should not happen (adapter handles its own fallback),
+    # but guard defensively.
+    raise RuntimeError(f"Synthesis failed for engine '{r_engine}': adapter returned None")
 
 
 def clone(
@@ -854,7 +767,7 @@ def clone(
     crossfade: int | None = None,
     plain: bool = False,
     allowed_base: Path | _Unrestricted = OUTPUT_DIR,
-    _skip_daemon: bool = False,
+    _synthesis: "SynthesisPort | None" = None,
     **kwargs,
 ) -> TTSResult:
     """Clone a voice from reference audio and synthesize text.
@@ -877,6 +790,8 @@ def clone(
         allowed_base: Base directory ``output`` must stay within
             (default: ``OUTPUT_DIR``). Pass ``UNRESTRICTED`` when the caller
             has already vetted the path.
+        _synthesis: SynthesisPort implementation to use. If None, defaults to
+            DaemonSynthesisAdapter (daemon socket with local engine fallback).
         **kwargs: Additional engine-specific parameters.
 
     Returns:
@@ -900,8 +815,14 @@ def clone(
     )
     _check_str("ref_text", ref_text)
 
-    from voicecli.engine import QWEN_ENGINES, get_engine
+    from voicecli.engine import QWEN_ENGINES
     from voicecli.utils import build_output_prefix, default_output_path
+
+    if _synthesis is None:
+        from voicecli.adapters.synthesis import DaemonSynthesisAdapter  # type: ignore[import-not-found]
+
+        _synthesis = DaemonSynthesisAdapter()
+    assert _synthesis is not None
 
     ref_path = _resolve_ref(ref)
     config_path = Path(config) if config is not None else None
@@ -943,22 +864,17 @@ def clone(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
-    if _skip_daemon:
-        from voicecli.model_registry import model_registry
-
-        eng = model_registry.get(r_engine)
-    else:
-        eng = get_engine(r_engine)
-    if r_fast and r_engine in QWEN_ENGINES:
-        eng._small = True
-
     if r_chunked:
+        chunk_fn = getattr(_synthesis, "_chunk_fn", None)
         daemon_fn = (
-            _make_chunk_daemon_fn(r_engine)
-            if r_engine in QWEN_ENGINES and not _skip_daemon
-            else None
+            chunk_fn(r_engine) if r_engine in QWEN_ENGINES and chunk_fn is not None else None
         )
+        # _emit_chunk needs a local engine fallback; provide a thin shim via the adapter
+        from voicecli.engine import get_engine
+
+        eng = get_engine(r_engine)
+        if r_fast and r_engine in QWEN_ENGINES:
+            eng._small = True
         chunk_paths = _clone_chunked(
             eng,
             r_text,
@@ -974,43 +890,28 @@ def clone(
         )
         return TTSResult(wav_path=out.with_suffix(".done"), chunk_paths=chunk_paths)
 
-    if r_engine in QWEN_ENGINES and not _skip_daemon and _wait_for_daemon_socket():
-        daemon_result = _try_daemon(
-            {
-                "action": "clone",
-                "engine": r_engine,
-                "text": r_text,
-                "voice": None,
-                "ref_audio": str(ref_path.resolve()),
-                "ref_text": ref_text,
-                "output_path": str(out.resolve()),
-                "language": r_language,
-                "instruct": extra.get("instruct"),
-                "exaggeration": extra.get("exaggeration"),
-                "cfg_weight": extra.get("cfg_weight"),
-                "segment_gap": extra.get("segment_gap"),
-                "crossfade": extra.get("crossfade"),
-                "segments": [dataclasses.asdict(s) for s in (extra.get("segments") or [])],
-            }
-        )
-        if daemon_result:
-            out = daemon_result
-            mp3_path = None
-            if r_mp3:
-                from voicecli.utils import wav_to_mp3
+    result = _synthesis.clone(
+        r_engine,
+        r_text,
+        ref_path,
+        out,
+        ref_text=ref_text,
+        language=r_language,
+        fast=r_fast,
+        **extra,
+    )
+    if result is not None:
+        out = result
+        mp3_path = None
+        if r_mp3:
+            from voicecli.utils import wav_to_mp3
 
-                mp3_path = wav_to_mp3(out)
-            return TTSResult(wav_path=out, mp3_path=mp3_path)
+            mp3_path = wav_to_mp3(out)
+        return TTSResult(wav_path=out, mp3_path=mp3_path)
 
-    out = eng.clone(r_text, ref_path, out, ref_text=ref_text, language=r_language, **extra)
-
-    mp3_path = None
-    if r_mp3:
-        from voicecli.utils import wav_to_mp3
-
-        mp3_path = wav_to_mp3(out)
-
-    return TTSResult(wav_path=out, mp3_path=mp3_path)
+    # Adapter returned None — should not happen (adapter handles its own fallback),
+    # but guard defensively.
+    raise RuntimeError(f"Clone failed for engine '{r_engine}': adapter returned None")
 
 
 def transcribe(
