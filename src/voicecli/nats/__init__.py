@@ -16,6 +16,10 @@ def __getattr__(name: str):
         from voicecli.nats.stt_adapter import SttNatsAdapter
 
         return SttNatsAdapter
+    if name in ("tts_adapter", "stt_adapter", "config"):
+        import importlib
+
+        return importlib.import_module(f"voicecli.nats.{name}")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
