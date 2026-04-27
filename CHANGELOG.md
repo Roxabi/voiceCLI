@@ -33,6 +33,7 @@ Entries are generated automatically by `/promote` and committed to staging befor
 
 ---
 
+
 ## [0.2.1](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.0...voicecli/v0.2.1) (2026-04-22)
 
 
