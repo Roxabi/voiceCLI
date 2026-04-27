@@ -4,10 +4,10 @@
   "typeCheckingMode": "basic",
   "include": ["src/voicecli"],
   "exclude": [
-    "src/voicecli/__pycache__",
-    "src/voicecli/engines"
+    "src/voicecli/__pycache__"
   ],
   "ignore": [
+    "src/voicecli/engines",
     "src/voicecli/overlay.py",
     "src/voicecli/overlay_draw.py",
     "src/voicecli/overlay_audio.py",

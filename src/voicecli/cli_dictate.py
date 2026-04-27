@@ -300,7 +300,7 @@ def dictate_history(
     for line in lines:
         try:
             entries.append(_json.loads(line))
-        except Exception:
+        except _json.JSONDecodeError:
             pass
 
     recent = entries[-20:]
