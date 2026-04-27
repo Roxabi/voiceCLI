@@ -4,13 +4,29 @@ root_packages =
 include_external_packages = False
 
 # ── Contracts ────────────────────────────────────────────────────────────────
-# Uncomment and edit when you have defined your layer topology.
-# Reference: https://import-linter.readthedocs.io/en/stable/contract_types.html
-#
-# [importlinter:contract:clean-architecture-layers]
-# name = Clean architecture layers (example — replace with your topology)
-# type = layers
-# layers =
-#     voicecli.bootstrap
-#     voicecli.adapters
-#     voicecli.core
+
+[importlinter:contract:layer-boundaries]
+name = Layer dependency rule
+type = layers
+layers =
+    voicecli.cli | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay
+    voicecli.api
+    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes
+ignore_imports =
+    # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
+    voicecli.translate -> voicecli.markdown
+    # Transitional: voicecli.translate imports voicecli.utils for shared utilities — same layer peer dependency
+    voicecli.translate -> voicecli.utils
+    # Transitional: voicecli.cli imports voicecli.nats adapters inline for NATS subcommands — needs extraction to adapter layer
+    voicecli.cli -> voicecli.nats.tts_adapter
+    voicecli.cli -> voicecli.nats.config
+    voicecli.cli -> voicecli.nats.stt_adapter
+    # Transitional: voicecli.cli imports voicecli.listen for recording subcommand — needs extraction to adapter layer
+    voicecli.cli -> voicecli.listen
+    # Transitional: voicecli.daemon imports voicecli.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-059)
+    voicecli.daemon -> voicecli.engine
+    # Transitional: voicecli.stt_daemon imports voicecli.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-059)
+    voicecli.stt_daemon -> voicecli.transcribe
+    # Transitional: voicecli.model_registry imports voicecli.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
+    voicecli.model_registry -> voicecli.engine
