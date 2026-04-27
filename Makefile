@@ -6,8 +6,12 @@ HUB_SERVICES   := tts stt
 
 QUADLET_DIR        ?= $(HOME)/.config/containers/systemd
 VOICECLI_NKEYS_DIR ?= $(HOME)/.voicecli/nkeys
+DEPLOY_HOST        := $(shell grep '^DEPLOY_HOST=' $(SUPERVISOR_HUB)/lyra/.env 2>/dev/null | cut -d= -f2)
+VOICECLI_SVCS      := voicecli-tts voicecli-stt
+TTS_IMAGE          := ghcr.io/roxabi/voicecli-tts:staging
+STT_IMAGE          := ghcr.io/roxabi/voicecli-stt:staging
 
-.PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install
+.PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install deploy
 
 register:
 	@echo "Registering voiceCLI with supervisor hub..."
@@ -34,6 +38,16 @@ lint:
 
 test:
 	uv run pytest
+
+# ── Remote deploy (pull latest image + restart on DEPLOY_HOST) ───────────────
+
+deploy:  ## pull latest staging images on $(DEPLOY_HOST) and restart voicecli-tts + voicecli-stt
+	@[ -n "$(DEPLOY_HOST)" ] || { echo "Error: DEPLOY_HOST not found in $(SUPERVISOR_HUB)/lyra/.env"; exit 1; }
+	@echo "Pulling images on $(DEPLOY_HOST)..."
+	@ssh $(DEPLOY_HOST) "podman pull $(TTS_IMAGE) && podman pull $(STT_IMAGE)"
+	@echo "Restarting $(VOICECLI_SVCS)..."
+	@ssh $(DEPLOY_HOST) "systemctl --user restart $(VOICECLI_SVCS)"
+	@ssh $(DEPLOY_HOST) "systemctl --user status $(VOICECLI_SVCS) --no-pager | grep -E 'voicecli|Active:'"
 
 # ── Quadlet (ADR-055) ─────────────────────────────────────────────────────────
 
