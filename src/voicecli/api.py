@@ -384,6 +384,9 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 
 # ── Daemon helpers ───────────────────────────────────────────────────────────
+# TODO: ADR-059 wire SynthesisPort — replace direct daemon.py / model_registry
+#       coupling below with a SynthesisPort implementation injected at call
+#       sites (generate, clone). See voicecli.ports.synthesis.SynthesisPort.
 
 _DAEMON_WAIT_SECS = 60.0
 _DAEMON_POLL_INTERVAL = 2.0
