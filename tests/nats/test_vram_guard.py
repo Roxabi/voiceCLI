@@ -1,4 +1,4 @@
-"""Tests for _probe_socket_daemon in voicecli.cli (issues #42, #48).
+"""Tests for _probe_socket_daemon in voicecli.nats.config (issues #42, #48).
 
 Defines the contract for the three return values of _probe_socket_daemon:
   "absent"  — socket path does not exist

@@ -5,8 +5,6 @@ from typing import Annotated, Optional
 
 import typer
 
-from voicecli.nats.config import _probe_socket_daemon
-
 nats_app = typer.Typer(help="NATS subscriber satellites for hub-driven voice.")
 
 
@@ -35,16 +33,14 @@ def nats_serve_tts(
     import os
 
     from voicecli.config import load_nats_config
-    from voicecli.nats.config import _resolve_engine
+    from voicecli.model_registry import model_registry
+    from voicecli.nats.config import _probe_socket_daemon, _resolve_engine
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
 
-    # Load NATS config and configure model_registry
     nats_cfg = load_nats_config()
-    from voicecli.model_registry import model_registry
-
     model_registry.configure(max_cached=nats_cfg["max_cached_engines"])
     log.info("model_registry configured: max_cached=%d", model_registry._max_cached)
 
@@ -77,11 +73,7 @@ def nats_serve_tts(
         drain_timeout=drain_timeout,
     )
 
-    try:
-        asyncio.run(adapter.run(nats_url))
-    except asyncio.TimeoutError:
-        log.error("drain timeout exceeded; some requests may have been dropped")
-        raise typer.Exit(3)
+    asyncio.run(adapter.run(nats_url))
 
 
 @nats_app.command("stt")
@@ -108,7 +100,7 @@ def nats_serve_stt(
     import logging
     import os
 
-    from voicecli.nats.config import _resolve_model
+    from voicecli.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.nats.stt_adapter import SttNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
@@ -143,8 +135,4 @@ def nats_serve_stt(
         drain_timeout=drain_timeout,
     )
 
-    try:
-        asyncio.run(adapter.run(nats_url))
-    except asyncio.TimeoutError:
-        log.error("drain timeout exceeded; some requests may have been dropped")
-        raise typer.Exit(3)
+    asyncio.run(adapter.run(nats_url))

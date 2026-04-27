@@ -668,7 +668,7 @@ def _build_toml(values: dict[str, object], engine: str) -> str:
     return "\n".join(lines)
 
 
-app.command()(doctor)
+app.command("doctor")(doctor)
 
 
 @app.command()
