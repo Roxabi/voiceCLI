@@ -1,6 +1,6 @@
 """VoiceCLI — Unified voice generation CLI and library."""
 
-__version__ = "0.2.1"
+__version__ = "1.0.0"
 
 # Import submodule-level types first (this registers voicecli.transcribe as a submodule)
 from voicecli.markdown import Segment, TTSDocument

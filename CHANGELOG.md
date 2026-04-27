@@ -3,6 +3,71 @@
 All notable changes to this project will be documented in this file.
 Entries are generated automatically by `/promote` and committed to staging before the promotion PR.
 
+## [1.0.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v1.0.0) (2026-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** editable installs now require an extra. Use 'uv sync --extra all' for full feature set, or '--extra tts' / '--extra stt' for single-engine setups.
+
+### Features
+
+* **deploy:** add container form factor for Quadlet deployment ([#101](https://github.com/Roxabi/voiceCLI/issues/101)) ([ef32895](https://github.com/Roxabi/voiceCLI/commit/ef32895eaa669836c99802125515145f1d05dc86))
+* **docker:** split production image into TTS and STT variants ([a55bb4a](https://github.com/Roxabi/voiceCLI/commit/a55bb4ae8a75f2c6b1832d4a659596c5c9dd4e2f))
+* **docker:** split production image into TTS and STT variants ([0b3d216](https://github.com/Roxabi/voiceCLI/commit/0b3d21652f883e9417acc613b9d2a2d25cca2171)), closes [#121](https://github.com/Roxabi/voiceCLI/issues/121)
+* **e2e:** slim Dockerfile.mock + dual publish for fast E2E SUT ([147892a](https://github.com/Roxabi/voiceCLI/commit/147892a8dace5edf3dd491d39244ddff99fc66d7)), closes [#116](https://github.com/Roxabi/voiceCLI/issues/116)
+* **infra:** migrate to shared roxabi-ml-base image + torch as extra ([8b6a9f2](https://github.com/Roxabi/voiceCLI/commit/8b6a9f2176f7a8db1794f7654dac34658dca98e2))
+* **model-registry:** add LRU eviction for VRAM management ([#100](https://github.com/Roxabi/voiceCLI/issues/100)) ([055db2f](https://github.com/Roxabi/voiceCLI/commit/055db2feeb096b7b5e6c3344ce051145cd5b35bd))
+* **ops:** adopt cross-project container publishing pattern ([#112](https://github.com/Roxabi/voiceCLI/issues/112)) ([e9d5015](https://github.com/Roxabi/voiceCLI/commit/e9d50153e933e96757623b4a53fa229dfc6667b9))
+* **quadlet:** repoint voiceCLI workers to lyra-nats on roxabi.network (big-bang NATS) ([c8713d6](https://github.com/Roxabi/voiceCLI/commit/c8713d606be3f1998b7cbd0872ff545b7d03ccc9))
+* **quadlet:** repoint voiceCLI workers to lyra-nats on roxabi.network (big-bang NATS) ([82897b6](https://github.com/Roxabi/voiceCLI/commit/82897b63b2ab5de738188ee90757e78022e6963e))
+* **quadlet:** voiceCLI Phase 2 Quadlet infrastructure (ADR-055) ([#105](https://github.com/Roxabi/voiceCLI/issues/105)) ([64b9756](https://github.com/Roxabi/voiceCLI/commit/64b975697f873b9a68c673aed0b63cf8485279ae))
+* **tts:** pre-warm TTS engine on adapter startup + auto-update labels ([a352de8](https://github.com/Roxabi/voiceCLI/commit/a352de89459ff69e7d4d01bfe130017da2ff801a))
+
+
+### Bug Fixes
+
+* **daemon:** re-export _sanitize_request for backwards compat with tests ([5661622](https://github.com/Roxabi/voiceCLI/commit/5661622cd1b6bba6a639d18f217a5542922f96a3))
+* **docker:** correct nvidia/cuda base tag — 12.4 ubuntu24 never existed on Docker Hub ([aad8512](https://github.com/Roxabi/voiceCLI/commit/aad8512424c8ed1faf48e1a5554ee760344d6610))
+* **docker:** correct nvidia/cuda base tag — 12.4 ubuntu24 never existed on Docker Hub ([938b8b6](https://github.com/Roxabi/voiceCLI/commit/938b8b65cf7bf1cb4ea1a93c8e06992d5c8e4b92))
+* **docker:** drop --extra voxtral — heavy optional engine not used by default ([95e0949](https://github.com/Roxabi/voiceCLI/commit/95e0949d6af3bfd1b262c491971a315fbf8fd5a7))
+* **docker:** drop `--extra voxtral` — heavy optional engine not used by default ([f68cc55](https://github.com/Roxabi/voiceCLI/commit/f68cc558364c70c75d5f4bf5b00e96584e49356d))
+* **docker:** drop `uv run` from entrypoint — uv not in runtime stage ([d654f00](https://github.com/Roxabi/voiceCLI/commit/d654f006f61af02024eac542b761e7c9cf7020c2))
+* **docker:** drop uv run from entrypoint — uv missing in runtime stage ([8edf94d](https://github.com/Roxabi/voiceCLI/commit/8edf94d63316073532682b5b187a6b5eace595e9))
+* **docker:** exclude nvidia-*/triton transitive deps from venv ([e016b33](https://github.com/Roxabi/voiceCLI/commit/e016b33044fedf305ea73111047d6c94955cfc1c))
+* **docker:** fix uv tarball extraction path (strip-components + explicit member) ([63c869f](https://github.com/Roxabi/voiceCLI/commit/63c869fbd22754ab428b2add37c2c79ce5870d15))
+* **docker:** fix uv tarball extraction path (strip-components + explicit member) ([a3e6315](https://github.com/Roxabi/voiceCLI/commit/a3e631553cbc67965592d3e0e17f807cc0e29bab))
+* **docker:** fully qualify base images to docker.io/* (unblock M₁ build) ([1d42f05](https://github.com/Roxabi/voiceCLI/commit/1d42f0592d43085e716854ef5041d88e247a0c6c))
+* **docker:** fully qualify base images to docker.io/* (unblock M₁ build) ([014866c](https://github.com/Roxabi/voiceCLI/commit/014866c510db0444923fe864b143095ae7d19b86))
+* **docker:** inherit torch from ml-base via system-site-packages ([a29c280](https://github.com/Roxabi/voiceCLI/commit/a29c2800c8f94a1e57dcd2b5dc9a263e60880fa0)), closes [#116](https://github.com/Roxabi/voiceCLI/issues/116)
+* **docs,quadlet,supervisor:** address PR [#107](https://github.com/Roxabi/voiceCLI/issues/107) review — post-cutover topology ([e894508](https://github.com/Roxabi/voiceCLI/commit/e8945082f2c9498c137bcd1b19a0ed67825d01e1))
+* **importlinter:** register daemon_protocol exemptions in layer contract ([fd2d61d](https://github.com/Roxabi/voiceCLI/commit/fd2d61def08f895a67637245f5123599a1fd1a98))
+* **nats:** Fix 1 — lowercase inbox_prefix for voice-tts and voice-stt ([48c81fd](https://github.com/Roxabi/voiceCLI/commit/48c81fd61fc20767ee5fadc485a80a0b268566f8))
+* **nats:** tighten /tmp/voicecli-nats file perms to 0o600 ([#103](https://github.com/Roxabi/voiceCLI/issues/103)) ([8e4df4e](https://github.com/Roxabi/voiceCLI/commit/8e4df4ecdddc1ff0391a6f0aebafd5609f77d8d4))
+* **nats:** use roxabi-contracts TtsResponse/SttResponse in adapters ([#120](https://github.com/Roxabi/voiceCLI/issues/120)) ([082a97b](https://github.com/Roxabi/voiceCLI/commit/082a97b2f79fa4d73e0f55395332209501844e87))
+* **nkeys:** relocate NATS seed paths to ~/.voicecli/nkeys/ (ADR-055 D4) ([466aeb5](https://github.com/Roxabi/voiceCLI/commit/466aeb58e30e365b251232c4401626222179e76e))
+* **nkeys:** relocate NATS seed paths to ~/.voicecli/nkeys/ (ADR-055 D4) ([7d60bae](https://github.com/Roxabi/voiceCLI/commit/7d60bae4b0e68358e137612a6657ecaf871414a2))
+* **quadlet:** add missing NATS_NKEY_SEED_PATH and secret uid/gid for voicecli-tts and voicecli-stt ([abb8a7d](https://github.com/Roxabi/voiceCLI/commit/abb8a7df5ffeb665d8360afcfea0e92bda33d2a9))
+* **quadlet:** align Secret= names with ADR-055 D4 convention ([a8e7ed9](https://github.com/Roxabi/voiceCLI/commit/a8e7ed902384557d04031d7f9eb1cfc0f128f728))
+* **quadlet:** fix healthcheck quoted-string syntax error ([7b6cd0d](https://github.com/Roxabi/voiceCLI/commit/7b6cd0db378f370fc341854a5e36797dab975c96))
+* **quadlet:** replace Device= with AddDevice= for CDI GPU ([2197d7a](https://github.com/Roxabi/voiceCLI/commit/2197d7ac9592a8d5230a139552e20eff0d9e7878))
+* **quadlet:** simplify HealthCmd to avoid shell quoting issues ([b0fee57](https://github.com/Roxabi/voiceCLI/commit/b0fee57302f4553a9e5085c01cd160a3d52ebacc))
+* **qwen:** normalize ISO language codes to full names before TTS synthesis ([bb6207d](https://github.com/Roxabi/voiceCLI/commit/bb6207de4d0405779bc5f1be1e6c76dd5ebb9f22))
+* **supervisor:** remove engine env vars, add exitcodes for VRAM safety ([da4ea27](https://github.com/Roxabi/voiceCLI/commit/da4ea2717f005d71d7d0b45bccf78711aae4842f))
+
+
+### Documentation
+
+* extras topology for torch-as-extra split ([2ec2da4](https://github.com/Roxabi/voiceCLI/commit/2ec2da4f8f9e15791c1ed926d223121fae7a8d9e)), closes [#116](https://github.com/Roxabi/voiceCLI/issues/116)
+* **nats:** document per-request engine switching and model_registry LRU cache ([247aeed](https://github.com/Roxabi/voiceCLI/commit/247aeedcd3dfe9bf25d34dd406f189246387f361))
+* **quadlet:** replace deploy phases with auto-update section ([d95d65b](https://github.com/Roxabi/voiceCLI/commit/d95d65b8afdd1379f2262aaf0b15c4a1b3316038))
+* **spec:** add spec for [#116](https://github.com/Roxabi/voiceCLI/issues/116) ml-base migration ([e6169ee](https://github.com/Roxabi/voiceCLI/commit/e6169ee84f836a56d0500866ff1a712d9d8b6b1a))
+
+
+### Code Refactoring
+
+* **deps:** split torch/ML libs into [tts]/[stt] extras for ml-base ([e75ef72](https://github.com/Roxabi/voiceCLI/commit/e75ef729eb025f3bbb1b9a725d2c4073d3f14e0a)), closes [#116](https://github.com/Roxabi/voiceCLI/issues/116)
+
 ## [0.3.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v0.3.0) (2026-04-27)
 
 ### Features
