@@ -60,7 +60,7 @@ def _try_daemon(
     initial_prompt: str | None,
 ) -> TranscriptionResult | None:
     """Try the STT daemon for transcription. Returns None to fall back locally."""
-    from voicecli.stt_daemon import SOCKET_PATH
+    from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
 
     if not SOCKET_PATH.exists():
         return None

@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from voicecli.engine import QWEN_ENGINES
+from voicecli.paths import TTS_SOCKET_PATH as SOCKET_PATH
 
-SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "daemon.sock"
 _OUTPUT_BASE = Path.home()  # output_path must resolve within this directory (patchable in tests)
 _DEFAULT_TIMEOUT = 300  # seconds
 

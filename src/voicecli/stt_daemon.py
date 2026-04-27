@@ -22,8 +22,8 @@ from enum import Enum
 from pathlib import Path
 
 from voicecli.config import load_stt_config
+from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
 
-SOCKET_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-daemon.sock"
 HISTORY_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-history.jsonl"
 HISTORY_MAX = 100
 
