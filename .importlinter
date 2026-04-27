@@ -11,6 +11,7 @@ type = layers
 layers =
     voicecli.cli | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay
     voicecli.api
+    voicecli.adapters
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes
 ignore_imports =
@@ -34,3 +35,13 @@ ignore_imports =
     voicecli.stt_daemon -> voicecli.transcribe
     # Transitional: voicecli.model_registry imports voicecli.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
     voicecli.model_registry -> voicecli.engine
+
+[importlinter:contract:api-no-direct-infra]
+name = api must not import daemon or model_registry directly
+type = forbidden
+source_modules =
+    voicecli.api
+forbidden_modules =
+    voicecli.daemon
+    voicecli.model_registry
+allow_indirect_imports = True

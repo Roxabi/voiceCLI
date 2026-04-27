@@ -210,6 +210,8 @@ class TtsNatsAdapter(NatsAdapterBase):
             loop = asyncio.get_running_loop()
 
             def _synthesize(language: str | None) -> None:
+                from voicecli.adapters.synthesis import LocalSynthesisAdapter
+                from voicecli.model_registry import model_registry
                 from voicecli.utils import UNRESTRICTED
 
                 kw = dict(optional_kwargs)
@@ -220,7 +222,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                     engine=engine,
                     output=out_path,
                     allowed_base=UNRESTRICTED,
-                    _skip_daemon=True,
+                    _synthesis=LocalSynthesisAdapter(model_registry),
                     **kw,
                     **named_kwargs,
                 )

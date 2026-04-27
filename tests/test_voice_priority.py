@@ -41,24 +41,30 @@ def md_without_voice(tmp_path):
 
 @pytest.fixture
 def _mock_daemon():
-    """Mock daemon and engine so Qwen generate goes through the daemon path.
+    """Mock DaemonSynthesisAdapter so Qwen generate goes through the socket path.
 
-    Returns a mock for _try_daemon whose call args contain the voice field.
+    Returns a mock for _try_socket whose call args contain the voice field.
     """
     engine = MagicMock()
     engine.generate.return_value = Path("/tmp/fake.wav")
     mock_try = MagicMock(return_value=Path("/tmp/fake.wav"))
     with (
         patch("voicecli.engine.get_engine", return_value=engine),
-        patch("voicecli.api._wait_for_daemon_socket", return_value=True),
-        patch("voicecli.api._try_daemon", mock_try),
+        patch(
+            "voicecli.adapters.synthesis.DaemonSynthesisAdapter._wait_for_socket",
+            return_value=True,
+        ),
+        patch(
+            "voicecli.adapters.synthesis.DaemonSynthesisAdapter._try_socket",
+            mock_try,
+        ),
     ):
         yield mock_try
 
 
-def _called_voice(mock_try_daemon):
-    """Extract voice from the daemon request dict passed to _try_daemon."""
-    return mock_try_daemon.call_args[0][0]["voice"]
+def _called_voice(mock_try_socket):
+    """Extract voice from the daemon request dict passed to _try_socket."""
+    return mock_try_socket.call_args[0][0]["voice"]
 
 
 class TestVoicePriority:
