@@ -1,0 +1,92 @@
+# syntax=docker/dockerfile:1
+# ── build stage ──────────────────────────────────────────────────────────────
+ARG ML_BASE_TAG=cu128-py312-torch2.7.1
+FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS builder
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+# Build deps: ml-base supplies python3.12 + uv + torch but no C toolchain.
+# pyaudio + nkeys + sox build wheels from source → need gcc + python headers.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ python3-dev \
+        portaudio19-dev \
+        git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Use system-site-packages so the venv inherits torch + flash-attn from ml-base
+# (they live in /usr/local/lib/python3.12/dist-packages, not the venv).
+RUN uv venv --system-site-packages /app/.venv
+
+# Packages already present in ml-base's system site-packages — skip to avoid
+# duplicating ~5 GB of NVIDIA CUDA libs and triton in the venv.
+# Shell variable used (not ARG/ENV) so word-splitting works correctly in RUN.
+RUN UV_SKIP="--no-install-package torch \
+    --no-install-package torchaudio \
+    --no-install-package triton \
+    --no-install-package nvidia-cublas-cu12 \
+    --no-install-package nvidia-cuda-cupti-cu12 \
+    --no-install-package nvidia-cuda-nvrtc-cu12 \
+    --no-install-package nvidia-cuda-runtime-cu12 \
+    --no-install-package nvidia-cudnn-cu12 \
+    --no-install-package nvidia-cufft-cu12 \
+    --no-install-package nvidia-cufile-cu12 \
+    --no-install-package nvidia-curand-cu12 \
+    --no-install-package nvidia-cusolver-cu12 \
+    --no-install-package nvidia-cusparse-cu12 \
+    --no-install-package nvidia-cusparselt-cu12 \
+    --no-install-package nvidia-nccl-cu12 \
+    --no-install-package nvidia-nvjitlink-cu12 \
+    --no-install-package nvidia-nvtx-cu12 \
+    --no-install-package nvidia-nvshmem-cu12" && \
+    echo "$UV_SKIP" > /uv-skip-flags
+
+# Layer-cache: install deps without project first (deps don't change when src does).
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project \
+        $(cat /uv-skip-flags) \
+        --extra tts --extra nats
+
+# Now copy source and install the project itself.
+COPY src/ ./src/
+RUN uv sync --frozen --no-dev \
+        $(cat /uv-skip-flags) \
+        --extra tts --extra nats
+
+COPY deploy/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# ── runtime stage ─────────────────────────────────────────────────────────────
+# Use ml-base as runtime base — it ships torch + flash-attn + python that the
+# venv inherits via --system-site-packages. Multi-stage still buys us no leak
+# of gcc/g++/python3-dev/portaudio19-dev/git into prod (those are builder-only).
+FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS runtime
+
+# Runtime deps: portaudio shared lib for pyaudio + TLS roots.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libportaudio2 \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Fixed UID/GID 1501 — distinct from lyra (1500); deterministic on shared hosts
+RUN groupadd -r -g 1501 voicecli && \
+    useradd -r -u 1501 -g voicecli -m -d /home/voicecli -s /bin/bash voicecli
+
+# Copy venv + source from builder
+COPY --from=builder --chown=voicecli:voicecli /app /app
+COPY --from=builder /entrypoint.sh /entrypoint.sh
+
+# Ensure venv binaries are on PATH
+ENV PATH="/app/.venv/bin:$PATH" \
+    VIRTUAL_ENV="/app/.venv" \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+USER voicecli
+
+# Healthcheck delegated to deployment layer (Quadlet HealthCmd or orchestrator probe)
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["tts"]

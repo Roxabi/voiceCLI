@@ -28,3 +28,4 @@ voicecli.vocab
 .claude/worktrees/
 
 .claude/dev-core.yml
+artifacts/

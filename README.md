@@ -36,10 +36,30 @@ flowchart LR
 
 ## Install
 
+> **Breaking change in v0.3:** `uv sync` alone no longer installs any engine. Choose an extra
+> that matches your use case — torch and ML libraries are now opt-in.
+
 ```bash
 git clone <repo-url> && cd voiceCLI
-uv sync
+
+# Full install — TTS + STT + NATS satellite
+uv sync --extra all
+
+# TTS only (Qwen3, Chatterbox, torch)
+uv sync --extra tts
+
+# STT only (Faster Whisper, torch)
+uv sync --extra stt
+
+# Mock E2E / NATS satellite only (no heavy ML deps)
+uv sync --extra nats
 ```
+
+**Docker users:** torch and torchaudio are preinstalled in the base image
+(`ghcr.io/roxabi/ml-base`), so the container build skips them. For editable
+installs outside Docker, `uv` resolves torch automatically from the
+`pytorch-cu128` index already declared in `pyproject.toml` — no extra index
+configuration needed.
 
 ## Quick Start
 
@@ -322,6 +342,35 @@ If you installed via `make setup` in lyra-stack (and said yes to voiceCLI), regi
 | `--engine` | `-e` | Engine to preload at startup | none (lazy load) |
 | `--fast` | | Use smaller 0.6B Qwen model | off |
 
+### `nats-serve` — NATS satellite (distributed TTS/STT)
+
+Runs voiceCLI as a NATS queue-group subscriber for distributed synthesis. Supports **per-request engine switching** — one satellite can serve `qwen`, `qwen-fast`, `chatterbox`, `voxtral` interchangeably via LRU cache with VRAM-aware eviction.
+
+```bash
+voicecli nats-serve tts                    # TTS satellite (default engine from config)
+voicecli nats-serve tts --engine qwen-fast # TTS satellite with default engine
+voicecli nats-serve stt                    # STT satellite
+voicecli nats-serve stt --model large-v3   # STT satellite with specific model
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NATS_URL` | — (required) | NATS server URL |
+| `VOICECLI_ENGINE` | from config | Default TTS engine |
+| `VOICECLI_MODEL` | `large-v3-turbo` | STT model |
+| `VOICECLI_MAX_CONCURRENT` | TTS: 1 / STT: 2 | Max parallel requests |
+
+**Per-request engine switching:** send `{"engine": "qwen-fast"}` in the NATS request — the satellite hot-swaps engines via LRU cache. Configure cache size in `voicecli.toml`:
+
+```toml
+[nats]
+max_cached_engines = 2  # keep N engines hot
+```
+
+See [docs/NATS-SERVE.md](docs/NATS-SERVE.md) for full deployment guide.
+
 ### `emotions` — Expressiveness cheat sheet
 
 ```bash
@@ -480,6 +529,7 @@ Contributions welcome — bug fixes, new engines, and documentation improvements
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 | [docs/dictation-setup.md](docs/dictation-setup.md) | Full dictation setup (AHK, WSL2, auto-paste) |
 | [docs/configuration.md](docs/configuration.md) | `voicecli.toml` reference |
+| [docs/NATS-SERVE.md](docs/NATS-SERVE.md) | NATS satellite deployment (distributed TTS/STT) |
 
 ## License
 

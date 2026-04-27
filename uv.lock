@@ -123,7 +123,7 @@ name = "certifi"
 version = "2022.12.7"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/certifi-2022.12.7-py3-none-any.whl", hash = "sha256:4ad3232f5e926d6718ec31cfc1fcadfde020920e278684144551c91769c7bc18" },
+    { url = "https://download.pytorch.org/whl/certifi-2022.12.7-py3-none-any.whl", hash = "sha256:4ad3232f5e926d6718ec31cfc1fcadfde020920e278684144551c91769c7bc18", upload-time = "2023-10-03T17:33:19Z" },
 ]
 
 [[package]]
@@ -163,7 +163,7 @@ name = "charset-normalizer"
 version = "2.1.1"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/charset_normalizer-2.1.1-py3-none-any.whl", hash = "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f" },
+    { url = "https://download.pytorch.org/whl/charset_normalizer-2.1.1-py3-none-any.whl", hash = "sha256:83e9a75d1911279afd89352c68b45348559d1fc0506b054b346651b5e7fee29f", upload-time = "2023-10-03T17:33:19Z" },
 ]
 
 [[package]]
@@ -206,7 +206,7 @@ name = "colorama"
 version = "0.4.6"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6" },
+    { url = "https://download.pytorch.org/whl/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", upload-time = "2023-10-05T23:50:34Z" },
 ]
 
 [[package]]
@@ -247,8 +247,8 @@ dependencies = [
     { name = "cuda-pathfinder", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu128/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:694ba35023846625ef471257e6b5a4bc8af690f961d197d77d34b1d1db393f56" },
-    { url = "https://download.pytorch.org/whl/cu128/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fda147a344e8eaeca0c6ff113d2851ffca8f7dfc0a6c932374ee5c47caa649c8" },
+    { url = "https://download.pytorch.org/whl/cu128/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:694ba35023846625ef471257e6b5a4bc8af690f961d197d77d34b1d1db393f56", upload-time = "2026-01-26T17:23:49Z" },
+    { url = "https://download.pytorch.org/whl/cu128/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fda147a344e8eaeca0c6ff113d2851ffca8f7dfc0a6c932374ee5c47caa649c8", upload-time = "2026-01-26T17:23:50Z" },
 ]
 
 [[package]]
@@ -256,7 +256,7 @@ name = "cuda-pathfinder"
 version = "1.2.2"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/cuda_pathfinder-1.2.2-py3-none-any.whl" },
+    { url = "https://download.pytorch.org/whl/cuda_pathfinder-1.2.2-py3-none-any.whl", upload-time = "2026-01-20T19:36:05Z" },
 ]
 
 [[package]]
@@ -618,7 +618,7 @@ name = "idna"
 version = "3.4"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/idna-3.4-py3-none-any.whl", hash = "sha256:90b77e79eaa3eba6de819a0c442c0b4ceefc341a7a2ab77d7562bf49f425c5c2" },
+    { url = "https://download.pytorch.org/whl/idna-3.4-py3-none-any.whl", hash = "sha256:90b77e79eaa3eba6de819a0c442c0b4ceefc341a7a2ab77d7562bf49f425c5c2", upload-time = "2023-10-06T21:35:40Z" },
 ]
 
 [[package]]
@@ -644,7 +644,7 @@ dependencies = [
     { name = "zipp" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/importlib_metadata-7.1.0-py3-none-any.whl" },
+    { url = "https://download.pytorch.org/whl/importlib_metadata-7.1.0-py3-none-any.whl", upload-time = "2025-08-05T21:34:24Z" },
 ]
 
 [[package]]
@@ -673,7 +673,7 @@ dependencies = [
     { name = "markupsafe" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl" },
+    { url = "https://download.pytorch.org/whl/jinja2-3.1.6-py3-none-any.whl", upload-time = "2025-10-14T18:38:59Z" },
 ]
 
 [[package]]
@@ -763,12 +763,12 @@ name = "markupsafe"
 version = "3.0.2"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-macosx_10_13_universal2.whl" },
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-macosx_11_0_arm64.whl" },
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl" },
-    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-win_amd64.whl" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-macosx_10_13_universal2.whl", upload-time = "2026-02-19T22:23:09Z" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-macosx_11_0_arm64.whl", upload-time = "2026-02-19T22:23:09Z" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", upload-time = "2026-02-19T22:23:09Z" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", upload-time = "2026-02-19T22:23:11Z" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", upload-time = "2026-02-19T22:23:11Z" },
+    { url = "https://download.pytorch.org/whl/MarkupSafe-3.0.2-cp312-cp312-win_amd64.whl", upload-time = "2026-02-19T22:23:11Z" },
 ]
 
 [[package]]
@@ -1118,7 +1118,7 @@ name = "packaging"
 version = "24.1"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/packaging-24.1-py3-none-any.whl", hash = "sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124" },
+    { url = "https://download.pytorch.org/whl/packaging-24.1-py3-none-any.whl", hash = "sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124", upload-time = "2024-10-29T23:48:01Z" },
 ]
 
 [[package]]
@@ -1630,7 +1630,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/requests-2.28.1-py3-none-any.whl", hash = "sha256:8fefa2a1a1365bf5520aac41836fbee479da67864514bdb821f31ce07ce65349" },
+    { url = "https://download.pytorch.org/whl/requests-2.28.1-py3-none-any.whl", hash = "sha256:8fefa2a1a1365bf5520aac41836fbee479da67864514bdb821f31ce07ce65349", upload-time = "2023-10-06T21:36:51Z" },
 ]
 
 [[package]]
@@ -1805,7 +1805,7 @@ name = "setuptools"
 version = "70.2.0"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/setuptools-70.2.0-py3-none-any.whl", hash = "sha256:b8b8060bb426838fbe942479c90296ce976249451118ef566a5a0b7d8b78fb05" },
+    { url = "https://download.pytorch.org/whl/setuptools-70.2.0-py3-none-any.whl", hash = "sha256:b8b8060bb426838fbe942479c90296ce976249451118ef566a5a0b7d8b78fb05", upload-time = "2025-01-30T19:44:58Z" },
 ]
 
 [[package]]
@@ -1999,9 +1999,9 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:6f09cdf2415516be028ae82e6b985bcfc3eac37bc52ab401142689f6224516ca" },
-    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:628e89bd5110ced7debee2a57c69959725b7fbc64eab81a39dd70e46c7e28ba5" },
-    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:fbde8f6a9ec8c76979a0d14df21c10b9e5cab6f0d106a73ca73e2179bc597cae" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:6f09cdf2415516be028ae82e6b985bcfc3eac37bc52ab401142689f6224516ca", upload-time = "2026-01-21T15:22:03Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:628e89bd5110ced7debee2a57c69959725b7fbc64eab81a39dd70e46c7e28ba5", upload-time = "2026-01-21T15:22:11Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:fbde8f6a9ec8c76979a0d14df21c10b9e5cab6f0d106a73ca73e2179bc597cae", upload-time = "2026-01-21T15:22:17Z" },
 ]
 
 [[package]]
@@ -2009,7 +2009,7 @@ name = "torchao"
 version = "0.16.0+cu128"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/cu128/torchao-0.16.0%2Bcu128-cp310-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:eda63ff11519c563d2f664b11e52cd7dcd0d7ff34c88cdfdef330e409d3f253f" },
+    { url = "https://download.pytorch.org/whl/cu128/torchao-0.16.0%2Bcu128-cp310-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:eda63ff11519c563d2f664b11e52cd7dcd0d7ff34c88cdfdef330e409d3f253f", upload-time = "2026-02-10T18:44:08Z" },
 ]
 
 [[package]]
@@ -2020,9 +2020,9 @@ dependencies = [
     { name = "torch" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:08b56d10d1cd8536d40e18caceedc5567a30f5eb24381cde1dfa620724187c92" },
-    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:d26b91a173cee6db9abff68b48d64236950ffc5628d06448ecdd7ac56841e10a" },
-    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:9a890dfbc7a3301f5ce7930f3ce452841f0c34e51686609628e99ed52c5cc775" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:08b56d10d1cd8536d40e18caceedc5567a30f5eb24381cde1dfa620724187c92", upload-time = "2026-01-21T15:05:48Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:d26b91a173cee6db9abff68b48d64236950ffc5628d06448ecdd7ac56841e10a", upload-time = "2026-01-21T15:05:48Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.10.0%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:9a890dfbc7a3301f5ce7930f3ce452841f0c34e51686609628e99ed52c5cc775", upload-time = "2026-01-21T15:05:48Z" },
 ]
 
 [[package]]
@@ -2033,7 +2033,7 @@ dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/tqdm-4.66.5-py3-none-any.whl", hash = "sha256:90279a3770753eafc9194a0364852159802111925aa30eb3f9d85b0e805ac7cd" },
+    { url = "https://download.pytorch.org/whl/tqdm-4.66.5-py3-none-any.whl", hash = "sha256:90279a3770753eafc9194a0364852159802111925aa30eb3f9d85b0e805ac7cd", upload-time = "2024-10-30T00:09:55Z" },
 ]
 
 [[package]]
@@ -2062,8 +2062,8 @@ name = "triton"
 version = "3.6.0"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6e42d084864d12b8784736fe51a0cd05f6cc56775b25c8102c9d80c421f4e298" },
-    { url = "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6f5928e6d44c34a97bbe164cceddc0ef2007121c89ebcfba5415cf452de7ee9f" },
+    { url = "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6e42d084864d12b8784736fe51a0cd05f6cc56775b25c8102c9d80c421f4e298", upload-time = "2026-01-22T23:13:34Z" },
+    { url = "https://download-r2.pytorch.org/whl/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6f5928e6d44c34a97bbe164cceddc0ef2007121c89ebcfba5415cf452de7ee9f", upload-time = "2026-01-22T23:13:42Z" },
 ]
 
 [[package]]
@@ -2115,7 +2115,7 @@ name = "urllib3"
 version = "1.26.13"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/urllib3-1.26.13-py2.py3-none-any.whl", hash = "sha256:47cc05d99aaa09c9e72ed5809b60e7ba354e64b59c9c173ac3018642d8bb41fc" },
+    { url = "https://download.pytorch.org/whl/urllib3-1.26.13-py2.py3-none-any.whl", hash = "sha256:47cc05d99aaa09c9e72ed5809b60e7ba354e64b59c9c173ac3018642d8bb41fc", upload-time = "2023-10-06T21:48:51Z" },
 ]
 
 [[package]]
@@ -2147,22 +2147,28 @@ wheels = [
 
 [[package]]
 name = "voicecli"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
-    { name = "chatterbox-tts" },
-    { name = "faster-qwen3-tts" },
-    { name = "faster-whisper" },
     { name = "lameenc" },
     { name = "pyaudio" },
-    { name = "qwen-tts" },
     { name = "soundfile" },
-    { name = "torch" },
-    { name = "torchaudio" },
     { name = "typer" },
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "chatterbox-tts" },
+    { name = "faster-qwen3-tts" },
+    { name = "faster-whisper" },
+    { name = "nats-py" },
+    { name = "nkeys" },
+    { name = "nvidia-ml-py" },
+    { name = "qwen-tts" },
+    { name = "roxabi-nats" },
+    { name = "torch" },
+    { name = "torchaudio" },
+]
 hotkey = [
     { name = "pynput" },
 ]
@@ -2175,6 +2181,18 @@ nats = [
 overlay = [
     { name = "pycairo" },
     { name = "pygobject" },
+]
+stt = [
+    { name = "faster-whisper" },
+    { name = "torch" },
+    { name = "torchaudio" },
+]
+tts = [
+    { name = "chatterbox-tts" },
+    { name = "faster-qwen3-tts" },
+    { name = "qwen-tts" },
+    { name = "torch" },
+    { name = "torchaudio" },
 ]
 voxtral = [
     { name = "scipy" },
@@ -2193,9 +2211,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "chatterbox-tts" },
-    { name = "faster-qwen3-tts" },
-    { name = "faster-whisper", specifier = ">=1.2" },
+    { name = "chatterbox-tts", marker = "extra == 'tts'" },
+    { name = "faster-qwen3-tts", marker = "extra == 'tts'" },
+    { name = "faster-whisper", marker = "extra == 'stt'", specifier = ">=1.2" },
     { name = "lameenc", specifier = ">=1.7" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6,<3" },
     { name = "nkeys", marker = "extra == 'nats'", specifier = ">=0.1" },
@@ -2204,16 +2222,19 @@ requires-dist = [
     { name = "pycairo", marker = "extra == 'overlay'", specifier = ">=1.25" },
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
-    { name = "qwen-tts" },
+    { name = "qwen-tts", marker = "extra == 'tts'" },
     { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&tag=roxabi-nats%2Fv0.2.1" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },
-    { name = "torch", specifier = ">=2.7" },
-    { name = "torchaudio", specifier = ">=2.7" },
+    { name = "torch", marker = "extra == 'stt'", specifier = ">=2.7" },
+    { name = "torch", marker = "extra == 'tts'", specifier = ">=2.7" },
+    { name = "torchaudio", marker = "extra == 'stt'", specifier = ">=2.7" },
+    { name = "torchaudio", marker = "extra == 'tts'", specifier = ">=2.7" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "voicecli", extras = ["tts", "stt", "nats"], marker = "extra == 'all'" },
     { name = "voxtral-tts", extras = ["int4"], marker = "extra == 'voxtral'", git = "https://github.com/Roxabi/voxtral-tts.git?branch=main" },
 ]
-provides-extras = ["voxtral", "hotkey", "overlay", "nats"]
+provides-extras = ["tts", "stt", "all", "voxtral", "hotkey", "overlay", "nats"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2276,5 +2297,5 @@ name = "zipp"
 version = "3.19.2"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 wheels = [
-    { url = "https://download.pytorch.org/whl/zipp-3.19.2-py3-none-any.whl" },
+    { url = "https://download.pytorch.org/whl/zipp-3.19.2-py3-none-any.whl", upload-time = "2025-08-05T22:17:38Z" },
 ]

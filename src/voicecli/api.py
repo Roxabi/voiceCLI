@@ -384,6 +384,9 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 
 # ── Daemon helpers ───────────────────────────────────────────────────────────
+# TODO: ADR-059 wire SynthesisPort — replace direct daemon.py / model_registry
+#       coupling below with a SynthesisPort implementation injected at call
+#       sites (generate, clone). See voicecli.ports.synthesis.SynthesisPort.
 
 _DAEMON_WAIT_SECS = 60.0
 _DAEMON_POLL_INTERVAL = 2.0
@@ -767,7 +770,13 @@ def generate(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    eng = get_engine(r_engine)
+    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
+    if _skip_daemon:
+        from voicecli.model_registry import model_registry
+
+        eng = model_registry.get(r_engine)
+    else:
+        eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
 
@@ -934,7 +943,13 @@ def clone(
         # default_output_path writes inside OUTPUT_DIR by construction
         out = default_output_path(prefix)
 
-    eng = get_engine(r_engine)
+    # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
+    if _skip_daemon:
+        from voicecli.model_registry import model_registry
+
+        eng = model_registry.get(r_engine)
+    else:
+        eng = get_engine(r_engine)
     if r_fast and r_engine in QWEN_ENGINES:
         eng._small = True
 
@@ -1076,6 +1091,20 @@ def list_voices(engine: str) -> list[str]:
     except ValueError:
         raise ValueError(f"Unknown engine '{engine}'. Available: {list_engines()}")
     return eng.list_voices()
+
+
+def warmup_model(model: str) -> None:
+    """Pre-load a faster-whisper STT model into VRAM.
+
+    Public façade over transcribe._load_model so callers (e.g. the NATS STT
+    adapter) do not need to import private symbols directly.
+
+    Args:
+        model: Model name accepted by faster-whisper (e.g. "large-v3-turbo").
+    """
+    from voicecli.transcribe import _load_model
+
+    _load_model(model)
 
 
 # ── Async wrappers ───────────────────────────────────────────────────────────

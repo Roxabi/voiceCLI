@@ -3,9 +3,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
-from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from pathlib import Path
+
+from voicecli.ports.tts import TTSEngine
 
 log = logging.getLogger(__name__)
 
@@ -60,25 +60,6 @@ def cuda_guard(engine_name: str) -> Iterator[None]:
         if not _CUDA_PATTERNS.search(msg):
             raise
         raise RuntimeError(f"CUDA error in {engine_name}: {msg}") from exc
-
-
-class TTSEngine(ABC):
-    name: str
-    _small: bool = False
-
-    @abstractmethod
-    def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
-        """Generate speech from text using a built-in voice."""
-
-    @abstractmethod
-    def clone(
-        self, text: str, ref_audio: Path, output_path: Path, ref_text: str | None = None, **kwargs
-    ) -> Path:
-        """Generate speech by cloning a voice from reference audio."""
-
-    @abstractmethod
-    def list_voices(self) -> list[str]:
-        """Return available built-in voice names."""
 
 
 QWEN_ENGINES = frozenset({"qwen", "qwen-fast"})

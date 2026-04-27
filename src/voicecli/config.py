@@ -184,3 +184,64 @@ def load_stt_config(config: Path | None = None) -> dict:
             except (ValueError, TypeError):
                 pass
     return result
+
+
+_KNOWN_TTS: dict[str, type] = {
+    "default_engine": str,
+}
+
+
+def load_tts_config(config: Path | None = None) -> dict:
+    """Load the [tts] table from voicecli.toml.
+
+    Returns {"default_engine": None} when no config found.
+
+    Args:
+        config: Explicit path to a toml file. If provided, skips the walk-up search.
+    """
+    path = config if config is not None else _find_config()
+    result: dict[str, str | None] = {"default_engine": None}
+    if path is None:
+        return result
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    raw = data.get("tts", {})
+    for key, expected_type in _KNOWN_TTS.items():
+        if key in raw:
+            try:
+                result[key] = expected_type(raw[key])
+            except (ValueError, TypeError):
+                pass
+    return result
+
+
+_KNOWN_NATS: dict[str, type] = {
+    "max_cached_engines": int,
+}
+
+
+def load_nats_config(config: Path | None = None) -> dict:
+    """Load the ``[nats]`` table from voicecli.toml.
+
+    Returns ``{"max_cached_engines": 2}`` when no config is found or the table
+    is absent. Value is clamped to [1, 5].
+
+    Args:
+        config: Explicit path to a toml file. If provided, skips the walk-up search.
+    """
+    path = config if config is not None else _find_config()
+    result: dict[str, int] = {"max_cached_engines": 2}
+    if path is None:
+        return result
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    raw = data.get("nats", {})
+    for key, expected_type in _KNOWN_NATS.items():
+        if key in raw:
+            try:
+                result[key] = expected_type(raw[key])
+            except (ValueError, TypeError):
+                pass
+    # Clamp max_cached_engines to [1, 5]
+    result["max_cached_engines"] = max(1, min(5, result.get("max_cached_engines", 2)))
+    return result

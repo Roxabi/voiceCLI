@@ -1,0 +1,29 @@
+name: publish
+on:
+  push:
+    branches: [staging]
+    tags: ['voicecli/v*']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish-tts:
+    uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
+    with:
+      image_name: ghcr.io/roxabi/voicecli-tts
+      dockerfile_path: Dockerfile.tts
+      release_please_component: voicecli
+
+  publish-stt:
+    uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
+    with:
+      image_name: ghcr.io/roxabi/voicecli-stt
+      dockerfile_path: Dockerfile.stt
+      release_please_component: voicecli
+
+  publish-mock:
+    uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
+    with:
+      image_name: ghcr.io/roxabi/voicecli-mock
+      dockerfile_path: Dockerfile.mock
+      release_please_component: voicecli

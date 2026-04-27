@@ -1,1 +1,1 @@
-{ "title": "ADRs", "pages": ["001-output-path-trust-model"] }
+{ "title": "ADRs", "pages": ["001-output-path-trust-model", "002-vram-model-management"] }

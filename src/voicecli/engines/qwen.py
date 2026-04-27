@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from voicecli.engine import TTSEngine, cuda_guard
+from voicecli.utils import to_full_language_name
 from voicecli.models import (
     QWEN_CLONE_MODEL,
     QWEN_CLONE_MODEL_SMALL,
@@ -128,7 +129,7 @@ class QwenEngine(TTSEngine):
             if seg.instruct:
                 kw["instruct"] = seg.instruct
             if seg.language:
-                kw["language"] = seg.language
+                kw["language"] = to_full_language_name(seg.language)
             if seg.voice:
                 kw["speaker"] = seg.voice
 
@@ -150,7 +151,7 @@ class QwenEngine(TTSEngine):
         if voice not in SPEAKERS:
             raise ValueError(f"Unknown voice '{voice}'. Available: {SPEAKERS}")
 
-        language = kwargs.get("language", "English")
+        language = to_full_language_name(kwargs.get("language", "English"))
         instruct = kwargs.get("instruct")
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
@@ -183,7 +184,7 @@ class QwenEngine(TTSEngine):
     def clone(
         self, text: str, ref_audio: Path, output_path: Path, ref_text: str | None = None, **kwargs
     ) -> Path:
-        language = kwargs.get("language", "English")
+        language = to_full_language_name(kwargs.get("language", "English"))
         segments: list[Segment] | None = kwargs.get("segments")
         default_gap = kwargs.get("segment_gap", 0)
         default_crossfade = kwargs.get("crossfade", 0)

@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
 import logging
 import re
-import struct
-import wave
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
+from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
 from roxabi_nats._validate import validate_nats_token
 from voicecli.nats.queue_groups import TTS_WORKERS
-from voicecli.nats.reply import build_reply, encode_reply
 from voicecli.nats.tempdir import cleanup, scoped_path
+from voicecli.nats.tts_wav_utils import (
+    cleanup_chunks,
+    collect_chunked_output,
+    concat_wav_chunks,
+    wav_duration_ms,
+    wav_waveform_b64,
+)
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).
@@ -34,113 +39,26 @@ def _engine_available(engine: str) -> bool:
     return engine in _get_registry()
 
 
-def _collect_chunked_output(out_path: Path) -> list[Path]:
-    """Return sorted chunk paths if a .done marker exists, else empty list.
-
-    When api.generate() runs in chunked mode it writes:
-        {stem}_001.wav, {stem}_002.wav, … {stem}_NNN.wav
-        {stem}.done  (sentinel written after all chunks)
-
-    The adapter expects a single file at *out_path* ({stem}.wav). If the
-    engine wrote chunks instead, this function returns them in order so the
-    caller can concatenate them.
-    """
-    done_path = out_path.with_suffix(".done")
-    if not done_path.exists():
-        return []
-    stem = out_path.stem
-    parent = out_path.parent
-    chunks = sorted(parent.glob(f"{stem}_*.wav"))
-    return chunks
-
-
-def _concat_wav_chunks(chunks: list[Path], out_path: Path) -> None:
-    """Concatenate WAV chunk files into *out_path* using the stdlib wave module.
-
-    All chunks must share the same format (channels, sample width, frame rate).
-    Raises ValueError if the chunk list is empty or format is inconsistent.
-    """
-    if not chunks:
-        raise ValueError("concat_wav_chunks: chunk list is empty")
-
-    with wave.open(str(chunks[0]), "rb") as first:
-        params = first.getparams()
-
-    with wave.open(str(out_path), "wb") as out_wav:
-        out_wav.setparams(params)
-        for chunk_path in chunks:
-            with wave.open(str(chunk_path), "rb") as chunk_wav:
-                if (
-                    chunk_wav.getnchannels() != params.nchannels
-                    or chunk_wav.getsampwidth() != params.sampwidth
-                    or chunk_wav.getframerate() != params.framerate
-                ):
-                    raise ValueError(
-                        f"chunk format mismatch in {chunk_path}: "
-                        f"expected {params.nchannels}ch/{params.sampwidth}sw/{params.framerate}Hz"
-                    )
-                out_wav.writeframes(chunk_wav.readframes(chunk_wav.getnframes()))
-
-
-def _cleanup_chunks(out_path: Path, chunks: list[Path]) -> None:
-    """Remove chunk files and the .done sentinel. Idempotent."""
-    done_path = out_path.with_suffix(".done")
-    for p in [*chunks, done_path]:
-        with contextlib.suppress(FileNotFoundError):
-            p.unlink()
-
-
-def _wav_duration_ms(path: Path) -> int:
-    """Read WAV header to compute duration in milliseconds. Returns 0 on failure."""
-    try:
-        with wave.open(str(path), "rb") as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            if rate > 0:
-                return int(frames / rate * 1000)
-    except Exception:
-        pass
-    return 0
-
-
-def _wav_waveform_b64(path: Path, num_samples: int = 256) -> str | None:
-    """Compute a 256-byte amplitude waveform from a WAV file.
-
-    Mirrors lyra's `_wav_waveform_b64` so Discord voice-message waveforms
-    can be rendered without a second decoding pass hub-side.
-    Returns None on any error (field is optional in ADR-044).
-    """
-    try:
-        with wave.open(str(path), "rb") as wf:
-            n_channels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            n_frames = wf.getnframes()
-            raw = wf.readframes(n_frames)
-
-        if sampwidth == 1:
-            samples = [raw[i] - 128 for i in range(0, len(raw), n_channels)]
-            max_val = 128
-        elif sampwidth == 2:
-            samples = [
-                struct.unpack_from("<h", raw, i)[0] for i in range(0, len(raw) - 1, 2 * n_channels)
-            ]
-            max_val = 32768
-        else:
-            return None
-
-        if not samples:
-            return None
-
-        chunk = max(1, len(samples) // num_samples)
-        waveform = bytearray()
-        for i in range(num_samples):
-            sl = samples[i * chunk : i * chunk + chunk]
-            amp = sum(abs(x) for x in sl) // len(sl) if sl else 0
-            waveform.append(min(255, int(amp * 255 / max_val)))
-        return base64.b64encode(bytes(waveform)).decode("ascii")
-    except Exception:
-        log.warning("waveform_b64 computation failed", exc_info=True)
-        return None
+def _err_tts(trace_id: str, request_id: str, error: str) -> bytes:
+    if not request_id:
+        m = TtsResponse.model_construct(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id="",
+            error=error,
+        )
+    else:
+        m = TtsResponse(
+            contract_version=CONTRACT_VERSION,
+            trace_id=trace_id,
+            issued_at=datetime.now(timezone.utc),
+            ok=False,
+            request_id=request_id,
+            error=error,
+        )
+    return m.model_dump_json(exclude_none=True).encode()
 
 
 class TtsNatsAdapter(NatsAdapterBase):
@@ -171,65 +89,65 @@ class TtsNatsAdapter(NatsAdapterBase):
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
 
     def heartbeat_payload(self) -> dict:
+        from voicecli.model_registry import model_registry
+
         payload = super().heartbeat_payload()
-        payload["model_loaded"] = self.model_loaded
+        payload["model_loaded"] = model_registry.loaded_engines()
         payload["active_requests"] = self.max_concurrent - self._sem._value
+
+        # Add VRAM metrics
+        payload["vram_free_mb"] = model_registry.vram_free_mb()
+        payload["vram_status"] = model_registry.vram_status()
+
         return payload
 
     def _extra_subjects(self) -> list[str]:
         return [f"{self.subject}.{self._worker_id}"]
 
+    async def run(self, nats_url: str, stop: asyncio.Event | None = None) -> None:
+        asyncio.create_task(self._prewarm())
+        await super().run(nats_url, stop)
+
+    async def _prewarm(self) -> None:
+        loop = asyncio.get_running_loop()
+        log.info("TTS pre-warm: loading engine=%s", self.default_engine)
+        try:
+            from voicecli.model_registry import model_registry
+
+            await loop.run_in_executor(self._executor, model_registry.get, self.default_engine)
+            log.info("TTS pre-warm complete: engine=%s loaded", self.default_engine)
+        except Exception:
+            log.warning("TTS pre-warm failed — first request will trigger cold load", exc_info=True)
+
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
+        trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(
-                msg, encode_reply(build_reply(ok=False, request_id="", error="malformed_request"))
-            )
+            await self.reply(msg, _err_tts(trace_id, "", "malformed_request"))
             return
 
         # Reject path-traversal or oversized request IDs at ingestion (Fix 2)
         if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
             await self.reply(
                 msg,
-                encode_reply(
-                    build_reply(
-                        ok=False,
-                        request_id=request_id[:64] if request_id else "",
-                        error="malformed_request",
-                    )
-                ),
+                _err_tts(trace_id, request_id[:64] if request_id else "", "malformed_request"),
             )
             return
 
         # Validate text field early to avoid KeyError being masked as synthesis_failed (Fix 8)
         text = payload.get("text")
         if not text or not isinstance(text, str):
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="malformed_request")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
             return
 
         engine = payload.get("engine") or self.default_engine
         try:
             validate_nats_token(engine, kind="engine")
         except ValueError:
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="malformed_request")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
             return
         if not _engine_available(engine):
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="engine_unavailable")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "engine_unavailable"))
             return
 
         if self.reject_when_full:
@@ -237,23 +155,25 @@ class TtsNatsAdapter(NatsAdapterBase):
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(
-                    msg,
-                    encode_reply(
-                        build_reply(ok=False, request_id=request_id, error="capacity_exceeded")
-                    ),
-                )
+                await self.reply(msg, _err_tts(trace_id, request_id, "capacity_exceeded"))
                 return
             try:
-                await self._run_synthesis(msg, payload, request_id, text, engine)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
             finally:
                 self._sem.release()
         else:
             async with self._sem:
-                await self._run_synthesis(msg, payload, request_id, text, engine)
+                await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
 
     async def _run_synthesis(
-        self, msg: Any, payload: dict, request_id: str, text: str, engine: str
+        self,
+        msg: Any,
+        payload: dict,
+        request_id: str,
+        text: str,
+        engine: str,
+        *,
+        trace_id: str,
     ) -> None:
         out_path = scoped_path(request_id, "wav")
         try:
@@ -329,14 +249,19 @@ class TtsNatsAdapter(NatsAdapterBase):
             # If the engine ran in chunked mode it writes {stem}_NNN.wav files
             # plus a {stem}.done sentinel instead of {stem}.wav directly.
             # Detect and concatenate chunks into out_path before encoding.
-            chunks = _collect_chunked_output(out_path)
+            chunks = collect_chunked_output(out_path)
             if chunks:
-                _concat_wav_chunks(chunks, out_path)
-                _cleanup_chunks(out_path, chunks)
+                # issue #60: explicitly tighten each chunk before it is read or
+                # deleted, so chunk confidentiality does not rely solely on umask.
+                for c in chunks:
+                    c.chmod(0o600)
+                concat_wav_chunks(chunks, out_path)
+                cleanup_chunks(out_path, chunks)
 
+            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
             audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
-            duration_ms = _wav_duration_ms(out_path)
-            waveform_b64 = _wav_waveform_b64(out_path)
+            duration_ms = wav_duration_ms(out_path)
+            waveform_b64 = wav_waveform_b64(out_path)
             reply_fields: dict[str, Any] = {
                 "audio_b64": audio_b64,
                 "mime_type": "audio/wav",
@@ -346,15 +271,22 @@ class TtsNatsAdapter(NatsAdapterBase):
                 reply_fields["waveform_b64"] = waveform_b64
             await self.reply(
                 msg,
-                encode_reply(build_reply(ok=True, request_id=request_id, **reply_fields)),
+                TtsResponse(
+                    contract_version=CONTRACT_VERSION,
+                    trace_id=trace_id,
+                    issued_at=datetime.now(timezone.utc),
+                    ok=True,
+                    request_id=request_id,
+                    audio_b64=audio_b64,
+                    mime_type="audio/wav",
+                    duration_ms=duration_ms,
+                    waveform_b64=waveform_b64,
+                )
+                .model_dump_json(exclude_none=True)
+                .encode(),
             )
         except Exception:
             log.exception("synthesis_failed", extra={"request_id": request_id})
-            await self.reply(
-                msg,
-                encode_reply(
-                    build_reply(ok=False, request_id=request_id, error="synthesis_failed")
-                ),
-            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "synthesis_failed"))
         finally:
             cleanup(out_path)

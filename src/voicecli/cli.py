@@ -438,7 +438,8 @@ def dictate_history(
     """Show the last 20 dictation history entries."""
     import json as _json
 
-    from voicecli.stt_daemon import HISTORY_PATH, _write_clipboard
+    from voicecli.clipboard import write_clipboard
+    from voicecli.history import HISTORY_PATH
 
     if not HISTORY_PATH.exists():
         typer.echo("No history yet.")
@@ -461,7 +462,7 @@ def dictate_history(
         if idx < 0 or idx >= len(recent):
             typer.echo(f"Entry {copy} out of range (1–{len(recent)}).", err=True)
             raise typer.Exit(1)
-        _write_clipboard(recent[idx]["text"])
+        write_clipboard(recent[idx]["text"])
         typer.echo(f"Copied entry {copy} to clipboard.")
         return
 
@@ -1359,11 +1360,19 @@ def nats_serve_tts(
     import logging
     import os
 
+    from voicecli.config import load_nats_config
     from voicecli.nats.config import _resolve_engine
     from voicecli.nats.tts_adapter import TtsNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
+
+    # Load NATS config and configure model_registry
+    nats_cfg = load_nats_config()
+    from voicecli.model_registry import model_registry
+
+    model_registry.configure(max_cached=nats_cfg["max_cached_engines"])
+    log.info("model_registry configured: max_cached=%d", model_registry._max_cached)
 
     resolved_engine = _resolve_engine(engine)
 

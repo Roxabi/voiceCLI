@@ -1,0 +1,37 @@
+[Unit]
+Description=voiceCLI STT NATS worker
+Wants=lyra-nats.service
+After=lyra-nats.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Container]
+Image=ghcr.io/roxabi/voicecli-stt:staging
+Label=io.containers.autoupdate=registry
+ContainerName=voicecli-stt
+Network=roxabi.network
+Volume=voicecli-models:/home/voicecli/.cache/huggingface
+Volume=voicecli-models:/home/voicecli/.cache/voicecli
+Exec=stt
+Secret=voicecli-nats-stt,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400,uid=1501,gid=1501
+AddDevice=nvidia.com/gpu=all
+# UID 1501 fixed in image; anchor mapping so secret mount (uid=1501) is readable inside.
+UserNS=keep-id:uid=1501,gid=1501
+# Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
+Environment=NATS_URL=nats://lyra-nats:4222
+Environment=NATS_NKEY_SEED_PATH=/home/voicecli/.config/voicecli/nkeys/seed.seed
+HealthCmd=pgrep -f voicecli
+HealthInterval=30s
+NoNewPrivileges=true
+# Drop everything; GPU/CDI device access is granted via AddDevice= directive above.
+DropCapability=all
+
+[Service]
+Restart=on-failure
+RestartSec=10
+# Exits 3 (drain timeout) and 78 (VRAM-sequencing guard) are intentional —
+# do not restart-loop on them. Mirrors supervisord's `exitcodes=0,3,78`.
+RestartForceExitStatus=3 78
+
+[Install]
+WantedBy=default.target

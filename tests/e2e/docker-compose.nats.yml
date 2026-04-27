@@ -8,52 +8,27 @@ services:
       - ${NATS_CONF_PATH}:/etc/nats/nats-server.conf:ro
 
   voicecli-tts:
-    image: python:3.12
+    image: ghcr.io/roxabi/voicecli-mock:staging
+    # Run as host uid so the bind-mounted nkey seed (0o600 on host) is readable.
+    # roxabi_nats enforces 0o600/0o400, so chmod 0o644 is rejected.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     depends_on: [nats]
-    working_dir: /app
-    entrypoint: ["bash", "-lc"]
-    command:
-      - >-
-        apt-get update -qq
-        && apt-get install -y -qq --no-install-recommends portaudio19-dev libportaudio2
-        && cp -r /src/. /app
-        && pip install uv -q
-        && uv sync --extra nats --frozen
-        --no-install-package torch
-        --no-install-package torchaudio -q
-        && uv run --no-sync voicecli nats-serve tts --engine mock
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"
       NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
     volumes:
-      - ${REPO_ROOT}:/src:ro
       - ${SEED_PATH}:/run/secrets/nkey.seed:ro
-      - uv-cache:/root/.cache/uv
+    entrypoint: ["voicecli", "nats-serve", "tts", "--engine", "mock"]
 
   voicecli-stt:
-    image: python:3.12
+    image: ghcr.io/roxabi/voicecli-mock:staging
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     depends_on: [nats]
-    working_dir: /app
-    entrypoint: ["bash", "-lc"]
-    command:
-      - >-
-        apt-get update -qq
-        && apt-get install -y -qq --no-install-recommends portaudio19-dev libportaudio2
-        && cp -r /src/. /app
-        && pip install uv -q
-        && uv sync --extra nats --frozen
-        --no-install-package torch
-        --no-install-package torchaudio -q
-        && uv run --no-sync voicecli nats-serve stt --model mock
     environment:
       VOICECLI_ENABLE_MOCK_ENGINE: "1"
       NATS_URL: "nats://nats:4222"
       NATS_NKEY_SEED_PATH: /run/secrets/nkey.seed
     volumes:
-      - ${REPO_ROOT}:/src:ro
       - ${SEED_PATH}:/run/secrets/nkey.seed:ro
-      - uv-cache:/root/.cache/uv
-
-volumes:
-  uv-cache: {}
+    entrypoint: ["voicecli", "nats-serve", "stt", "--model", "mock"]

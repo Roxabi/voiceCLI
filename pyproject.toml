@@ -5,14 +5,8 @@ description = "Unified CLI for voice generation — Qwen3-TTS & Chatterbox backe
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "typer>=0.12",
-    "qwen-tts",
-    "faster-qwen3-tts",
-    "chatterbox-tts",
     "soundfile",
     "lameenc>=1.7",
-    "faster-whisper>=1.2",
-    "torch>=2.7",
-    "torchaudio>=2.7",
     "pyaudio>=0.2.14",
 ]
 
@@ -66,6 +60,19 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [project.optional-dependencies]
+tts = [
+    "qwen-tts",
+    "faster-qwen3-tts",
+    "chatterbox-tts",
+    "torch>=2.7",
+    "torchaudio>=2.7",
+]
+stt = [
+    "faster-whisper>=1.2",
+    "torch>=2.7",
+    "torchaudio>=2.7",
+]
+all = ["voicecli[tts,stt,nats]"]
 voxtral = ["voxtral-tts[int4]", "scipy"]
 hotkey = ["pynput>=1.7"]
 overlay = ["PyGObject>=3.42", "pycairo>=1.25"]

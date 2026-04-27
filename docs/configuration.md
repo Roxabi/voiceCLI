@@ -3,6 +3,27 @@ title: Configuration
 description: voicecli.toml reference and configuration resolution
 ---
 
+## Install Profiles
+
+ML libraries (torch, torchaudio) are optional extras — choose the profile that
+matches your use case. `uv sync` with no extras installs only the CLI core.
+
+| Profile | Command | What is installed |
+|---------|---------|-------------------|
+| **TTS dev** | `uv sync --extra tts` | Qwen3-TTS, faster-qwen3-tts, Chatterbox, torch, torchaudio |
+| **STT dev** | `uv sync --extra stt` | Faster Whisper, torch, torchaudio |
+| **Mock E2E / NATS satellite** | `uv sync --extra nats` | roxabi-nats, nats-py, nkeys, nvidia-ml-py (no torch) |
+| **Full** | `uv sync --extra all` | Everything above combined (`tts + stt + nats`) |
+| **Voxtral** | `uv sync --extra voxtral` | voxtral-tts (int4), scipy |
+| **Hotkey** | `uv sync --extra hotkey` | pynput |
+| **Overlay** | `uv sync --extra overlay` | PyGObject, pycairo |
+
+**Docker image:** the `ghcr.io/roxabi/ml-base` base image ships torch and
+torchaudio prebuilt for CUDA 12.8. The Dockerfile installs voicecli with
+`--no-install-package torch torchaudio` so the pre-built wheels are used
+instead of pulling from PyPI. Editable installs outside Docker resolve torch
+via the `pytorch-cu128` index already declared in `pyproject.toml`.
+
 ## Config File
 
 voiceCLI uses `voicecli.toml` (gitignored). Copy from `voicecli.example.toml` and customize.
@@ -66,3 +87,25 @@ default_mode = "default"          # Starting mode on daemon launch
 | `default_mode` | `"default"` | Initial STT mode; cycle with `Alt+Shift+Tab` |
 
 Requires daemon restart after changes. See [dictation-setup.md](./dictation-setup.md) for the full WSL2 setup.
+
+## NATS Satellite Config (`[nats]`)
+
+For distributed TTS/STT deployment via NATS. The satellite supports **per-request engine switching** — one satellite can serve multiple engines via LRU cache with VRAM-aware eviction.
+
+```toml
+[nats]
+max_cached_engines = 2   # engines to keep hot (LRU cache). Default: 2.
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `max_cached_engines` | `2` | Maximum engines cached in VRAM. Evicts LRU when full. |
+
+**How per-request switching works:**
+
+1. Request arrives with `engine` field (or falls back to `default_engine`)
+2. Cache hit → instant (no VRAM change)
+3. Cache miss → load engine, evict LRU if needed
+4. VRAM insufficient → return `engine_unavailable`
+
+See [NATS-SERVE.md](./NATS-SERVE.md#engine-hot-swapping) for full details.

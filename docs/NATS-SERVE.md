@@ -43,7 +43,7 @@ export them in the shell environment before running `voicecli nats-serve`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://nats.internal:4222` |
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://127.0.0.1:4222` |
 | `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to the NKey seed file. **File permissions must be `0600`** — the satellite refuses to start if the file is world- or group-readable. |
 | `NATS_CA_CERT` | — (optional) | Path to a PEM CA certificate for TLS verification |
 | `VOICECLI_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, etc.) |
@@ -135,7 +135,7 @@ command=voicecli nats-serve tts
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts (e.g. RTX 3080 10 GB). Setting it bypasses the VRAM-sequencing guard and
 ; will cause CUDA OOM under concurrent synthesis. See VRAM sequencing section above.
-environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
@@ -168,7 +168,7 @@ For the STT satellite stanza, see [STT — Required supervisord stanza](#stt--re
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon via supervisorctl, then restart; or pass `--allow-coexist` if coexistence is intentional |
-| `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 /path/to/voicecli-tts.seed` |
+| `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.voicecli/nkeys/voice-tts.seed` |
 | Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts-workers` (TTS) and `stt-workers` (STT) |
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
@@ -182,7 +182,7 @@ The satellite logs its startup sequence to stdout. A healthy start looks like:
 
 ```
 INFO  vram-guard: no live socket daemon detected — proceeding
-INFO  nats: connected to nats://nats.internal:4222
+INFO  nats: connected to nats://127.0.0.1:4222
 INFO  engine: model loaded in 12.3s (qwen-fast)
 INFO  nats-serve: joined queue group tts-workers — ready
 ```
@@ -197,7 +197,7 @@ Use the NATS CLI to publish a test request directly to the TTS subject and obser
 the satellite picks it up:
 
 ```bash
-nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":"qwen-fast"}' --server nats://nats.internal:4222
+nats req lyra.voice.tts.request '{"request_id":"test-1","text":"hello","engine":"qwen-fast"}' --server nats://127.0.0.1:4222
 ```
 
 If no reply arrives within the timeout, the satellite is either not running, not connected
@@ -215,7 +215,7 @@ ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-c
 | `contract_version` | string | Defensive read — logged at WARN once per worker if ≠ `"1"`, request still processed. Outgoing replies always stamp `"1"`. |
 | `request_id` | string | Required. Rejected with `malformed_request` if missing or not matching `^[A-Za-z0-9_-]{1,128}$`. Echoed in every reply. |
 | `text` | string | Required. Rejected with `malformed_request` if missing, empty, or not a string. Forwarded as the first positional arg of `api.generate`. |
-| `engine` | string | Optional; falls back to `default_engine` from satellite startup. Validated via `validate_nats_token`; unknown engine → `engine_unavailable`. |
+| `engine` | string | Optional; falls back to `default_engine` from satellite startup. **Per-request switching supported** — the satellite hot-swaps engines via LRU cache (see [Engine hot-swapping](#engine-hot-swapping)). Validated via `validate_nats_token`; unknown engine → `engine_unavailable`. |
 | `language` | string | Forwarded to `api.generate(language=…)`. |
 | `voice` | string | Forwarded to `api.generate(voice=…)`. |
 | `speed` | float | Forwarded through `**kwargs`; `translate.py` strips for engines that do not consume it. |
@@ -242,6 +242,78 @@ ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-c
 | `duration_ms` | Computed from the WAV header; `0` if unreadable. |
 | `waveform_b64` | Optional. 256-byte amplitude array (base64), computed from the generated WAV for Discord voice-message rendering. Omitted when the WAV is unreadable or the sample width is unsupported. |
 | `error` | Error code on failure (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `synthesis_failed`). |
+
+---
+
+## Engine hot-swapping
+
+The TTS satellite supports **per-request engine switching** — a single satellite can serve
+requests for `qwen`, `qwen-fast`, `chatterbox`, `chatterbox-turbo`, and `voxtral` interchangeably.
+The `model_registry` module manages an LRU cache with VRAM-aware eviction.
+
+### How it works
+
+1. Request arrives with `engine` field (or falls back to `default_engine`)
+2. `model_registry.get(engine)` checks the LRU cache
+3. **Cache hit** → returns cached engine (fast, no VRAM change)
+4. **Cache miss** → loads engine, evicts LRU if cache full, checks VRAM before load
+5. If VRAM insufficient even after full eviction → returns `engine_unavailable`
+
+### Configuration
+
+In `voicecli.toml`:
+
+```toml
+[nats]
+max_cached_engines = 2  # keep N engines hot (default: 2)
+```
+
+Higher values keep more engines hot but require more VRAM. On a 10 GB GPU, 2 engines
+is the practical limit (qwen-fast ~3.5 GB + chatterbox ~1.8 GB = ~5.3 GB steady-state).
+
+### Heartbeat visibility
+
+The satellite reports loaded engines in each heartbeat:
+
+```json
+{
+  "model_loaded": ["qwen-fast", "chatterbox"],
+  "vram_free_mb": 4200,
+  "vram_status": "ok"
+}
+```
+
+### VRAM eviction behavior
+
+When a new engine is requested and VRAM is constrained:
+
+| Condition | Action |
+|-----------|--------|
+| Cache has room | Load engine, add to cache |
+| Cache full, VRAM OK | Evict LRU engine, load new one |
+| Cache full, VRAM constrained | Evict LRU, check VRAM, repeat until space |
+| All evicted, still insufficient | Return `engine_unavailable` |
+
+The heartbeat `vram_status` field reflects current state:
+- `"ok"` — >4 GB free
+- `"constrained"` — 1–4 GB free
+- `"critical"` — <1 GB free
+
+### Example: multi-engine request flow
+
+```bash
+# Request 1: qwen-fast (loads into cache, ~30s cold start)
+nats req lyra.voice.tts.request '{"request_id":"1","text":"hello","engine":"qwen-fast"}'
+
+# Request 2: chatterbox (loads into cache, qwen-fast stays hot)
+nats req lyra.voice.tts.request '{"request_id":"2","text":"hello","engine":"chatterbox"}'
+
+# Request 3: qwen-fast (cache hit, instant)
+nats req lyra.voice.tts.request '{"request_id":"3","text":"hello","engine":"qwen-fast"}'
+
+# Request 4: voxtral (evicts LRU — chatterbox if qwen-fast was touched more recently)
+nats req lyra.voice.tts.request '{"request_id":"4","text":"hello","engine":"voxtral"}'
+```
 
 ---
 
@@ -372,7 +444,7 @@ Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
 command=voicecli nats-serve stt
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts. Bypasses the VRAM-sequencing guard and risks OOM. See VRAM sequencing above.
-environment=NATS_URL="nats://nats.internal:4222",NATS_NKEY_SEED_PATH="/home/lyra/.lyra/nkeys/voicecli-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
@@ -457,3 +529,187 @@ the engine registry (and the STT transcribe short-circuit) when the
 unset, so `mock` is absent from `voicecli.engine.available_engines()` and any
 request carrying `engine: "mock"` is rejected with `engine_unavailable`. The
 `mock_engine` pytest fixture sets the var for the test scope.
+
+---
+
+## Quadlet deployment (Podman + systemd)
+
+For production hosts running Podman with systemd integration, voiceCLI provides
+Quadlet unit files in `deploy/quadlet/`. These enable native systemd management
+of containerized NATS satellites without manual podman commands.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `voicecli-tts.container` | TTS satellite as a systemd service |
+| `voicecli-stt.container` | STT satellite as a systemd service |
+| `voicecli-models.volume` | Shared volume for HuggingFace model cache |
+
+### Installation
+
+1. Copy Quadlet units to `~/.config/containers/systemd/` (user) or
+   `/etc/containers/systemd/` (root):
+
+   ```bash
+   mkdir -p ~/.config/containers/systemd
+   cp deploy/quadlet/*.container deploy/quadlet/*.volume ~/.config/containers/systemd/
+   ```
+
+2. Create the NKey seed secrets (one per satellite):
+
+   ```bash
+   mkdir -p ~/.voicecli/nkeys && chmod 700 ~/.voicecli/nkeys
+   printf 'SU...' > ~/.voicecli/nkeys/voice-tts.seed
+   chmod 600 ~/.voicecli/nkeys/voice-tts.seed
+
+   printf 'SU...' > ~/.voicecli/nkeys/voice-stt.seed
+   chmod 600 ~/.voicecli/nkeys/voice-stt.seed
+   ```
+
+3. Register secrets with Podman (required for Quadlet `Secret=` directive):
+
+   ```bash
+   podman secret create voicecli-nats-tts ~/.voicecli/nkeys/voice-tts.seed
+   podman secret create voicecli-nats-stt ~/.voicecli/nkeys/voice-stt.seed
+   ```
+
+4. Reload systemd and start the service(s):
+
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user start voicecli-tts
+   # or for STT:
+   systemctl --user start voicecli-stt
+   ```
+
+### Pre-seeding models
+
+On first run, each satellite downloads its model (~7 GB for TTS, ~2 GB for STT).
+To avoid a cold-start delay on production hosts, pre-seed the shared volume:
+
+```bash
+# Build the image locally first
+podman build -t voicecli:latest .
+
+# Run a one-shot container to populate the cache
+podman run --rm -v voicecli-models:/root/.cache/huggingface voicecli:latest uv run voicecli --help
+# The TTS/STT model will download on first synthesis/transcription
+```
+
+Alternatively, copy an existing cache from another host:
+
+```bash
+podman volume create voicecli-models
+podman run --rm -v voicecli-models:/data alpine tar xf - -C /data < cache.tar
+```
+
+### Resource considerations
+
+The TTS and STT satellites both require GPU access. On single-GPU hosts with
+limited VRAM (e.g. RTX 3080 10 GB), run only one satellite at a time or use
+`VOICECLI_MAX_CONCURRENT=1` on the STT satellite — see
+[STT — Required supervisord stanza](#stt--required-supervisord-stanza) for the
+supervisord equivalent.
+
+Quadlet does not directly support `exitcodes=` for restart policy tuning. The
+`Restart=on-failure` directive in the Quadlet files restarts on non-zero exits,
+which includes exit codes 3 (drain timeout) and 78 (VRAM guard). This is
+acceptable for containerized deployments where the orchestration layer handles
+restart throttling.
+
+### Image registry
+
+Two production images are published from this repo:
+
+| Image | Contents | Use Case |
+|---|---|---|
+| `ghcr.io/roxabi/voicecli-tts:staging` | TTS engines (qwen, chatterbox) + NATS | TTS satellite |
+| `ghcr.io/roxabi/voicecli-stt:staging` | STT engine (faster-whisper) + NATS | STT satellite |
+
+To run both TTS and STT on the same host, deploy two containers (one for each).
+
+The Quadlet units reference the dedicated images:
+- `voicecli-tts.container` → `ghcr.io/roxabi/voicecli-tts:staging`
+- `voicecli-stt.container` → `ghcr.io/roxabi/voicecli-stt:staging`
+
+For production, pin to a specific digest:
+
+```ini
+Image=ghcr.io/roxabi/voicecli-tts@sha256:<digest>
+```
+
+Build and push from the repo root:
+
+```bash
+podman build -f Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
+podman push ghcr.io/roxabi/voicecli-tts:staging
+```
+
+### Drain-and-swap upgrade protocol
+
+The voiceCLI workers hold GPU VRAM and may be mid-synthesis when a new image
+lands. A blind `systemctl restart` interrupts in-flight requests and leaves
+NATS clients without responders. Use the drain-and-swap sequence below to roll
+out a new `:staging` image with zero dropped requests and a one-command
+rollback path.
+
+**Pre-swap — tag the running image as `:staging-prev`:**
+
+```bash
+# Capture the digest currently in use so we can roll back atomically.
+CURRENT=$(podman inspect voicecli-tts --format '{{.ImageDigest}}')
+podman tag "ghcr.io/roxabi/voicecli-tts@${CURRENT}" ghcr.io/roxabi/voicecli-tts:staging-prev
+```
+
+**Drain — let in-flight work finish before pulling:**
+
+```bash
+# Sends SIGTERM → satellite stops accepting new NATS requests, waits up to
+# VOICECLI_DRAIN_TIMEOUT (default 30 s) for in-flight synthesis to complete,
+# then exits with code 0 (clean) or 3 (timeout exceeded). Quadlet's
+# Restart=on-failure does NOT fire on code 0, so the unit stays stopped.
+systemctl --user stop voicecli-tts.service
+systemctl --user stop voicecli-stt.service
+```
+
+Tail logs to confirm a clean drain:
+
+```bash
+journalctl --user -u voicecli-tts.service -n 50 | grep -E 'drain|exit'
+# Expect: "drained N in-flight requests, exiting cleanly" → exit 0
+```
+
+**Swap — pull the new images and reload Quadlet:**
+
+```bash
+podman pull ghcr.io/roxabi/voicecli-tts:staging
+podman pull ghcr.io/roxabi/voicecli-stt:staging
+# Quadlet generates systemd units from .container files at daemon-reload time;
+# re-run after pulling so the new image digest is picked up.
+systemctl --user daemon-reload
+systemctl --user start voicecli-tts.service voicecli-stt.service
+```
+
+**Verify — health + a smoke request:**
+
+```bash
+systemctl --user status voicecli-tts.service voicecli-stt.service
+# Quick NATS round-trip from the host (requires nats-py + a user nkey):
+nats req voicecli.tts.qwen.generate '{"text":"smoke","voice":"Cherry"}' --timeout 30s
+```
+
+**Rollback — if the new image regresses:**
+
+```bash
+systemctl --user stop voicecli-tts.service voicecli-stt.service
+# Repoint the rolling tags back to the previous digests.
+podman tag ghcr.io/roxabi/voicecli-tts:staging-prev ghcr.io/roxabi/voicecli-tts:staging
+podman tag ghcr.io/roxabi/voicecli-stt:staging-prev ghcr.io/roxabi/voicecli-stt:staging
+systemctl --user daemon-reload
+systemctl --user start voicecli-tts.service voicecli-stt.service
+```
+
+The `:staging-prev` tags survive `podman pull :staging` (only the rolling tag
+is overwritten), so a rollback is always one `podman tag` away until the next
+swap re-tags `:staging-prev`.
