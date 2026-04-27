@@ -241,10 +241,10 @@ class SttNatsAdapter(NatsAdapterBase):
             # _load_model() handles the mock env-gate short-circuit internally.
             if not self._model_warm:
                 try:
-                    from voicecli.transcribe import _load_model
+                    from voicecli.api import warmup_model
 
                     loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(self._executor, _load_model, self.default_model)
+                    await loop.run_in_executor(self._executor, warmup_model, self.default_model)
                     self._model_warm = True
                     # Fix #3: set model_loaded only after the model is actually warm
                     self.model_loaded = self.default_model

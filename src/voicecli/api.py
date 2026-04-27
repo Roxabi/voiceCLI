@@ -1090,6 +1090,20 @@ def list_voices(engine: str) -> list[str]:
     return eng.list_voices()
 
 
+def warmup_model(model: str) -> None:
+    """Pre-load a faster-whisper STT model into VRAM.
+
+    Public façade over transcribe._load_model so callers (e.g. the NATS STT
+    adapter) do not need to import private symbols directly.
+
+    Args:
+        model: Model name accepted by faster-whisper (e.g. "large-v3-turbo").
+    """
+    from voicecli.transcribe import _load_model
+
+    _load_model(model)
+
+
 # ── Async wrappers ───────────────────────────────────────────────────────────
 
 
