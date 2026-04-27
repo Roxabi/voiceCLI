@@ -13,7 +13,7 @@ repos:
         pass_filenames: false
       - id: typecheck
         name: typecheck
-        entry: uv run ruff check --select=PYI .
+        entry: uv run pyright
         language: system
         pass_filenames: false
       - id: check-file-length

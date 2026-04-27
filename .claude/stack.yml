@@ -23,6 +23,10 @@ build:
 testing:
   unit: pytest
 
+lsp:
+  enabled: true
+  server: pyright
+
 deploy:
   platform: none
 
@@ -31,7 +35,7 @@ commands:
   test: uv run pytest
   lint: uv run ruff check .
   format: uv run ruff format .
-  typecheck: uv run ruff check --select=PYI .
+  typecheck: uv run pyright
   install: uv sync
 
 artifacts:
