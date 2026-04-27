@@ -438,7 +438,8 @@ def dictate_history(
     """Show the last 20 dictation history entries."""
     import json as _json
 
-    from voicecli.stt_daemon import HISTORY_PATH, _write_clipboard
+    from voicecli.clipboard import write_clipboard
+    from voicecli.history import HISTORY_PATH
 
     if not HISTORY_PATH.exists():
         typer.echo("No history yet.")
@@ -461,7 +462,7 @@ def dictate_history(
         if idx < 0 or idx >= len(recent):
             typer.echo(f"Entry {copy} out of range (1–{len(recent)}).", err=True)
             raise typer.Exit(1)
-        _write_clipboard(recent[idx]["text"])
+        write_clipboard(recent[idx]["text"])
         typer.echo(f"Copied entry {copy} to clipboard.")
         return
 

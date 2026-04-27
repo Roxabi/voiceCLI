@@ -47,9 +47,9 @@ def daemon_send(tmp_path):
     All heavy externals are mocked:
       - _probe_pyaudio   → always returns True
       - RecordingThread  → mock that returns empty wav bytes on .stop()
-      - _play_ui_sound   → no-op (captured for assertions)
+      - play_ui_sound    → no-op (captured for assertions)
       - _spawn_overlay   → no-op
-      - _write_clipboard → no-op (captured for assertions)
+      - write_clipboard  → no-op (captured for assertions)
       - transcribe       → returns TranscriptionResult("hello world", "en", [])
       - warmup           → no-op
     """
@@ -64,9 +64,9 @@ def daemon_send(tmp_path):
     with (
         patch("voicecli.stt_daemon._probe_pyaudio", return_value=True),
         patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
-        patch("voicecli.stt_daemon._play_ui_sound", mock_play_ui_sound),
+        patch("voicecli.stt_daemon.play_ui_sound", mock_play_ui_sound),
         patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
-        patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
+        patch("voicecli.stt_daemon.write_clipboard", mock_write_clipboard),
         patch("voicecli.stt_daemon.warmup", mock_warmup),
         # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
         # `from voicecli.transcribe import transcribe` inside the function body.
@@ -208,14 +208,14 @@ class TestRecordingAndChimes:
         assert resp["state"] == "idle"
 
     def test_ui_sound_start_called(self, daemon_send):
-        """_play_ui_sound("start.wav") is called when N3 fires."""
+        """play_ui_sound("start.wav") is called when N3 fires."""
         send, mock_play_ui_sound, _ = daemon_send
         sound_called = threading.Event()
         mock_play_ui_sound.side_effect = lambda name: sound_called.set()
         # Act
         send("toggle")  # N3
         # Assert — wait up to 2s for sound thread to fire
-        assert sound_called.wait(timeout=2.0), "_play_ui_sound was not called within 2 seconds"
+        assert sound_called.wait(timeout=2.0), "play_ui_sound was not called within 2 seconds"
         mock_play_ui_sound.assert_any_call("start.wav")
 
 
@@ -315,10 +315,10 @@ class TestTranscriptionAndClipboard:
         """Clipboard failure is logged but daemon continues; text still in response."""
         send, _, mock_write_clipboard = daemon_send
         # Arrange: make clipboard raise so the daemon must survive it.
-        # The fixture patches _write_clipboard as a MagicMock no-op; monkeypatch
+        # The fixture patches write_clipboard as a MagicMock no-op; monkeypatch
         # overlays that with a raising lambda for this test only.
         monkeypatch.setattr(
-            "voicecli.stt_daemon._write_clipboard",
+            "voicecli.stt_daemon.write_clipboard",
             lambda text: (_ for _ in ()).throw(OSError("no display")),
         )
         send("toggle")  # N3: start recording
@@ -510,9 +510,9 @@ class TestPaRecordFallback:
             patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
             patch("voicecli.stt_daemon._record_parecord", mock_record_parecord),
             patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
-            patch("voicecli.stt_daemon._play_ui_sound", MagicMock()),
+            patch("voicecli.stt_daemon.play_ui_sound", MagicMock()),
             patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
-            patch("voicecli.stt_daemon._write_clipboard", mock_write_clipboard),
+            patch("voicecli.stt_daemon.write_clipboard", mock_write_clipboard),
             patch("voicecli.stt_daemon.warmup", mock_warmup),
             patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
         ):

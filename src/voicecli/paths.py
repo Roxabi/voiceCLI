@@ -15,3 +15,6 @@ TTS_SOCKET_PATH = _RUNTIME_DIR / "daemon.sock"
 
 #: Unix socket for the STT daemon (stt_daemon.py / transcribe.py).
 STT_SOCKET_PATH = _RUNTIME_DIR / "stt-daemon.sock"
+
+#: JSONL history file for STT dictation entries.
+STT_HISTORY_PATH = _RUNTIME_DIR / "stt-history.jsonl"

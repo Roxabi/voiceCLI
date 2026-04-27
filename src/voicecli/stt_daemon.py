@@ -21,11 +21,11 @@ import threading
 from enum import Enum
 from pathlib import Path
 
+from voicecli.clipboard import auto_paste, write_clipboard
 from voicecli.config import load_stt_config
+from voicecli.history import append_history, wav_duration_s
 from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
-
-HISTORY_PATH = Path.home() / ".local" / "share" / "voicecli" / "stt-history.jsonl"
-HISTORY_MAX = 100
+from voicecli.ui_sounds import play_ui_sound
 
 MAX_MSG = 65536
 
@@ -43,12 +43,6 @@ class State(Enum):
 
 
 # ── pyaudio probe ─────────────────────────────────────────────────────────────
-
-
-def _is_wsl() -> bool:
-    return "WSL_DISTRO_NAME" in os.environ or (
-        Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower()
-    )
 
 
 def _probe_pyaudio() -> bool:
@@ -111,116 +105,6 @@ def _write_tempfile(wav_bytes: bytes) -> Path:
     return Path(name)
 
 
-# ── Clipboard ─────────────────────────────────────────────────────────────────
-
-
-def _write_clipboard(text: str) -> None:
-    import shutil
-    import subprocess
-
-    for cmd in [
-        ["wl-copy"],
-        ["xclip", "-selection", "clipboard"],
-        ["xsel", "--clipboard", "--input"],
-        ["clip.exe"],
-    ]:
-        if shutil.which(cmd[0]):
-            try:
-                encoding = "utf-16-le" if cmd[0] == "clip.exe" else "utf-8"
-                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-                proc.communicate(input=text.encode(encoding))
-                if proc.returncode == 0:
-                    return
-            except Exception:
-                pass
-    # Build a helpful install suggestion based on environment
-    if _is_wsl():
-        suggestion = (
-            "clip.exe is built-in on WSL2 — check WSL_INTEROP is set, or: sudo apt install xclip"
-        )
-    elif shutil.which("apt"):
-        suggestion = "sudo apt install wl-clipboard"
-    elif shutil.which("dnf"):
-        suggestion = "sudo dnf install wl-clipboard"
-    elif shutil.which("pacman"):
-        suggestion = "sudo pacman -S wl-clipboard"
-    else:
-        suggestion = "install wl-clipboard or xclip"
-    print(
-        f"[stt] clipboard write failed: no wl-copy/xclip/xsel/clip.exe found — {suggestion}",
-        file=sys.stderr,
-    )
-
-
-# ── Auto-paste ────────────────────────────────────────────────────────────────
-
-
-def _auto_paste() -> None:
-    """Trigger a Ctrl+Shift+V paste (no formatting) in the active window.
-
-    On WSL2: writes a flag file that the AHK script polls every 150 ms.
-    AHK then sends ^+v natively on the Windows side — no powershell startup lag,
-    no foreground-window race conditions.
-
-    Fallback: xdotool (native Linux / WSLg X11 windows).
-    """
-    import subprocess
-    import time
-
-    time.sleep(0.15)  # small grace period so overlay close is processed first
-
-    if _is_wsl():
-        # Resolve Windows %TEMP% → WSL path and drop the trigger file
-        try:
-            r = subprocess.run(
-                ["cmd.exe", "/c", "echo %TEMP%"],
-                capture_output=True,
-                timeout=3,
-            )
-            win_path = r.stdout.decode(
-                "cp850", errors="replace"
-            ).strip()  # e.g. C:\Users\Mickael\AppData\Local\Temp
-            if len(win_path) >= 3 and win_path[1] == ":":
-                drive = win_path[0].lower()
-                rest = win_path[2:].replace("\\", "/")
-                trigger = Path(f"/mnt/{drive}{rest}/voicecli_paste_trigger")
-                trigger.write_text("1")
-                print("[stt] auto-paste: trigger written for AHK", file=sys.stderr)
-                return
-        except Exception as e:
-            print(f"[stt] auto-paste AHK trigger failed: {e}", file=sys.stderr)
-
-    # Fallback: wtype (Wayland) → xdotool (X11/XWayland)
-    import shutil
-
-    if shutil.which("wtype"):
-        try:
-            subprocess.Popen(
-                ["wtype", "-M", "ctrl", "-P", "v", "-p", "v", "-m", "ctrl"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return
-        except Exception as e:
-            print(f"[stt] auto-paste wtype failed: {e}", file=sys.stderr)
-
-    if shutil.which("xdotool"):
-        try:
-            subprocess.Popen(
-                ["xdotool", "key", "--clearmodifiers", "ctrl+v"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return
-        except Exception as e:
-            print(f"[stt] auto-paste xdotool failed: {e}", file=sys.stderr)
-
-    print(
-        "[stt] auto-paste: no suitable method (need wtype, xdotool, or AHK trigger)",
-        file=sys.stderr,
-    )
-
-
 # ── Recording saver ───────────────────────────────────────────────────────────
 
 
@@ -248,58 +132,6 @@ def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
         text_path = text_dir / f"dictate{lang_tag}_{ts}.txt"
         text_path.write_text(text, encoding="utf-8")
         print(f"[stt] saved transcript: {text_path}", file=sys.stderr)
-
-
-# ── History ───────────────────────────────────────────────────────────────────
-
-
-def _wav_duration_s(wav_bytes: bytes) -> float | None:
-    """Parse WAV header to compute duration in seconds. Returns None on failure."""
-    try:
-        import io
-        import wave
-
-        with wave.open(io.BytesIO(wav_bytes)) as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            if rate > 0:
-                return frames / rate
-    except Exception:
-        pass
-    return None
-
-
-def _append_history(
-    text: str,
-    language: str | None,
-    mode: str | None,
-    duration_s: float | None,
-) -> None:
-    """Append one entry to the JSONL history file, capping at HISTORY_MAX entries."""
-    import json as _json
-    from datetime import datetime
-
-    if not text:
-        return
-
-    entry = {
-        "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        "text": text,
-        "language": language,
-        "mode": mode,
-        "duration_s": round(duration_s, 2) if duration_s is not None else None,
-    }
-
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(HISTORY_PATH, "a", encoding="utf-8") as f:
-            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
-        # Trim only when over cap (read-modify-write is rare)
-        lines = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
-        if len(lines) > HISTORY_MAX:
-            HISTORY_PATH.write_text("\n".join(lines[-HISTORY_MAX:]) + "\n", encoding="utf-8")
-    except Exception as e:
-        print(f"[stt] history write failed: {e}", file=sys.stderr)
 
 
 # ── Overlay launcher ──────────────────────────────────────────────────────────
@@ -332,34 +164,6 @@ def _spawn_overlay(
         )
     except Exception as e:
         print(f"[stt] overlay spawn failed: {e}", file=sys.stderr)
-
-
-# ── UI sound ──────────────────────────────────────────────────────────────────
-
-
-def _play_ui_sound(name: str) -> None:
-    """Play a UI sound from the assets directory via paplay (non-blocking)."""
-    import subprocess
-    import sys
-
-    assets = (
-        Path(sys.executable).parent.parent
-        / "lib"
-        / "python3.12"
-        / "site-packages"
-        / "voicecli"
-        / "assets"
-    )
-    # Fallback: resolve relative to this file
-    assets_local = Path(__file__).parent / "assets"
-    path = assets_local / name if assets_local.exists() else assets / name
-    if path.exists():
-        subprocess.Popen(
-            ["paplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-
-
-# ── Chime wrapper ─────────────────────────────────────────────────────────────
 
 
 # ── warmup (re-exported so tests can patch voicecli.stt_daemon.warmup) ────────
@@ -795,7 +599,7 @@ class SttDaemon:
                 self._start_parecord_recording(level_callback=_write_level)
         if self._recording_thread:
             self._recording_thread.start()
-        threading.Thread(target=_play_ui_sound, args=("start.wav",), daemon=True).start()
+        threading.Thread(target=play_ui_sound, args=("start.wav",), daemon=True).start()
         threading.Thread(
             target=_spawn_overlay,
             args=(effective_mode, self._hotkey, self._hotkey_cancel, self._hotkey_mode),
@@ -884,17 +688,17 @@ class SttDaemon:
             tmp_path.unlink(missing_ok=True)
 
         try:
-            _write_clipboard(text)
+            write_clipboard(text)
         except Exception as e:
             print(f"[stt] clipboard error: {e}", file=sys.stderr)
 
         if text and self.auto_paste:
-            threading.Thread(target=_auto_paste, daemon=True).start()
+            threading.Thread(target=auto_paste, daemon=True).start()
 
         _save_recording(wav_bytes, text, language)
 
-        duration_s = _wav_duration_s(wav_bytes)
-        _append_history(text, language, current_mode, duration_s)
+        duration_s = wav_duration_s(wav_bytes)
+        append_history(text, language, current_mode, duration_s)
 
         with self._lock:
             queued = self._state == State.QUEUED
