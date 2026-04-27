@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
+from typing import Literal
 
 log = logging.getLogger(__name__)
 
@@ -51,3 +53,21 @@ def _resolve_model(cli_value: str | None = None) -> str:
     except Exception as e:
         log.debug("config fallback during _resolve_model: %s: %s", type(e).__name__, e)
     return DEFAULT_MODEL
+
+
+def _probe_socket_daemon(path: Path) -> Literal["live", "stale", "absent"]:
+    """Probe a Unix-socket daemon. Returns 'live' if a listener accepts,
+    'stale' if the file exists but connect() refuses, 'absent' if no file."""
+    import socket as _socket
+
+    if not path.exists():
+        return "absent"
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.settimeout(0.5)
+    try:
+        sock.connect(str(path))
+        return "live"
+    except (ConnectionRefusedError, OSError):
+        return "stale"
+    finally:
+        sock.close()

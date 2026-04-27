@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from voicecli.cli import _probe_socket_daemon
+from voicecli.nats.config import _probe_socket_daemon
 
 
 class TestProbeSocketDaemon:

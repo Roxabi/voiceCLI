@@ -11,7 +11,15 @@
     "src/voicecli/overlay.py",
     "src/voicecli/overlay_draw.py",
     "src/voicecli/overlay_audio.py",
-    "src/voicecli/nats"
+    "src/voicecli/nats",
+    "src/voicecli/daemon.py",
+    "src/voicecli/engine.py",
+    "src/voicecli/listen.py",
+    "src/voicecli/model_registry.py",
+    "src/voicecli/models.py",
+    "src/voicecli/stt_daemon.py",
+    "src/voicecli/transcribe.py",
+    "src/voicecli/cli_doctor.py"
   ],
   "reportMissingImports": "error",
   "reportMissingModuleSource": "none"
