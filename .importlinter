@@ -12,8 +12,8 @@ layers =
     voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
     voicecli.api
     voicecli.adapters
-    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds | voicecli.engine_caps | voicecli.daemon_protocol | voicecli._markdown_directives
+    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds | voicecli.engine_caps | voicecli._markdown_directives
 ignore_imports =
     # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
     voicecli.translate -> voicecli.markdown
@@ -52,7 +52,6 @@ ignore_imports =
     voicecli.translate -> voicecli.engine_caps
     voicecli.markdown -> voicecli._markdown_directives
     voicecli._markdown_directives -> voicecli.markdown
-    voicecli.daemon_protocol -> voicecli.markdown
     voicecli.history -> voicecli.paths
 
 [importlinter:contract:api-no-direct-infra]
