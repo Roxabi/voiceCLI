@@ -221,11 +221,14 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
+        # Act
         with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
+        # Assert
         assert result.exit_code == 2, result.output
 
     def test_stt_exits_2_on_invalid_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,11 +239,14 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
+        # Act
         with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
+        # Assert
         assert result.exit_code == 2, result.output
 
     def test_tts_exits_2_on_http_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,11 +257,14 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "http://localhost:4222")
 
+        # Act
         with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
+        # Assert
         assert result.exit_code == 2, result.output
 
     def test_tts_warns_on_nats_scheme(
@@ -269,10 +278,12 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "nats://localhost:4222")
 
+        # Act
         with (
-            caplog.at_level(logging.WARNING),
+            caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
                 "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
@@ -281,6 +292,7 @@ class TestNatsUrlSchemeValidation:
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
+        # Assert
         assert result.exit_code == 0, result.output
         assert mock_run.call_count == 1
         assert any("unencrypted" in r.message for r in caplog.records)
@@ -296,10 +308,12 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "tls://localhost:4222")
 
+        # Act
         with (
-            caplog.at_level(logging.WARNING),
+            caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
                 "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
@@ -308,6 +322,7 @@ class TestNatsUrlSchemeValidation:
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
+        # Assert
         assert result.exit_code == 0, result.output
         assert mock_run.call_count == 1
         assert not any("unencrypted" in r.message for r in caplog.records)
@@ -323,10 +338,12 @@ class TestNatsUrlSchemeValidation:
 
         from voicecli.cli import app
 
+        # Arrange
         monkeypatch.setenv("NATS_URL", "nats://localhost:4222")
 
+        # Act
         with (
-            caplog.at_level(logging.WARNING),
+            caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
             patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
                 "voicecli.nats.stt_adapter.SttNatsAdapter.run",
@@ -335,6 +352,43 @@ class TestNatsUrlSchemeValidation:
         ):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
+        # Assert
         assert result.exit_code == 0, result.output
         assert mock_run.call_count == 1
         assert any("unencrypted" in r.message for r in caplog.records)
+
+    def test_tts_vram_guard_precedes_scheme_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """VRAM guard (exit 78) fires before scheme validation — invalid URL + live socket exits 78."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        # Arrange
+        monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
+
+        # Act
+        with patch("voicecli.nats.config._probe_socket_daemon", return_value="live"):
+            result = CliRunner().invoke(app, ["nats-serve", "tts"])
+
+        # Assert — VRAM guard wins; scheme check is never reached
+        assert result.exit_code == 78, result.output
+
+    def test_stt_vram_guard_precedes_scheme_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """VRAM guard (exit 78) fires before scheme validation on STT path."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        # Arrange
+        monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
+
+        # Act
+        with patch("voicecli.nats.config._probe_socket_daemon", return_value="live"):
+            result = CliRunner().invoke(app, ["nats-serve", "stt"])
+
+        # Assert — VRAM guard wins; scheme check is never reached
+        assert result.exit_code == 78, result.output

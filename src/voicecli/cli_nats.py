@@ -1,5 +1,6 @@
 """NATS serve sub-app — TTS and STT satellite CLI commands."""
 
+import logging
 import re
 from pathlib import Path
 from typing import Annotated, Optional
@@ -11,17 +12,14 @@ nats_app = typer.Typer(help="NATS subscriber satellites for hub-driven voice.")
 _VALID_NATS_SCHEME = re.compile(r"^(nats|tls)://")
 
 
-def _check_nats_url(nats_url: str, log: object) -> None:
+def _check_nats_url(nats_url: str, log: logging.Logger) -> None:
     """Validate NATS_URL scheme; exit 2 on invalid, warn on non-TLS."""
-    if not _VALID_NATS_SCHEME.match(nats_url):
-        log.error(  # type: ignore[attr-defined]
-            "NATS_URL scheme invalid: got %r — must start with nats:// or tls://", nats_url
-        )
+    m = _VALID_NATS_SCHEME.match(nats_url)
+    if not m:
+        log.error("NATS_URL scheme invalid: got %r — must start with nats:// or tls://", nats_url)
         raise typer.Exit(2)
-    if not nats_url.startswith("tls://"):
-        log.warning(  # type: ignore[attr-defined]
-            "NATS_URL uses non-TLS scheme %r — traffic is unencrypted", nats_url
-        )
+    if m.group(1) != "tls":
+        log.warning("NATS_URL uses non-TLS scheme %r — traffic is unencrypted", nats_url)
 
 
 @nats_app.command("tts")
