@@ -137,6 +137,7 @@ def _check_tool(name: str) -> None:
         hints = {
             "yt-dlp": "Install with: uv tool install yt-dlp",
             "ffmpeg": "Install with: sudo apt install ffmpeg",
+            "parecord": "Install with: sudo apt install pulseaudio-utils",
         }
         hint = hints.get(name, f"Please install {name}")
         raise RuntimeError(f"'{name}' not found on PATH. {hint}")
@@ -236,6 +237,7 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     """Record from microphone via PulseAudio (parecord) and save as WAV."""
     import subprocess
 
+    _check_tool("parecord")
     ensure_dir()
     if not name.endswith(".wav"):
         name = f"{name}.wav"
@@ -244,8 +246,9 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     _chime("start")
     print(f"Recording for {duration}s...")
 
+    result = None
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "parecord",
                 "--channels=1",
@@ -258,6 +261,11 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
         )
     except subprocess.TimeoutExpired:
         pass  # expected — this is how we stop after the set duration
+
+    if result is not None and result.returncode != 0:
+        raise RuntimeError(f"parecord failed (exit {result.returncode})")
+    if not dest.exists() or dest.stat().st_size == 0:
+        raise RuntimeError("parecord produced no output — check microphone and PulseAudio")
 
     _chime("stop")
     print(f"Saved recording to {dest}")
