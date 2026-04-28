@@ -707,10 +707,13 @@ def generate(
         daemon_fn = (
             chunk_fn(r_engine) if r_engine in QWEN_ENGINES and chunk_fn is not None else None
         )
-        # _emit_chunk needs a local engine fallback; provide a thin shim via the adapter
-        from voicecli.engine import get_engine
+        registry = getattr(_synthesis, "_registry", None)
+        if registry is not None:
+            eng = registry.get(r_engine)
+        else:
+            from voicecli.engine import get_engine
 
-        eng = get_engine(r_engine)
+            eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
             eng._small = True
         chunk_paths = _generate_chunked(
@@ -869,10 +872,13 @@ def clone(
         daemon_fn = (
             chunk_fn(r_engine) if r_engine in QWEN_ENGINES and chunk_fn is not None else None
         )
-        # _emit_chunk needs a local engine fallback; provide a thin shim via the adapter
-        from voicecli.engine import get_engine
+        registry = getattr(_synthesis, "_registry", None)
+        if registry is not None:
+            eng = registry.get(r_engine)
+        else:
+            from voicecli.engine import get_engine
 
-        eng = get_engine(r_engine)
+            eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
             eng._small = True
         chunk_paths = _clone_chunked(
