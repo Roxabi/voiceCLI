@@ -392,3 +392,51 @@ class TestNatsUrlSchemeValidation:
 
         # Assert — VRAM guard wins; scheme check is never reached
         assert result.exit_code == 78, result.output
+
+    def test_stt_exits_2_on_http_scheme(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """nats-serve stt exits 2 for http:// scheme."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        # Arrange
+        monkeypatch.setenv("NATS_URL", "http://localhost:4222")
+
+        # Act
+        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+            result = CliRunner().invoke(app, ["nats-serve", "stt"])
+
+        # Assert
+        assert result.exit_code == 2, result.output
+
+    def test_stt_no_warning_on_tls_scheme(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """nats-serve stt does not warn for tls:// scheme."""
+        import logging
+        from unittest.mock import AsyncMock, patch
+
+        from typer.testing import CliRunner
+
+        from voicecli.cli import app
+
+        # Arrange
+        monkeypatch.setenv("NATS_URL", "tls://localhost:4222")
+
+        # Act
+        with (
+            caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
+            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch(
+                "voicecli.nats.stt_adapter.SttNatsAdapter.run",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            result = CliRunner().invoke(app, ["nats-serve", "stt"])
+
+        # Assert
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_count == 1
+        assert not any("unencrypted" in r.message for r in caplog.records)

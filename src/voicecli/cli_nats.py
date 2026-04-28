@@ -1,6 +1,7 @@
 """NATS serve sub-app — TTS and STT satellite CLI commands."""
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Annotated, Optional
@@ -9,7 +10,7 @@ import typer
 
 nats_app = typer.Typer(help="NATS subscriber satellites for hub-driven voice.")
 
-_VALID_NATS_SCHEME = re.compile(r"^(nats|tls)://")
+_VALID_NATS_SCHEME = re.compile(r"(nats|tls)://")
 
 
 def _check_nats_url(nats_url: str, log: logging.Logger) -> None:
@@ -43,8 +44,6 @@ def nats_serve_tts(
 ) -> None:
     """Subscribe to lyra.voice.tts.request and reply with synthesized audio."""
     import asyncio
-    import logging
-    import os
 
     from voicecli.config import load_nats_config
     from voicecli.model_registry import model_registry
@@ -112,8 +111,6 @@ def nats_serve_stt(
 ) -> None:
     """Subscribe to lyra.voice.stt.request and reply with transcription."""
     import asyncio
-    import logging
-    import os
 
     from voicecli.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.nats.stt_adapter import SttNatsAdapter
