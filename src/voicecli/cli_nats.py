@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Annotated, Optional
 
 import typer
@@ -18,6 +19,9 @@ def _check_nats_url(nats_url: str, log: logging.Logger) -> None:
     m = _VALID_NATS_SCHEME.match(nats_url)
     if not m:
         log.error("NATS_URL scheme invalid: got %r — must start with nats:// or tls://", nats_url)
+        raise typer.Exit(2)
+    if not urlparse(nats_url).hostname:
+        log.error("NATS_URL has no host: got %r", nats_url)
         raise typer.Exit(2)
     if m.group(1) != "tls":
         log.warning("NATS_URL uses non-TLS scheme %r — traffic is unencrypted", nats_url)
