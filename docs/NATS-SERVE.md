@@ -43,7 +43,7 @@ export them in the shell environment before running `voicecli nats-serve`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://127.0.0.1:4222` |
+| `NATS_URL` | — (required) | NATS server URL, e.g. `nats://127.0.0.1:4222`. Accepted schemes: `nats://` (unencrypted, dev only — logs a warning) and `tls://`. WebSocket schemes (`ws://`, `wss://`) are intentionally rejected; use a NATS server with a TCP listener instead. |
 | `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to the NKey seed file. **File permissions must be `0600`** — the satellite refuses to start if the file is world- or group-readable. |
 | `NATS_CA_CERT` | — (optional) | Path to a PEM CA certificate for TLS verification |
 | `VOICECLI_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, etc.) |
