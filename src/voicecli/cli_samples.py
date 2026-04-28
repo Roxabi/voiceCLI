@@ -44,7 +44,11 @@ def samples_record(
     """Record audio from microphone and save as a sample."""
     from voicecli.samples import record_sample
 
-    dest = record_sample(name, duration=duration)
+    try:
+        dest = record_sample(name, duration=duration)
+    except (RuntimeError, OSError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"Recorded {dest}")
 
 
