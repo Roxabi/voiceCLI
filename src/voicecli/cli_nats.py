@@ -1,11 +1,27 @@
 """NATS serve sub-app — TTS and STT satellite CLI commands."""
 
+import re
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
 nats_app = typer.Typer(help="NATS subscriber satellites for hub-driven voice.")
+
+_VALID_NATS_SCHEME = re.compile(r"^(nats|tls)://")
+
+
+def _check_nats_url(nats_url: str, log: object) -> None:
+    """Validate NATS_URL scheme; exit 2 on invalid, warn on non-TLS."""
+    if not _VALID_NATS_SCHEME.match(nats_url):
+        log.error(  # type: ignore[attr-defined]
+            "NATS_URL scheme invalid: got %r — must start with nats:// or tls://", nats_url
+        )
+        raise typer.Exit(2)
+    if not nats_url.startswith("tls://"):
+        log.warning(  # type: ignore[attr-defined]
+            "NATS_URL uses non-TLS scheme %r — traffic is unencrypted", nats_url
+        )
 
 
 @nats_app.command("tts")
@@ -64,6 +80,7 @@ def nats_serve_tts(
     if not nats_url:
         log.error("NATS_URL env var is required")
         raise typer.Exit(2)
+    _check_nats_url(nats_url, log)
 
     adapter = TtsNatsAdapter(
         default_engine=resolved_engine,
@@ -126,6 +143,7 @@ def nats_serve_stt(
     if not nats_url:
         log.error("NATS_URL env var is required")
         raise typer.Exit(2)
+    _check_nats_url(nats_url, log)
 
     adapter = SttNatsAdapter(
         default_model=resolved_model,
