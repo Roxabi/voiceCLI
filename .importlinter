@@ -9,11 +9,11 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay
+    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
     voicecli.api
     voicecli.adapters
-    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes
+    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds | voicecli.engine_caps | voicecli._markdown_directives
 ignore_imports =
     # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
     voicecli.translate -> voicecli.markdown
@@ -42,6 +42,17 @@ ignore_imports =
     voicecli.stt_daemon -> voicecli.transcribe
     # Transitional: voicecli.model_registry imports voicecli.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
     voicecli.model_registry -> voicecli.engine
+    # ADR-059 V10: same top-tier peer dependencies — overlay assembler imports extracted sub-modules
+    voicecli.overlay -> voicecli.overlay_audio
+    voicecli.overlay -> voicecli.overlay_draw
+    voicecli.overlay -> voicecli.stt_client
+    # ADR-059 V10: same top-tier peer dependency — cli_dictate uses stt_client for dictate flow
+    voicecli.cli_dictate -> voicecli.stt_client
+    # ADR-059 V10: same config/utils layer peer dependencies
+    voicecli.translate -> voicecli.engine_caps
+    voicecli.markdown -> voicecli._markdown_directives
+    voicecli._markdown_directives -> voicecli.markdown
+    voicecli.history -> voicecli.paths
 
 [importlinter:contract:api-no-direct-infra]
 name = api must not import daemon or model_registry directly
