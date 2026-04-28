@@ -237,6 +237,9 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     """Record from microphone via PulseAudio (parecord) and save as WAV."""
     import subprocess
 
+    if duration <= 0:
+        raise ValueError(f"duration must be positive, got {duration}")
+
     _check_tool("parecord")
     ensure_dir()
     if not name.endswith(".wav"):
@@ -260,7 +263,9 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
             timeout=duration,
         )
     except subprocess.TimeoutExpired:
-        pass  # expected — this is how we stop after the set duration
+        # subprocess.run() already called process.kill() + communicate() before
+        # re-raising — process is dead by the time we reach this block.
+        pass
 
     if result is not None and result.returncode != 0:
         raise RuntimeError(f"parecord failed (exit {result.returncode})")
