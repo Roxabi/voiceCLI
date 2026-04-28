@@ -44,7 +44,11 @@ def samples_record(
     """Record audio from microphone and save as a sample."""
     from voicecli.samples import record_sample
 
-    dest = record_sample(name, duration=duration)
+    try:
+        dest = record_sample(name, duration=duration)
+    except (RuntimeError, OSError) as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"Recorded {dest}")
 
 
@@ -110,6 +114,9 @@ def samples_from_url(
             wav_name = dest.name
             set_active(wav_name)
             typer.echo(f"Active sample set to: {wav_name}")
-    except (RuntimeError, ValueError) as e:
+    except ValueError as e:
+        typer.echo(f"Invalid argument: {e}", err=True)
+        raise typer.Exit(1)
+    except RuntimeError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
