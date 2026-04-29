@@ -713,3 +713,36 @@ systemctl --user start voicecli-tts.service voicecli-stt.service
 The `:staging-prev` tags survive `podman pull :staging` (only the rolling tag
 is overwritten), so a rollback is always one `podman tag` away until the next
 swap re-tags `:staging-prev`.
+
+---
+
+## `dictate nats` — Cross-host client
+
+`voicecli dictate nats` is the client counterpart to `nats-serve stt`. It records audio on the local machine and sends it to the remote STT satellite via NATS, then copies the transcription to the clipboard.
+
+**Toggle semantics:** first invocation starts recording; second invocation stops, transcribes, and copies result.
+
+### Required env vars
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `NATS_URL` | `nats://192.168.1.16:4222` | NATS server (must be reachable on LAN; port 4222 must be published) |
+| `NATS_NKEY_SEED_PATH` | `~/.voicecli/nkeys/voice-client.seed` | `voice-client` NKey identity |
+
+### ACL requirements
+
+The `voice-client` identity needs:
+- **publish:** `lyra.voice.stt.request`
+- **subscribe:** `_inbox.voice-client.>` (inbox_prefix is hardcoded to `_inbox.voice-client` in `nats_stt_client.py` — required by ADR-051 normalized inbox ACL)
+
+### Wrapper script + shortcut
+
+```bash
+# ~/.local/bin/voicecli-dictate-nats
+#!/bin/bash
+export NATS_URL="nats://192.168.1.16:4222"
+export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+exec /home/mickael/.local/bin/voicecli dictate nats
+```
+
+Bind the script to a global shortcut. On COSMIC (Pop!_OS), register it in System Settings → Keyboard → Custom Shortcuts.

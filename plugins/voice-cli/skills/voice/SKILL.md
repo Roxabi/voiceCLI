@@ -357,6 +357,24 @@ voicecli dictate status                               # show daemon status
 WSL2 shortcuts (via AHK script): `Alt+Shift+Space` = toggle, `Alt+Shift+Tab` = next-mode, `Alt+Shift+Esc` = cancel.
 Auto-paste: enabled by `auto_paste = true` in `[stt]` section of `voicecli.toml`.
 
+### Dictate NATS (cross-host toggle)
+
+Routes mic audio to a remote STT satellite. Toggle: first call starts, second call stops + transcribes + clipboard.
+
+```bash
+# Requires env vars:
+# NATS_URL=nats://192.168.1.16:4222
+# NATS_NKEY_SEED_PATH=~/.voicecli/nkeys/voice-client.seed
+voicecli dictate nats                                 # toggle recording
+voicecli dictate nats --lang fr                       # force French
+voicecli dictate nats --model large-v3                # override STT model
+voicecli dictate nats --paste                         # auto-paste after transcription
+```
+
+Bind `~/.local/bin/voicecli-dictate-nats` (wrapper with env vars) to a global shortcut.
+On COSMIC (Pop!_OS): System Settings → Keyboard → Custom Shortcuts.
+Full setup: [`docs/STT-SETUP.md#nats-dictation`](../../docs/STT-SETUP.md).
+
 ### Utilities
 
 ```bash

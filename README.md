@@ -302,6 +302,21 @@ sudo apt install wtype wl-clipboard
 
 See [docs/dictation-setup.md](docs/dictation-setup.md) for full setup.
 
+#### `dictate nats` — Cross-host NATS dictation
+
+Routes mic audio to a remote STT satellite over NATS. Ideal when the STT model runs on a GPU server (M₁) and the mic is on a workstation (M₂). Same toggle semantics — first call starts recording, second call stops + transcribes + copies to clipboard.
+
+```bash
+export NATS_URL="nats://192.168.1.16:4222"
+export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+voicecli dictate nats          # first press: start recording (start_mic.wav)
+voicecli dictate nats          # second press: stop + transcribe (stop_mic.wav)
+```
+
+Bind to a global shortcut for toggle behaviour. On COSMIC (Pop!_OS), create `~/.local/bin/voicecli-dictate-nats` with the env vars set, then register it under **System Settings → Keyboard → Custom Shortcuts**.
+
+Requires: NATS server reachable from M₂ on port 4222, `voice-client` NKey identity, `voicecli nats-serve stt` running on M₁.
+
 ### `serve` — Daemon (warm model for fast generation)
 
 Keeps the Qwen model resident in VRAM so subsequent `generate`/`clone` calls skip the ~60s cold start.
