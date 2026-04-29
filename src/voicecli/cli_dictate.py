@@ -331,3 +331,86 @@ def dictate_history(
         if len(e.get("text", "")) > 40:
             text_preview += "..."
         typer.echo(f"{i:>3}  {ts:>8}  {lang:>4}  {mode_str:<14}  {text_preview}")
+
+
+# ── NATS-based dictation ────────────────────────────────────────────────────────
+
+
+@dictate_app.command("nats")
+def dictate_nats(
+    paste: Annotated[
+        bool, typer.Option("--paste", help="Auto-paste transcribed text into focused window")
+    ] = False,
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="STT model for transcription")
+    ] = "large-v3-turbo",
+    language: Annotated[
+        Optional[str], typer.Option("--lang", help="Force language code (e.g., en, fr)")
+    ] = None,
+    timeout: Annotated[
+        float, typer.Option("--timeout", "-t", help="NATS request timeout in seconds")
+    ] = 60.0,
+) -> None:
+    """Toggle NATS-based dictation recording.
+
+    First call: starts recording in the background.
+    Second call: stops recording, transcribes via NATS, copies to clipboard.
+
+    Requires NATS_URL environment variable. Optionally NATS_NKEY_SEED_PATH for auth.
+    """
+    import asyncio
+
+    from voicecli.clipboard import write_clipboard
+    from voicecli.nats_recorder import is_recording, start_recording, stop_recording
+    from voicecli.nats_stt_client import transcribe_via_nats
+    from voicecli.stt_client import notify
+    from voicecli.ui_sounds import play_ui_sound
+
+    if is_recording():
+        # Stop and transcribe
+        play_ui_sound("stop_mic.wav")
+        notify("Transcribing...", timeout=0)
+        wav_bytes = stop_recording()
+
+        if not wav_bytes:
+            typer.echo("No audio recorded", err=True)
+            notify("No audio recorded", timeout=3000)
+            raise typer.Exit(1)
+
+        result = asyncio.run(
+            transcribe_via_nats(wav_bytes, model=model, language=language, timeout=timeout)
+        )
+
+        if "error" in result:
+            typer.echo(f"Error: {result['error']}", err=True)
+            notify(f"Error: {result['error']}", timeout=5000)
+            raise typer.Exit(1)
+
+        text = result["text"]
+        language_result = result.get("language", "")
+
+        print(text)
+
+        try:
+            write_clipboard(text)
+        except Exception as e:
+            typer.echo(f"Warning: clipboard write failed: {e}", err=True)
+
+        preview = text[:50] + ("..." if len(text) > 50 else "")
+        lang_tag = f"[{language_result}] " if language_result else ""
+        notify(f"{lang_tag}{preview}", timeout=3000)
+
+        if paste:
+            from voicecli.clipboard import auto_paste
+
+            auto_paste()
+    else:
+        # Start recording
+        resp = start_recording(model=model, language=language)
+        if "error" in resp:
+            typer.echo(f"Error: {resp['error']}", err=True)
+            raise typer.Exit(1)
+
+        play_ui_sound("start_mic.wav")
+        notify("Recording...", timeout=0)
+        print("recording")
