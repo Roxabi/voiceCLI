@@ -1186,6 +1186,7 @@ class TestTtsNatsAdapter:
         )
         assert reply["ok"] is True
         assert "\n" not in captured["text"] and "\r" not in captured["text"]
+        assert captured["text"] == "para 1.  para 2."  # 2 \n → 2 spaces
 
     def test_text_with_crlf_accepted(self, tmp_path: Path) -> None:
         """CRLF line endings (\\r\\n) are stripped and synthesis succeeds (F12).
@@ -1208,6 +1209,7 @@ class TestTtsNatsAdapter:
         )
         assert reply["ok"] is True
         assert "\n" not in captured["text"] and "\r" not in captured["text"]
+        assert captured["text"] == "para 1. para 2."  # 1 \r\n → 1 space (NOT 2)
 
     def test_text_all_newlines_yields_malformed_request(self, tmp_path: Path) -> None:
         """Text consisting entirely of newlines is rejected after stripping (F14).
