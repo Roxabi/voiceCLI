@@ -892,7 +892,8 @@ class TestTtsNatsAdapter:
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        # No fallback_language provided → ValueError bubbles up as synthesis_failed.
+        # No fallback_language provided → ValueError surfaces as text_validation_failed
+        # (not the generic synthesis_failed) so callers can tell bad params from crashes.
         payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
 
         calls = 0
@@ -915,7 +916,8 @@ class TestTtsNatsAdapter:
         assert calls == 1
         reply = msg.last_reply()
         assert reply["ok"] is False
-        assert reply["error"] == "synthesis_failed"
+        assert reply["error"].startswith("text_validation_failed")
+        assert "unsupported language: zz" in reply["error"]
 
     def test_fallback_language_skipped_when_matches_primary(self, tmp_path: Path) -> None:
         _require_imports()
@@ -1129,6 +1131,103 @@ class TestTtsNatsAdapter:
         for i in (1, 2):
             assert not (tmp_path / f"{request_id}_{i:03d}.wav").exists()
         assert not (tmp_path / f"{request_id}.done").exists()
+
+    # ------------------------------------------------------------------
+    # Newline stripping + validation error codes (issue fix/nats-tts-newlines)
+    # ------------------------------------------------------------------
+
+    def test_text_with_newlines_accepted(self, tmp_path: Path) -> None:
+        """Multi-paragraph text containing \\n is stripped and synthesis succeeds."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-newlines", text="para 1.\n\npara 2.")
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+
+    def test_value_error_from_generate_no_fallback_yields_text_validation_failed(
+        self, tmp_path: Path
+    ) -> None:
+        """ValueError from api.generate with no fallback → text_validation_failed."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-valerr")
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            raise ValueError("voice must not be empty")
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"].startswith("text_validation_failed")
+        assert "voice must not be empty" in reply["error"]
+
+    def test_fallback_language_retry_succeeds_not_validation_failed(self, tmp_path: Path) -> None:
+        """ValueError on primary + fallback_language set → retry succeeds → ok=True."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-fb-ok") | {
+            "language": "zz",
+            "fallback_language": "en",
+        }
+
+        call_languages: list[str | None] = []
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            lang = kwargs.get("language")
+            call_languages.append(lang)
+            if lang == "zz":
+                raise ValueError("unsupported language: zz")
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        assert call_languages == ["zz", "en"]
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert "error" not in reply
 
     def test_non_chunked_output_unaffected(self, tmp_path: Path) -> None:
         """Engine writes {stem}.wav directly (no .done) — existing path unchanged."""

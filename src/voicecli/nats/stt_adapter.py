@@ -290,6 +290,14 @@ class SttNatsAdapter(NatsAdapterBase):
                 .model_dump_json(exclude_none=True)
                 .encode(),
             )
+        except ValueError as exc:
+            # Distinct error code for param validation failures so callers can tell
+            # them apart from an engine/model crash.
+            log.warning(
+                "param_validation_failed",
+                extra={"request_id": request_id, "reason": str(exc)},
+            )
+            await self.reply(msg, _err_stt(trace_id, request_id, "param_validation_failed"))
         except Exception:
             log.exception("transcription_failed", extra={"request_id": request_id})
             await self.reply(msg, _err_stt(trace_id, request_id, "transcription_failed"))

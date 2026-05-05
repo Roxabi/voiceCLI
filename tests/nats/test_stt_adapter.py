@@ -792,6 +792,36 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 22: request_id length boundary — 127/128 accepted, 129 rejected
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Validation error code (issue fix/nats-tts-newlines)
+    # ------------------------------------------------------------------
+
+    def test_value_error_from_transcribe_yields_param_validation_failed(
+        self, tmp_path: Path
+    ) -> None:
+        """ValueError from api.transcribe → param_validation_failed (not transcription_failed)."""
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-stt-valerr")
+
+        import voicecli.nats.stt_adapter as _mod
+        import voicecli.api as _api  # noqa: F401
+
+        _mod.api = _api  # type: ignore[attr-defined]
+
+        with patch(
+            "voicecli.nats.stt_adapter.api.transcribe",
+            side_effect=ValueError("invalid language: xx"),
+        ):
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "param_validation_failed"
+
     @pytest.mark.parametrize(
         "rid_len, expected_ok",
         [(127, True), (128, True), (129, False)],

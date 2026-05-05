@@ -140,6 +140,20 @@ class TtsNatsAdapter(NatsAdapterBase):
             await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
             return
 
+        # Strip newlines before passing to api.generate.
+        # _check_str rejects \n/\r for all params — a reasonable boundary guard
+        # for short metadata fields (voice, accent, personality) but pathological
+        # for free-text TTS payloads where multi-paragraph input is the standard
+        # case.  The NATS adapter is responsible for shaping its lane's input;
+        # the strict check is kept intact at the library boundary.
+        _newline_count = text.count("\n") + text.count("\r")
+        if _newline_count:
+            text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+            log.debug(
+                "text_newlines_stripped",
+                extra={"request_id": request_id, "removed": _newline_count},
+            )
+
         engine = payload.get("engine") or self.default_engine
         try:
             validate_nats_token(engine, kind="engine")
@@ -246,7 +260,21 @@ class TtsNatsAdapter(NatsAdapterBase):
                     )
                     await loop.run_in_executor(self._executor, _synthesize, fallback_language)
                 else:
-                    raise
+                    # No fallback available — surface a distinct error so callers can
+                    # distinguish a bad param from an engine crash.
+                    log.warning(
+                        "text_validation_failed",
+                        extra={"request_id": request_id, "reason": str(exc)},
+                    )
+                    await self.reply(
+                        msg,
+                        _err_tts(
+                            trace_id,
+                            request_id,
+                            f"text_validation_failed: {exc}",
+                        ),
+                    )
+                    return
 
             # If the engine ran in chunked mode it writes {stem}_NNN.wav files
             # plus a {stem}.done sentinel instead of {stem}.wav directly.
