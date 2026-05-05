@@ -154,6 +154,14 @@ class TtsNatsAdapter(NatsAdapterBase):
                 extra={"request_id": request_id, "removed": _newline_count},
             )
 
+        if not text.strip():
+            log.warning(
+                "text_empty_after_strip",
+                extra={"request_id": request_id, "original_length": len(payload.get("text") or "")},
+            )
+            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
+            return
+
         engine = payload.get("engine") or self.default_engine
         try:
             validate_nats_token(engine, kind="engine")
@@ -258,7 +266,22 @@ class TtsNatsAdapter(NatsAdapterBase):
                             "error": str(exc),
                         },
                     )
-                    await loop.run_in_executor(self._executor, _synthesize, fallback_language)
+                    try:
+                        await loop.run_in_executor(self._executor, _synthesize, fallback_language)
+                    except ValueError as fallback_exc:
+                        log.warning(
+                            "param_validation_failed",
+                            extra={
+                                "request_id": request_id,
+                                "reason": str(fallback_exc),
+                                "after_fallback": True,
+                            },
+                        )
+                        await self.reply(
+                            msg,
+                            _err_tts(trace_id, request_id, "param_validation_failed"),
+                        )
+                        return
                 else:
                     # No fallback available — surface a static error code so callers can
                     # distinguish a bad param from an engine crash.

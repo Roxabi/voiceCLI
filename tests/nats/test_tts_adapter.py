@@ -1209,62 +1209,44 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is True
         assert "\n" not in captured["text"] and "\r" not in captured["text"]
 
-    def test_text_all_newlines_strips_to_spaces_then_passes(self, tmp_path: Path) -> None:
-        """Text consisting entirely of newlines strips to spaces (F14).
+    def test_text_all_newlines_yields_malformed_request(self, tmp_path: Path) -> None:
+        """Text consisting entirely of newlines is rejected after stripping (F14).
 
-        After stripping \\n/\\r → space, the text becomes whitespace-only.
-        _check_str does NOT reject whitespace-only text (length check only; no
-        blank-string guard). The engine receives " " or similar and synthesis
-        proceeds — the result may be silence.  This test documents current
-        behavior.
-
-        If this unexpectedly fails with param_validation_failed or ok=False,
-        a blank-string guard was added upstream — update accordingly.
-        Follow-up to add a proper guard: issue #147.
+        After replacing \\n/\\r → space the text becomes whitespace-only.
+        The adapter's post-strip blank-string guard fires and replies
+        malformed_request before reaching api.generate.
         """
         _require_imports()
         payload = _valid_payload(request_id="req-allnl", text="\n\n\r\n\r")
-        captured: dict = {}
 
         def _fake_generate(*args, **kwargs):
-            captured["text"] = args[0] if args else kwargs.get("text", "")
-            out = kwargs.get("output")
-            if out is not None:
-                Path(out).write_bytes(b"\x00")
-            return None
+            raise AssertionError("api.generate must not be called for whitespace-only text")
 
         reply = self._run_synth_with_fake_generate(
             payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
         )
-        # Whitespace-only text is not rejected by _check_str — synthesis proceeds.
-        # If this assertion fails with ok=False, a blank-string guard was added
-        # upstream; update this test and close issue #147.
-        assert reply["ok"] is True
-        # Stripped text must contain no literal newline characters.
-        assert "\n" not in captured["text"] and "\r" not in captured["text"]
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
 
-    def test_fallback_language_also_fails_yields_synthesis_failed(self, tmp_path: Path) -> None:
-        """Both primary and fallback language raise ValueError → synthesis_failed (F13).
+    def test_fallback_language_also_fails_yields_param_validation_failed(
+        self, tmp_path: Path
+    ) -> None:
+        """Both primary and fallback language raise ValueError → param_validation_failed (F13).
 
-        The adapter catches the primary ValueError and retries with the fallback.
-        If the fallback also raises ValueError, that exception propagates to the
-        outer except-Exception handler, which replies synthesis_failed (not
-        param_validation_failed).  This documents current behavior.
-
-        TODO: a future fix should catch the fallback ValueError too and reply
-        param_validation_failed; that requires a source change (follow-up to F13).
+        The adapter catches the primary ValueError, retries with the fallback language,
+        and if the fallback also raises ValueError it catches that too and replies
+        param_validation_failed — consistent with the no-fallback path.
         """
         _require_imports()
         payload = _valid_payload(request_id="req-fb-fail") | {
             "language": "zz",
             "fallback_language": "xx",
         }
-        call_count = 0
+        call_languages: list[str | None] = []
 
         def _fake_generate(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
             lang = kwargs.get("language")
+            call_languages.append(lang)
             if lang == "zz":
                 raise ValueError("zz unsupported")
             raise ValueError("xx unsupported")
@@ -1272,11 +1254,9 @@ class TestTtsNatsAdapter:
         reply = self._run_synth_with_fake_generate(
             payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
         )
-        assert call_count == 2
+        assert call_languages == ["zz", "xx"]
         assert reply["ok"] is False
-        # Current behavior: fallback ValueError escapes to the outer handler.
-        # When F13 is fixed in the adapter, change this to "param_validation_failed".
-        assert reply["error"] == "synthesis_failed"
+        assert reply["error"] == "param_validation_failed"
 
     def test_value_error_from_generate_no_fallback_yields_param_validation_failed(
         self, tmp_path: Path
