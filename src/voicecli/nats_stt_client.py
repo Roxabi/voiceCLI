@@ -29,6 +29,8 @@ async def transcribe_via_nats(
     *,
     model: str = "large-v3-turbo",
     language: str | None = None,
+    initial_prompt: str | None = None,
+    task: str | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
     """Send WAV bytes to NATS STT satellite, return result dict.
@@ -37,6 +39,8 @@ async def transcribe_via_nats(
         wav_bytes: Complete WAV file bytes (16kHz mono recommended).
         model: STT model name (e.g., "large-v3-turbo").
         language: Optional language code to force.
+        initial_prompt: Whisper decoder context to bias punctuation/casing/vocabulary.
+        task: "transcribe" (default on satellite) or "translate".
         timeout: NATS request timeout in seconds.
 
     Returns:
@@ -66,6 +70,8 @@ async def transcribe_via_nats(
             model=model,
             mime_type="audio/wav",
             language=language,
+            initial_prompt=initial_prompt,
+            task=task,
         )
 
         payload = request.model_dump_json(exclude_none=True).encode("utf-8")

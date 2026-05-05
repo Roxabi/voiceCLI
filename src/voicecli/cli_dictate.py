@@ -347,6 +347,10 @@ def dictate_nats(
     language: Annotated[
         Optional[str], typer.Option("--lang", help="Force language code (e.g., en, fr)")
     ] = None,
+    mode: Annotated[
+        Optional[str],
+        typer.Option("--mode", help="STT mode (e.g. french, default, code) — selects prompt+task"),
+    ] = None,
     timeout: Annotated[
         float, typer.Option("--timeout", "-t", help="NATS request timeout in seconds")
     ] = 60.0,
@@ -361,10 +365,36 @@ def dictate_nats(
     import asyncio
 
     from voicecli.clipboard import write_clipboard
+    from voicecli.config import load_config, load_vocab, vocab_to_prompt
     from voicecli.nats_recorder import is_recording, start_recording, stop_recording
     from voicecli.nats_stt_client import transcribe_via_nats
     from voicecli.stt_client import notify
+    from voicecli.stt_modes import get_mode
     from voicecli.ui_sounds import play_ui_sound
+
+    # Resolve mode (prompt + task + optional language) like the socket daemon does.
+    mode_prompt: Optional[str] = None
+    mode_task: Optional[str] = None
+    if mode is not None:
+        try:
+            mode_cfg = get_mode(mode, load_config())
+        except ValueError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1)
+        mode_prompt = mode_cfg.get("prompt")
+        mode_task = mode_cfg.get("task")
+        if language is None and "language" in mode_cfg:
+            language = mode_cfg["language"]
+
+    # Vocab is prepended to the prompt — same shape as stt_daemon._stop_and_transcribe.
+    try:
+        vocab_fragment = vocab_to_prompt(load_vocab())
+    except Exception:
+        vocab_fragment = None
+    if vocab_fragment:
+        initial_prompt = f"{vocab_fragment} {mode_prompt}" if mode_prompt else vocab_fragment
+    else:
+        initial_prompt = mode_prompt
 
     if is_recording():
         # Stop and transcribe
@@ -378,7 +408,14 @@ def dictate_nats(
             raise typer.Exit(1)
 
         result = asyncio.run(
-            transcribe_via_nats(wav_bytes, model=model, language=language, timeout=timeout)
+            transcribe_via_nats(
+                wav_bytes,
+                model=model,
+                language=language,
+                initial_prompt=initial_prompt,
+                task=mode_task,
+                timeout=timeout,
+            )
         )
 
         if "error" in result:

@@ -929,6 +929,8 @@ def transcribe(
     language_detection_threshold: float | None = None,
     language_detection_segments: int | None = None,
     language_fallback: str | None = None,
+    initial_prompt: str | None = None,
+    task: str = "transcribe",
     _skip_daemon: bool = False,
     allowed_base: Path | _Unrestricted = STT_OUTPUT_DIR,
 ):
@@ -942,6 +944,8 @@ def transcribe(
         language_detection_threshold: Confidence threshold below which fallback language is used.
         language_detection_segments: Number of segments to sample for language detection.
         language_fallback: Language code to use when detection confidence is below threshold.
+        initial_prompt: Whisper decoder context — biases punctuation/casing/vocabulary.
+        task: "transcribe" (default) or "translate".
         _skip_daemon: Bypass Unix-socket daemon and run inference locally (private).
         allowed_base: Base directory ``output`` must stay within
             (default: ``STT_OUTPUT_DIR``). Pass ``UNRESTRICTED`` for an
@@ -968,6 +972,8 @@ def transcribe(
         language_detection_threshold=language_detection_threshold,
         language_detection_segments=language_detection_segments,
         language_fallback=language_fallback,
+        initial_prompt=initial_prompt,
+        task=task,
         _skip_daemon=_skip_daemon,
     )
 

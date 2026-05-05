@@ -160,6 +160,8 @@ class SttNatsAdapter(NatsAdapterBase):
             ("language_detection_threshold", (int, float)),
             ("language_detection_segments", (int,)),
             ("language_fallback", (str,)),
+            ("initial_prompt", (str,)),
+            ("task", (str,)),
         ):
             val = payload.get(key)
             if val is None:
@@ -172,6 +174,12 @@ class SttNatsAdapter(NatsAdapterBase):
                 await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
                 return
 
+        # Whisper accepts "transcribe" or "translate"; reject anything else early.
+        task_val = payload.get("task")
+        if task_val is not None and task_val not in ("transcribe", "translate"):
+            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
+            return
+
         overrides = {
             k: v
             for k, v in {
@@ -179,6 +187,8 @@ class SttNatsAdapter(NatsAdapterBase):
                 "language_detection_threshold": payload.get("language_detection_threshold"),
                 "language_detection_segments": payload.get("language_detection_segments"),
                 "language_fallback": payload.get("language_fallback"),
+                "initial_prompt": payload.get("initial_prompt"),
+                "task": payload.get("task"),
             }.items()
             if v is not None
         }

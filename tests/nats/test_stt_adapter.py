@@ -403,6 +403,8 @@ class TestSttNatsAdapter:
         payload["language_detection_threshold"] = 0.7
         payload["language_detection_segments"] = 3
         payload["language_fallback"] = "en"
+        payload["initial_prompt"] = "Hallo. Hier ist deutscher Text mit Zeichensetzung."
+        payload["task"] = "transcribe"
 
         with _patch_transcribe(_fake_result(language="de")) as mock_transcribe:
             with _patch_scoped_path(tmp_path):
@@ -414,7 +416,28 @@ class TestSttNatsAdapter:
         assert call_kwargs.get("language_detection_threshold") == pytest.approx(0.7)
         assert call_kwargs.get("language_detection_segments") == 3
         assert call_kwargs.get("language_fallback") == "en"
+        assert call_kwargs.get("initial_prompt") == payload["initial_prompt"]
+        assert call_kwargs.get("task") == "transcribe"
         assert call_kwargs.get("_skip_daemon") is True
+
+    # ------------------------------------------------------------------
+    # Case 11b: invalid task value rejected as malformed_request
+    # ------------------------------------------------------------------
+    def test_invalid_task_rejected(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-bad-task")
+        payload["task"] = "summarize"  # not in {"transcribe", "translate"}
+
+        with _patch_transcribe(_fake_result()):
+            with _patch_scoped_path(tmp_path):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
 
     # ------------------------------------------------------------------
     # Case 12: override fields do not leak between sequential requests
