@@ -4,7 +4,8 @@ set -euo pipefail
 
 # Designated adapter modules (actual subject string usage)
 # cli.py: docstrings only, not subject literals
-ALLOWLIST="src/voicecli/nats/stt_adapter.py src/voicecli/nats/tts_adapter.py src/voicecli/cli_nats.py"
+# nats_stt_client.py: one-shot NATS STT adapter for `voicecli dictate nats`
+ALLOWLIST="src/voicecli/nats/stt_adapter.py src/voicecli/nats/tts_adapter.py src/voicecli/cli_nats.py src/voicecli/nats_stt_client.py"
 
 # Find files with lyra. literals, excluding allowlisted paths
 VIOLATORS=$(grep -rln "lyra\." src/ --include='*.py' 2>/dev/null | grep -vE "^($(echo "$ALLOWLIST" | tr ' ' '|'))$" || true)
