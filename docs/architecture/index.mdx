@@ -19,7 +19,9 @@ voiceCLI/
 │   ├── __init__.py             # Public exports (generate, clone, transcribe, etc.)
 │   ├── cli.py                  # Typer app — CLI entry point
 │   ├── api.py                  # Orchestration — public library API
-│   ├── markdown.py             # Domain models (TTSDocument, Segment) + parsing
+│   ├── markdown.py             # Public markdown API (re-exports + parse_md_file)
+│   ├── markdown_types.py       # Shared primitives: TTSDocument, Segment, parse_frontmatter, strip_markdown
+│   ├── _markdown_directives.py # Internal directive parser (private — import via markdown.py)
 │   ├── translate.py            # Engine capability matrix + document translation
 │   ├── config.py               # TOML config loader (walk-up search)
 │   ├── engine.py               # Abstract TTSEngine base class + registry
@@ -58,7 +60,7 @@ graph BT
     API["api.py (generate, clone, transcribe)"]
   end
   subgraph Domain["Domain Layer"]
-    MD["markdown.py (TTSDocument, Segment)"]
+    MD["markdown.py + markdown_types.py (TTSDocument, Segment)"]
     TR["translate.py (ENGINE_CAPS)"]
     CFG["config.py (TOML loader)"]
     UTL["utils.py (language, audio, paths)"]
@@ -84,7 +86,7 @@ graph BT
 |-------|---------|----------------|
 | **Presentation** | `cli.py` | Parse CLI flags, invoke API, format output, handle `typer.Exit` |
 | **Application** | `api.py` | Orchestration: config resolution, input parsing, translation, engine dispatch, chunking |
-| **Domain** | `markdown.py`, `translate.py`, `config.py`, `utils.py`, `models.py`, `samples.py` | Data models, parsing, capability matrix, configuration, utilities — pure Python, no heavy deps |
+| **Domain** | `markdown.py` + `markdown_types.py` (+ private `_markdown_directives.py`), `translate.py`, `config.py`, `utils.py`, `models.py`, `samples.py` | Data models, parsing, capability matrix, configuration, utilities — pure Python, no heavy deps |
 | **Infrastructure** | `engine.py`, `engines/*.py`, `daemon.py`, `transcribe.py`, `listen.py` | Abstract engine base, concrete engine implementations, daemon, STT adapters |
 
 ### Dependency Direction
