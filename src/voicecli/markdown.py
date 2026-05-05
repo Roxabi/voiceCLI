@@ -1,135 +1,39 @@
-"""Parse markdown files with YAML frontmatter for TTS metadata."""
+"""Public markdown API for TTS scripts.
 
-import re
-from dataclasses import dataclass, field
+Re-exports the shared primitives from :mod:`voicecli.markdown_types` and
+delegates parsing to the internal :mod:`voicecli._markdown_directives`
+implementation. Existing call sites continue to import names from this module.
+"""
+
 from pathlib import Path
 
+from voicecli.markdown_types import (
+    _INSTRUCT_PARTS,
+    Segment,
+    TTSDocument,
+    compose_instruct,
+    parse_frontmatter,
+    strip_markdown,
+)
 
-_INSTRUCT_PARTS = ("accent", "personality", "speed", "emotion")
-
-
-def compose_instruct(
-    accent: str | None = None,
-    personality: str | None = None,
-    speed: str | None = None,
-    emotion: str | None = None,
-) -> str | None:
-    """Join non-None instruct parts into a single instruct string."""
-    parts = [p for p in (accent, personality, speed, emotion) if p]
-    return ". ".join(parts) if parts else None
-
-
-@dataclass
-class Segment:
-    """A text segment with per-section overrides."""
-
-    text: str
-    instruct: str | None = None
-    accent: str | None = None
-    personality: str | None = None
-    speed: str | None = None
-    emotion: str | None = None
-    exaggeration: float | None = None
-    cfg_weight: float | None = None
-    flow_steps: int | None = None
-    cfg_alpha: float | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    min_p: float | None = None
-    repetition_penalty: float | None = None
-    segment_gap: int | None = None
-    crossfade: int | None = None
-    language: str | None = None
-    voice: str | None = None
-
-
-@dataclass
-class TTSDocument:
-    text: str
-    language: str | None = None
-    voice: str | None = None
-    engine: str | None = None
-    instruct: str | None = None
-    accent: str | None = None
-    personality: str | None = None
-    speed: str | None = None
-    emotion: str | None = None
-    exaggeration: float | None = None
-    cfg_weight: float | None = None
-    flow_steps: int | None = None
-    cfg_alpha: float | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    min_p: float | None = None
-    repetition_penalty: float | None = None
-    segment_gap: int | None = None
-    crossfade: int | None = None
-    extra: dict = field(default_factory=dict)
-    segments: list[Segment] = field(default_factory=list)
-
-
-def parse_frontmatter(content: str) -> tuple[dict, str]:
-    """Split YAML frontmatter from body. Returns (metadata, body)."""
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", content, re.DOTALL)
-    if not match:
-        return {}, content
-
-    yaml_block, body = match.group(1), match.group(2)
-
-    # Simple YAML parser — handles key: value lines (no nested structures needed)
-    metadata = {}
-    for line in yaml_block.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip()
-        # Strip surrounding quotes
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
-        metadata[key] = value
-
-    return metadata, body
-
-
-def strip_markdown(text: str) -> str:
-    """Strip markdown formatting to plain text, preserving paralinguistic tags like [laugh]."""
-    # Remove headers (# ... )
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-    # Remove bold/italic markers
-    text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
-    text = re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
-    # Remove links [text](url) → text
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    # Remove inline code backticks
-    text = re.sub(r"`([^`]+)`", r"\1", text)
-    # Remove blockquote markers
-    text = re.sub(r"^>\s?", "", text, flags=re.MULTILINE)
-    # Remove horizontal rules
-    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
-    # Remove images ![alt](url)
-    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-    # Strip before newline conversion to avoid leading ". " from frontmatter gap
-    text = text.strip()
-    # Join paragraphs: collapse multiple newlines into ". " for natural pausing
-    text = re.sub(r"\n{2,}", ". ", text)
-    # Single newlines → space
-    text = re.sub(r"\n", " ", text)
-    # Clean up multiple spaces/periods
-    text = re.sub(r"\.\s*\.", ".", text)
-    text = re.sub(r"\s{2,}", " ", text)
-    return text.strip()
+__all__ = [
+    "Segment",
+    "TTSDocument",
+    "_INSTRUCT_PARTS",
+    "compose_instruct",
+    "parse_frontmatter",
+    "strip_markdown",
+    "parse_md_file",
+    "_parse_comment_kvs",
+    "_parse_segments",
+]
 
 
 def parse_md_file(path: Path) -> TTSDocument:
     """Parse a .md file into a TTSDocument."""
-    # Deferred import avoids circular dependency:
-    # _markdown_directives imports from this module at its module level,
-    # which is safe here because markdown.py is fully initialised before
-    # parse_md_file() is ever called.
+    # Deferred import keeps voicecli.markdown free of any back-reference at
+    # module load time; voicecli._markdown_directives now depends only on
+    # voicecli.markdown_types, so the historical cycle is gone.
     from voicecli._markdown_directives import parse_md_file as _parse  # type: ignore[import-not-found]
 
     return _parse(path)

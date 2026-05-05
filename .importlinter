@@ -14,6 +14,7 @@ layers =
     voicecli.adapters
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds | voicecli.engine_caps | voicecli._markdown_directives
+    voicecli.markdown_types
 ignore_imports =
     # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
     voicecli.translate -> voicecli.markdown
@@ -51,7 +52,6 @@ ignore_imports =
     # ADR-059 V10: same config/utils layer peer dependencies
     voicecli.translate -> voicecli.engine_caps
     voicecli.markdown -> voicecli._markdown_directives
-    voicecli._markdown_directives -> voicecli.markdown
     voicecli.history -> voicecli.paths
 
 [importlinter:contract:api-no-direct-infra]
