@@ -293,12 +293,12 @@ def _try_daemon(request: dict) -> Path | None:
 
 ## Composition Pattern
 
-**File:** `markdown.py`
+**File:** `markdown_types.py` (re-exported via `markdown.py`)
 
 Instruct strings can be composed from structured parts or set as raw bypass.
 
 ```python
-# markdown.py — deterministic composition
+# markdown_types.py — deterministic composition
 def compose_instruct(accent, personality, speed, emotion):
     parts = [p for p in (accent, personality, speed, emotion) if p]
     return ". ".join(parts) if parts else None
