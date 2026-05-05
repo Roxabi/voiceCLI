@@ -892,8 +892,9 @@ class TestTtsNatsAdapter:
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        # No fallback_language provided → ValueError surfaces as text_validation_failed
+        # No fallback_language provided → ValueError surfaces as param_validation_failed
         # (not the generic synthesis_failed) so callers can tell bad params from crashes.
+        # The exc message is NOT echoed to the wire (security) — it stays in the log.
         payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
 
         calls = 0
@@ -916,8 +917,7 @@ class TestTtsNatsAdapter:
         assert calls == 1
         reply = msg.last_reply()
         assert reply["ok"] is False
-        assert reply["error"].startswith("text_validation_failed")
-        assert "unsupported language: zz" in reply["error"]
+        assert reply["error"] == "param_validation_failed"
 
     def test_fallback_language_skipped_when_matches_primary(self, tmp_path: Path) -> None:
         _require_imports()
@@ -1136,37 +1136,156 @@ class TestTtsNatsAdapter:
     # Newline stripping + validation error codes (issue fix/nats-tts-newlines)
     # ------------------------------------------------------------------
 
-    def test_text_with_newlines_accepted(self, tmp_path: Path) -> None:
-        """Multi-paragraph text containing \\n is stripped and synthesis succeeds."""
-        _require_imports()
+    def _run_synth_with_fake_generate(
+        self,
+        *,
+        payload: dict,
+        fake_generate,
+        tmp_path: Path,
+    ) -> dict:
+        """Shared helper: run handle() with a caller-supplied fake generate.
+
+        Returns the reply dict. Patches scoped_path and _engine_available so
+        callers only need to supply the domain-specific fake.
+        """
+
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        payload = _valid_payload(request_id="req-newlines", text="para 1.\n\npara 2.")
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
             return tmp_path / f"{rid}.{ext}"
 
+        with (
+            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
+            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        return msg.last_reply()
+
+    def test_text_with_newlines_accepted(self, tmp_path: Path) -> None:
+        """Multi-paragraph text containing \\n is stripped and synthesis succeeds.
+
+        The text passed to api.generate must contain neither \\n nor \\r (F20).
+        """
+        _require_imports()
+        payload = _valid_payload(request_id="req-newlines", text="para 1.\n\npara 2.")
+        captured: dict = {}
+
         def _fake_generate(*args, **kwargs):
+            captured["text"] = args[0] if args else kwargs.get("text", "")
             out = kwargs.get("output")
             if out is not None:
                 Path(out).write_bytes(b"\x00")
             return None
 
-        with (
-            patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
-            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
-            patch("voicecli.api.generate", side_effect=_fake_generate),
-        ):
-            asyncio.run(adapter.handle(msg, payload))
-
-        reply = msg.last_reply()
+        reply = self._run_synth_with_fake_generate(
+            payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
+        )
         assert reply["ok"] is True
+        assert "\n" not in captured["text"] and "\r" not in captured["text"]
 
-    def test_value_error_from_generate_no_fallback_yields_text_validation_failed(
+    def test_text_with_crlf_accepted(self, tmp_path: Path) -> None:
+        """CRLF line endings (\\r\\n) are stripped and synthesis succeeds (F12).
+
+        The text passed to api.generate must contain neither \\r nor \\n.
+        """
+        _require_imports()
+        payload = _valid_payload(request_id="req-crlf", text="para 1.\r\npara 2.")
+        captured: dict = {}
+
+        def _fake_generate(*args, **kwargs):
+            captured["text"] = args[0] if args else kwargs.get("text", "")
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        reply = self._run_synth_with_fake_generate(
+            payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
+        )
+        assert reply["ok"] is True
+        assert "\n" not in captured["text"] and "\r" not in captured["text"]
+
+    def test_text_all_newlines_strips_to_spaces_then_passes(self, tmp_path: Path) -> None:
+        """Text consisting entirely of newlines strips to spaces (F14).
+
+        After stripping \\n/\\r → space, the text becomes whitespace-only.
+        _check_str does NOT reject whitespace-only text (length check only; no
+        blank-string guard). The engine receives " " or similar and synthesis
+        proceeds — the result may be silence.  This test documents current
+        behavior.
+
+        If this unexpectedly fails with param_validation_failed or ok=False,
+        a blank-string guard was added upstream — update accordingly.
+        Follow-up to add a proper guard: issue #147.
+        """
+        _require_imports()
+        payload = _valid_payload(request_id="req-allnl", text="\n\n\r\n\r")
+        captured: dict = {}
+
+        def _fake_generate(*args, **kwargs):
+            captured["text"] = args[0] if args else kwargs.get("text", "")
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        reply = self._run_synth_with_fake_generate(
+            payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
+        )
+        # Whitespace-only text is not rejected by _check_str — synthesis proceeds.
+        # If this assertion fails with ok=False, a blank-string guard was added
+        # upstream; update this test and close issue #147.
+        assert reply["ok"] is True
+        # Stripped text must contain no literal newline characters.
+        assert "\n" not in captured["text"] and "\r" not in captured["text"]
+
+    def test_fallback_language_also_fails_yields_synthesis_failed(self, tmp_path: Path) -> None:
+        """Both primary and fallback language raise ValueError → synthesis_failed (F13).
+
+        The adapter catches the primary ValueError and retries with the fallback.
+        If the fallback also raises ValueError, that exception propagates to the
+        outer except-Exception handler, which replies synthesis_failed (not
+        param_validation_failed).  This documents current behavior.
+
+        TODO: a future fix should catch the fallback ValueError too and reply
+        param_validation_failed; that requires a source change (follow-up to F13).
+        """
+        _require_imports()
+        payload = _valid_payload(request_id="req-fb-fail") | {
+            "language": "zz",
+            "fallback_language": "xx",
+        }
+        call_count = 0
+
+        def _fake_generate(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            lang = kwargs.get("language")
+            if lang == "zz":
+                raise ValueError("zz unsupported")
+            raise ValueError("xx unsupported")
+
+        reply = self._run_synth_with_fake_generate(
+            payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
+        )
+        assert call_count == 2
+        assert reply["ok"] is False
+        # Current behavior: fallback ValueError escapes to the outer handler.
+        # When F13 is fixed in the adapter, change this to "param_validation_failed".
+        assert reply["error"] == "synthesis_failed"
+
+    def test_value_error_from_generate_no_fallback_yields_param_validation_failed(
         self, tmp_path: Path
     ) -> None:
-        """ValueError from api.generate with no fallback → text_validation_failed."""
+        """ValueError from api.generate with no fallback → param_validation_failed.
+
+        The exc message is NOT echoed to the wire — it stays in the structured log
+        only (security: prevents leaking user-controlled input back over NATS).
+        """
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
@@ -1188,8 +1307,7 @@ class TestTtsNatsAdapter:
 
         reply = msg.last_reply()
         assert reply["ok"] is False
-        assert reply["error"].startswith("text_validation_failed")
-        assert "voice must not be empty" in reply["error"]
+        assert reply["error"] == "param_validation_failed"
 
     def test_fallback_language_retry_succeeds_not_validation_failed(self, tmp_path: Path) -> None:
         """ValueError on primary + fallback_language set → retry succeeds → ok=True."""

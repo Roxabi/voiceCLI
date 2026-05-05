@@ -260,10 +260,14 @@ class TtsNatsAdapter(NatsAdapterBase):
                     )
                     await loop.run_in_executor(self._executor, _synthesize, fallback_language)
                 else:
-                    # No fallback available — surface a distinct error so callers can
+                    # No fallback available — surface a static error code so callers can
                     # distinguish a bad param from an engine crash.
+                    # param_validation_failed because _check_str raises for any short
+                    # metadata field (text, voice, language, accent, personality, emotion),
+                    # not just text. Static code matches STT, and the exc message stays in
+                    # the structured log only (never echoed over the wire — security).
                     log.warning(
-                        "text_validation_failed",
+                        "param_validation_failed",
                         extra={"request_id": request_id, "reason": str(exc)},
                     )
                     await self.reply(
@@ -271,7 +275,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                         _err_tts(
                             trace_id,
                             request_id,
-                            f"text_validation_failed: {exc}",
+                            "param_validation_failed",
                         ),
                     )
                     return

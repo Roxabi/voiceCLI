@@ -806,13 +806,8 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-stt-valerr")
 
-        import voicecli.nats.stt_adapter as _mod
-        import voicecli.api as _api  # noqa: F401
-
-        _mod.api = _api  # type: ignore[attr-defined]
-
         with patch(
-            "voicecli.nats.stt_adapter.api.transcribe",
+            "voicecli.api.transcribe",
             side_effect=ValueError("invalid language: xx"),
         ):
             with _patch_scoped_path(tmp_path):
