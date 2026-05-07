@@ -201,6 +201,22 @@ def _handle_stop_signal(signum: int, frame: Any) -> None:
 
 _stop_event: threading.Event | None = None
 
+PROGRESS_TICK_SECONDS = 1.5
+
+
+def _progress_notify_loop(stop_event: threading.Event, started_at: float) -> None:
+    """Refresh the desktop notification every PROGRESS_TICK_SECONDS with elapsed seconds.
+
+    Runs as a daemon thread inside the recorder subprocess so the user sees
+    "Recording... 3s" → "Recording... 5s" updates while speaking, instead of
+    a static "Recording..." until they stop. Exits when ``stop_event`` is set.
+    """
+    from voicecli.stt_client import notify
+
+    while not stop_event.wait(PROGRESS_TICK_SECONDS):
+        elapsed = int(time.monotonic() - started_at)
+        notify(f"Recording... {elapsed}s", timeout=0)
+
 
 def run_recorder_main(*, model: str, language: str | None = None) -> None:
     """Main function for background recorder process.
@@ -227,6 +243,14 @@ def run_recorder_main(*, model: str, language: str | None = None) -> None:
         "language": language,
     }
     STATE_FILE.write_text(json.dumps(state))
+
+    # Progress notifier — refreshes the bubble while the user speaks.
+    progress_thread = threading.Thread(
+        target=_progress_notify_loop,
+        args=(_stop_event, time.monotonic()),
+        daemon=True,
+    )
+    progress_thread.start()
 
     try:
         # Record until signal
