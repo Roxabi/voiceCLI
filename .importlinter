@@ -49,6 +49,9 @@ ignore_imports =
     voicecli.overlay -> voicecli.stt_client
     # ADR-059 V10: same top-tier peer dependency — cli_dictate uses stt_client for dictate flow
     voicecli.cli_dictate -> voicecli.stt_client
+    # ADR-059 V10: same top-tier peer dependency — nats_recorder reuses notify() from stt_client for the
+    # progressive "Recording... Ns" bubble emitted from the recorder subprocess.
+    voicecli.nats_recorder -> voicecli.stt_client
     # ADR-059 V10: same config/utils layer peer dependencies
     voicecli.translate -> voicecli.engine_caps
     voicecli.markdown -> voicecli._markdown_directives
