@@ -117,41 +117,29 @@ say "Installed wrapper → $WRAPPER_DST"
 case "$DE" in
     cosmic)
         CUSTOM="$HOME/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom"
-        mkdir -p "$(dirname "$CUSTOM")"
 
-        # Parse "Mod1+Mod2+Key" → Cosmic's RON modifier list + lower-case key.
-        MODS=""; KEYNAME="${KEY##*+}"
+        # Parse "Mod1+Mod2+Key" → comma-separated modifiers + lower-case key.
+        KEYNAME_LOWER="$(echo "${KEY##*+}" | tr '[:upper:]' '[:lower:]')"
+        MODS_CSV=""
         IFS='+' read -ra parts <<< "${KEY%+*}"
         for m in "${parts[@]}"; do
             case "$(echo "$m" | tr '[:upper:]' '[:lower:]')" in
-                ctrl|control) MODS+="            Ctrl,\n" ;;
-                shift)        MODS+="            Shift,\n" ;;
-                alt)          MODS+="            Alt,\n" ;;
-                super|win|meta) MODS+="            Super,\n" ;;
+                ctrl|control)   MODS_CSV+="Ctrl," ;;
+                shift)          MODS_CSV+="Shift," ;;
+                alt)            MODS_CSV+="Alt," ;;
+                super|win|meta) MODS_CSV+="Super," ;;
             esac
         done
-        KEYNAME_LOWER="$(echo "$KEYNAME" | tr '[:upper:]' '[:lower:]')"
+        MODS_CSV="${MODS_CSV%,}"
 
-        # Idempotent: if the file already binds this exact action, skip.
-        if [ -f "$CUSTOM" ] && grep -Fq "Spawn(\"$WRAPPER_DST\")" "$CUSTOM"; then
-            say "COSMIC binding already present → no change"
-        else
-            # Preserve any existing entries: extract everything between {…} and append ours.
-            existing=""
-            if [ -f "$CUSTOM" ] && grep -q '): Spawn(' "$CUSTOM"; then
-                existing="$(sed -n '/^{/,/^}/p' "$CUSTOM" | sed '1d;$d')"
-            fi
-            {
-                printf '{\n'
-                [ -n "$existing" ] && printf '%s\n' "$existing"
-                printf '    (\n        modifiers: [\n'
-                printf '%b' "$MODS"
-                printf '        ],\n        key: "%s",\n        description: Some("voiceCLI dictate"),\n    ): Spawn("%s"),\n}\n' \
-                    "$KEYNAME_LOWER" "$WRAPPER_DST"
-            } > "$CUSTOM"
-            say "Wrote COSMIC binding → $CUSTOM"
-            say "→ Logout/login (or restart cosmic-comp) to load the binding."
-        fi
+        # Helper drops conflicting entries (same key+mods, same wrapper, or
+        # legacy ``voicecli-dictate-nats``) before adding the new one.
+        python3 "$REPO_DIR/scripts/_cosmic_bind.py" \
+            "$CUSTOM" "$MODS_CSV" "$KEYNAME_LOWER" "$WRAPPER_DST" \
+            "voiceCLI dictate" \
+            voicecli-dictate-nats
+        say "Wrote COSMIC binding → $CUSTOM"
+        say "→ Logout/login (or restart cosmic-comp) to load the binding."
         ;;
 
     gnome)
