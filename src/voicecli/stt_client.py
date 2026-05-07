@@ -78,8 +78,13 @@ def send_next_mode() -> dict:
 # ── Desktop notifications ─────────────────────────────────────────────────────
 
 # Stable replace-ID so each notify-send call replaces the previous bubble.
-# notify-send -r requires an integer; we derive one from the app name.
-_NOTIFY_REPLACE_ID = str(abs(hash("voicecli-dictate")) % 65536)
+# notify-send -r requires an integer. The dictate flow spans three Python
+# processes (foreground dictate, background recorder, second dictate-press
+# transcribing call), and Python's hash() is randomized per process via
+# PYTHONHASHSEED, so a hash-based ID would yield three different values and
+# three stacked bubbles instead of one updating in place. Hard-coded here to
+# guarantee cross-process stability.
+_NOTIFY_REPLACE_ID = "9173"
 
 
 def notify(body: str, timeout: int = 3000) -> None:

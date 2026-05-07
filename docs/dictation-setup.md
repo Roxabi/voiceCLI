@@ -17,6 +17,52 @@ Typical flow:
 2. Second press: daemon stops recording, transcribes, writes text to clipboard. Notification shows the transcribed text.
 3. Ctrl+Shift+V in any app to paste without formatting.
 
+## Linux client provisioning (NATS hub setup)
+
+If your STT daemon runs on a remote hub and you want to dictate from another
+machine over NATS, use the bundled installer. It detects your desktop
+environment (COSMIC or GNOME), checks Wayland deps, installs a wrapper to
+`~/.local/bin/voicecli-dictate`, and binds Ctrl+Space to it.
+
+```bash
+# 1. Install the CLI with the NATS extra
+uv sync --extra nats
+ln -sf "$PWD/.venv/bin/voicecli" ~/.local/bin/voicecli
+
+# 2. Configure the hub in ~/.voicecli/voicecli.toml
+cat >> ~/.voicecli/voicecli.toml <<'EOF'
+[nats]
+url = "nats://your-hub-host:4222"
+nkey_seed_path = "~/.voicecli/nkeys/voice-client.seed"
+EOF
+
+# 3. Copy the nkey seed from a hub-authorized machine
+# scp hub-machine:~/.voicecli/nkeys/voice-client.seed ~/.voicecli/nkeys/
+chmod 700 ~/.voicecli/nkeys && chmod 600 ~/.voicecli/nkeys/voice-client.seed
+
+# 4. Run the installer
+./scripts/install-shortcut.sh           # Ctrl+Space, auto-detects COSMIC/GNOME
+./scripts/install-shortcut.sh --check-only   # dry-run, reports missing deps
+```
+
+Then logout/login (COSMIC reads custom shortcuts at session start). Press
+Ctrl+Space to toggle dictation. The wrapper does a 2-second TCP probe to the
+hub before invoking the CLI — if the hub is unreachable it shows a desktop
+notification rather than blocking 60 s on the request timeout.
+
+The wrapper itself is at [`scripts/wrappers/voicecli-dictate.sh`](../scripts/wrappers/voicecli-dictate.sh).
+For roaming machines (laptops), prefer a Tailscale MagicDNS hostname (e.g.
+`nats://hub:4222`) over a LAN IP so the same config works on and off the LAN.
+
+Override at invoke time:
+
+| Env var | Effect |
+|---|---|
+| `NATS_URL` | Overrides `[nats] url` from the toml |
+| `NATS_NKEY_SEED_PATH` | Overrides `[nats] nkey_seed_path` |
+| `VOICECLI_BIN` | Path to the `voicecli` executable (default `~/.local/bin/voicecli`) |
+| `VOICECLI_MODE` | STT mode passed as `--mode` (e.g. `french`, `code`) |
+
 ## Prerequisites
 
 On Wayland (Pop!_OS, GNOME, COSMIC), install the overlay and auto-paste dependencies:
