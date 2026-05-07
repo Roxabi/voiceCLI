@@ -201,7 +201,7 @@ def _handle_stop_signal(signum: int, frame: Any) -> None:
 
 _stop_event: threading.Event | None = None
 
-PROGRESS_TICK_SECONDS = 1.5
+PROGRESS_TICK_SECONDS = 1.0
 
 
 def _progress_notify_loop(stop_event: threading.Event, started_at: float) -> None:
