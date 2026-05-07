@@ -13,16 +13,17 @@
 #      voicecli.toml).
 #
 # Overridable via env:
-#   VOICECLI_BIN   — path to the voicecli executable (default: ~/.local/bin/voicecli)
+#   VOICECLI_BIN   — voicecli command name or path (default: voicecli, resolved via PATH)
 #   VOICECLI_MODE  — STT mode passed as --mode (default: unset, uses voicecli's default)
 
 set -u
 
-# Ensure GUI helpers (notify-send, wl-copy, wtype) are reachable under
-# minimal Spawn() PATHs.
+# Ensure GUI helpers (notify-send, wl-copy, wtype) AND the voicecli command
+# itself resolve under minimal Spawn() PATHs. ~/.local/bin is the standard
+# location for `uv tool install` / pip --user / our own symlink.
 export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:${PATH:-}"
 
-VOICECLI_BIN="${VOICECLI_BIN:-$HOME/.local/bin/voicecli}"
+VOICECLI_BIN="${VOICECLI_BIN:-voicecli}"
 
 # Pre-flight: 2-second TCP probe so the user gets immediate feedback when
 # the hub is unreachable (offline, Tailscale down, hub off). Skipped when
