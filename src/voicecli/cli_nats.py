@@ -49,10 +49,12 @@ def nats_serve_tts(
     """Subscribe to lyra.voice.tts.request and reply with synthesized audio."""
     import asyncio
 
-    from voicecli.config import load_nats_config
+    from voicecli.config import apply_nats_env_from_config, load_nats_config
     from voicecli.model_registry import model_registry
     from voicecli.nats.config import _probe_socket_daemon, _resolve_engine
     from voicecli.nats.tts_adapter import TtsNatsAdapter
+
+    apply_nats_env_from_config()
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
@@ -116,8 +118,11 @@ def nats_serve_stt(
     """Subscribe to lyra.voice.stt.request and reply with transcription."""
     import asyncio
 
+    from voicecli.config import apply_nats_env_from_config
     from voicecli.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.nats.stt_adapter import SttNatsAdapter
+
+    apply_nats_env_from_config()
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.stt")

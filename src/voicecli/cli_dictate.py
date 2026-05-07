@@ -336,6 +336,30 @@ def dictate_history(
 # ── NATS-based dictation ────────────────────────────────────────────────────────
 
 
+@dictate_app.command("nats-host")
+def dictate_nats_host() -> None:
+    """Print the resolved NATS ``host:port`` (env > ``[nats]`` toml).
+
+    Used by the dictate wrapper to do a fast TCP probe before invoking the
+    blocking ``dictate nats`` toggle. Prints nothing and exits 0 when no URL
+    is configured (the wrapper then skips the pre-flight check).
+    """
+    import os
+    from urllib.parse import urlparse
+
+    from voicecli.config import apply_nats_env_from_config
+
+    apply_nats_env_from_config()
+    url = os.environ.get("NATS_URL", "").strip()
+    if not url:
+        return
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return
+    port = parsed.port or 4222
+    typer.echo(f"{parsed.hostname}:{port}")
+
+
 @dictate_app.command("nats")
 def dictate_nats(
     paste: Annotated[
@@ -360,17 +384,26 @@ def dictate_nats(
     First call: starts recording in the background.
     Second call: stops recording, transcribes via NATS, copies to clipboard.
 
-    Requires NATS_URL environment variable. Optionally NATS_NKEY_SEED_PATH for auth.
+    Reads ``NATS_URL`` (and optional ``NATS_NKEY_SEED_PATH``) from the
+    environment, falling back to the ``[nats]`` table in ``voicecli.toml``
+    (keys: ``url``, ``nkey_seed_path``).
     """
     import asyncio
 
     from voicecli.clipboard import write_clipboard
-    from voicecli.config import load_config, load_vocab, vocab_to_prompt
+    from voicecli.config import (
+        apply_nats_env_from_config,
+        load_config,
+        load_vocab,
+        vocab_to_prompt,
+    )
     from voicecli.nats_recorder import is_recording, start_recording, stop_recording
     from voicecli.nats_stt_client import transcribe_via_nats
     from voicecli.stt_client import notify
     from voicecli.stt_modes import get_mode
     from voicecli.ui_sounds import play_ui_sound
+
+    apply_nats_env_from_config()
 
     # Resolve mode (prompt + task + optional language) like the socket daemon does.
     mode_prompt: Optional[str] = None

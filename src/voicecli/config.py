@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from typing import Any, Callable
@@ -217,6 +218,8 @@ def load_tts_config(config: Path | None = None) -> dict:
 
 _KNOWN_NATS: dict[str, type] = {
     "max_cached_engines": int,
+    "url": str,
+    "nkey_seed_path": str,
 }
 
 
@@ -224,13 +227,14 @@ def load_nats_config(config: Path | None = None) -> dict:
     """Load the ``[nats]`` table from voicecli.toml.
 
     Returns ``{"max_cached_engines": 2}`` when no config is found or the table
-    is absent. Value is clamped to [1, 5].
+    is absent. ``max_cached_engines`` is clamped to [1, 5]. ``url`` and
+    ``nkey_seed_path`` are returned only when set, with ``~`` expanded.
 
     Args:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
     """
     path = config if config is not None else _find_config()
-    result: dict[str, int] = {"max_cached_engines": 2}
+    result: dict[str, Any] = {"max_cached_engines": 2}
     if path is None:
         return result
     with open(path, "rb") as f:
@@ -244,4 +248,24 @@ def load_nats_config(config: Path | None = None) -> dict:
                 pass
     # Clamp max_cached_engines to [1, 5]
     result["max_cached_engines"] = max(1, min(5, result.get("max_cached_engines", 2)))
+    if isinstance(result.get("nkey_seed_path"), str):
+        result["nkey_seed_path"] = os.path.expanduser(result["nkey_seed_path"])
     return result
+
+
+def apply_nats_env_from_config(config: Path | None = None) -> None:
+    """Populate ``NATS_URL`` / ``NATS_NKEY_SEED_PATH`` from ``[nats]`` toml when env is unset.
+
+    Env vars take precedence (so wrappers, CI, and ad-hoc overrides keep
+    working). Call this at the entrypoint of any NATS-using command before code
+    reads ``os.environ``.
+    """
+    cfg = load_nats_config(config)
+    if "NATS_URL" not in os.environ:
+        url = cfg.get("url")
+        if isinstance(url, str) and url:
+            os.environ["NATS_URL"] = url
+    if "NATS_NKEY_SEED_PATH" not in os.environ:
+        seed = cfg.get("nkey_seed_path")
+        if isinstance(seed, str) and seed:
+            os.environ["NATS_NKEY_SEED_PATH"] = seed
