@@ -22,6 +22,16 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
+
+def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
+    """Sanitize an exception message for safe inclusion in structured logs.
+
+    Escapes \\n/\\r to prevent multi-line log injection and caps length so a
+    large user-controlled payload cannot bloat log records.
+    """
+    return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
+
+
 SUBJECT = "lyra.voice.stt.request"
 
 # 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
@@ -290,6 +300,14 @@ class SttNatsAdapter(NatsAdapterBase):
                 .model_dump_json(exclude_none=True)
                 .encode(),
             )
+        except api.ParamValidationError as exc:
+            # Distinct error code for param validation failures so callers can tell
+            # them apart from an engine/model crash.
+            log.warning(
+                "param_validation_failed",
+                extra={"request_id": request_id, "reason": _safe_reason(exc)},
+            )
+            await self.reply(msg, _err_stt(trace_id, request_id, "param_validation_failed"))
         except Exception:
             log.exception("transcription_failed", extra={"request_id": request_id})
             await self.reply(msg, _err_stt(trace_id, request_id, "transcription_failed"))
