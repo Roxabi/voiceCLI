@@ -22,6 +22,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 try:
+    from voicecli.api import ParamValidationError
     from voicecli.nats.config import _resolve_engine
     from voicecli.nats.tempdir import scoped_path  # noqa: F401
     from voicecli.nats.tts_adapter import TtsNatsAdapter
@@ -29,6 +30,7 @@ try:
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
     _IMPORT_ERROR = _e
+    ParamValidationError = ValueError  # type: ignore[assignment,misc]
     TtsNatsAdapter = None  # type: ignore[assignment,misc]
     _resolve_engine = None  # type: ignore[assignment]
     scoped_path = None  # type: ignore[assignment]
@@ -870,7 +872,7 @@ class TestTtsNatsAdapter:
             lang = kwargs.get("language")
             call_languages.append(lang)
             if lang == "zz":
-                raise ValueError("unsupported language: zz")
+                raise ParamValidationError("unsupported language: zz")
             out = kwargs.get("output")
             if out is not None:
                 Path(out).write_bytes(b"\x00")
@@ -892,9 +894,10 @@ class TestTtsNatsAdapter:
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        # No fallback_language provided → ValueError surfaces as param_validation_failed
-        # (not the generic synthesis_failed) so callers can tell bad params from crashes.
-        # The exc message is NOT echoed to the wire (security) — it stays in the log.
+        # No fallback_language provided → ParamValidationError surfaces as
+        # param_validation_failed (not synthesis_failed) so callers can tell
+        # bad params from crashes. The exc message is NOT echoed to the wire
+        # (security) — it stays in the log.
         payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
 
         calls = 0
@@ -905,7 +908,7 @@ class TestTtsNatsAdapter:
         def _fake_generate(*args, **kwargs):
             nonlocal calls
             calls += 1
-            raise ValueError("unsupported language: zz")
+            raise ParamValidationError("unsupported language: zz")
 
         with (
             patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
@@ -937,7 +940,7 @@ class TestTtsNatsAdapter:
         def _fake_generate(*args, **kwargs):
             nonlocal calls
             calls += 1
-            raise ValueError("unsupported language: en")
+            raise ParamValidationError("unsupported language: en")
 
         with (
             patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
@@ -1211,6 +1214,31 @@ class TestTtsNatsAdapter:
         assert "\n" not in captured["text"] and "\r" not in captured["text"]
         assert captured["text"] == "para 1. para 2."  # 1 \r\n → 1 space (NOT 2)
 
+    def test_text_with_bare_cr_accepted(self, tmp_path: Path) -> None:
+        """Bare \\r (no \\n) is stripped and synthesis succeeds.
+
+        Guards the middle branch of the replace chain
+        (.replace("\\r\\n", " ").replace("\\r", " ").replace("\\n", " ")) — if
+        the bare-\\r branch were deleted, only this test would catch it.
+        """
+        _require_imports()
+        payload = _valid_payload(request_id="req-bare-cr", text="para 1.\rpara 2.\r")
+        captured: dict = {}
+
+        def _fake_generate(*args, **kwargs):
+            captured["text"] = args[0] if args else kwargs.get("text", "")
+            out = kwargs.get("output")
+            if out is not None:
+                Path(out).write_bytes(b"\x00")
+            return None
+
+        reply = self._run_synth_with_fake_generate(
+            payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
+        )
+        assert reply["ok"] is True
+        assert "\r" not in captured["text"] and "\n" not in captured["text"]
+        assert captured["text"] == "para 1. para 2. "
+
     def test_text_all_newlines_yields_malformed_request(self, tmp_path: Path) -> None:
         """Text consisting entirely of newlines is rejected after stripping (F14).
 
@@ -1233,11 +1261,11 @@ class TestTtsNatsAdapter:
     def test_fallback_language_also_fails_yields_param_validation_failed(
         self, tmp_path: Path
     ) -> None:
-        """Both primary and fallback language raise ValueError → param_validation_failed (F13).
+        """Both primary and fallback language raise ParamValidationError → param_validation_failed.
 
-        The adapter catches the primary ValueError, retries with the fallback language,
-        and if the fallback also raises ValueError it catches that too and replies
-        param_validation_failed — consistent with the no-fallback path.
+        The adapter catches the primary ParamValidationError, retries with the fallback
+        language, and if the fallback also raises ParamValidationError it catches that too
+        and replies param_validation_failed — consistent with the no-fallback path.
         """
         _require_imports()
         payload = _valid_payload(request_id="req-fb-fail") | {
@@ -1250,8 +1278,8 @@ class TestTtsNatsAdapter:
             lang = kwargs.get("language")
             call_languages.append(lang)
             if lang == "zz":
-                raise ValueError("zz unsupported")
-            raise ValueError("xx unsupported")
+                raise ParamValidationError("zz unsupported")
+            raise ParamValidationError("xx unsupported")
 
         reply = self._run_synth_with_fake_generate(
             payload=payload, fake_generate=_fake_generate, tmp_path=tmp_path
@@ -1263,7 +1291,7 @@ class TestTtsNatsAdapter:
     def test_value_error_from_generate_no_fallback_yields_param_validation_failed(
         self, tmp_path: Path
     ) -> None:
-        """ValueError from api.generate with no fallback → param_validation_failed.
+        """ParamValidationError from api.generate with no fallback → param_validation_failed.
 
         The exc message is NOT echoed to the wire — it stays in the structured log
         only (security: prevents leaking user-controlled input back over NATS).
@@ -1278,7 +1306,7 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{rid}.{ext}"
 
         def _fake_generate(*args, **kwargs):
-            raise ValueError("voice must not be empty")
+            raise ParamValidationError("voice must not be empty")
 
         with (
             patch("voicecli.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path),
@@ -1292,7 +1320,7 @@ class TestTtsNatsAdapter:
         assert reply["error"] == "param_validation_failed"
 
     def test_fallback_language_retry_succeeds_not_validation_failed(self, tmp_path: Path) -> None:
-        """ValueError on primary + fallback_language set → retry succeeds → ok=True."""
+        """ParamValidationError on primary + fallback_language set → retry succeeds → ok=True."""
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
@@ -1311,7 +1339,7 @@ class TestTtsNatsAdapter:
             lang = kwargs.get("language")
             call_languages.append(lang)
             if lang == "zz":
-                raise ValueError("unsupported language: zz")
+                raise ParamValidationError("unsupported language: zz")
             out = kwargs.get("output")
             if out is not None:
                 Path(out).write_bytes(b"\x00")

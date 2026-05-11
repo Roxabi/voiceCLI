@@ -22,6 +22,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 try:
+    from voicecli.api import ParamValidationError
     from voicecli.nats.config import DEFAULT_MODEL
     from voicecli.nats.queue_groups import STT_WORKERS
     from voicecli.nats.stt_adapter import (
@@ -36,6 +37,7 @@ try:
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
     _IMPORT_ERROR = _e
+    ParamValidationError = ValueError  # type: ignore[assignment,misc]
     SttNatsAdapter = None  # type: ignore[assignment,misc]
     _duration_from_segments = None  # type: ignore[assignment]
     _ext_from_mime = None  # type: ignore[assignment]
@@ -121,8 +123,18 @@ def _make_adapter(**kwargs) -> "SttNatsAdapter":
     return adapter
 
 
-def _patch_transcribe(mock_result: "TranscriptionResult"):
-    """Context manager: patch api.transcribe at the adapter import site."""
+def _patch_transcribe(
+    mock_result: "TranscriptionResult | None" = None,
+    *,
+    side_effect=None,
+):
+    """Context manager: patch api.transcribe at the adapter import site.
+
+    Pass either ``mock_result`` (return_value) or ``side_effect`` — not both.
+    Passing both raises TypeError to prevent silent mis-configuration.
+    """
+    if mock_result is not None and side_effect is not None:
+        raise TypeError("_patch_transcribe: pass either mock_result or side_effect, not both")
     # The deferred `from voicecli import api` inside _run_transcription binds
     # `api` on the stt_adapter module namespace.  We force that binding here
     # so patch.object can reach it.
@@ -130,6 +142,8 @@ def _patch_transcribe(mock_result: "TranscriptionResult"):
     import voicecli.api as _api  # noqa: F401 — materialises the attribute
 
     _mod.api = _api  # type: ignore[attr-defined]
+    if side_effect is not None:
+        return patch("voicecli.nats.stt_adapter.api.transcribe", side_effect=side_effect)
     return patch("voicecli.nats.stt_adapter.api.transcribe", return_value=mock_result)
 
 
@@ -806,10 +820,7 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-stt-valerr")
 
-        with patch(
-            "voicecli.api.transcribe",
-            side_effect=ValueError("invalid language: xx"),
-        ):
+        with _patch_transcribe(side_effect=ParamValidationError("invalid language: xx")):
             with _patch_scoped_path(tmp_path):
                 asyncio.run(adapter.handle(msg, payload))
 

@@ -29,6 +29,16 @@ from voicecli.nats.tts_wav_utils import (
 
 log = logging.getLogger(__name__)
 
+
+def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
+    """Sanitize an exception message for safe inclusion in structured logs.
+
+    Escapes \\n/\\r to prevent multi-line log injection and caps length so a
+    large user-controlled payload cannot bloat log records.
+    """
+    return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
+
+
 SUBJECT = "lyra.voice.tts.request"
 HEARTBEAT_SUBJECT = "lyra.voice.tts.heartbeat"
 
@@ -251,9 +261,10 @@ class TtsNatsAdapter(NatsAdapterBase):
 
             try:
                 await loop.run_in_executor(self._executor, _synthesize, None)
-            except ValueError as exc:
-                # ADR-044 fallback_language semantics: api.generate raises ValueError for
-                # param/language validation; retry once with the fallback before giving up.
+            except api.ParamValidationError as exc:
+                # ADR-044 fallback_language semantics: api.generate raises
+                # ParamValidationError for param/language validation; retry once
+                # with the fallback before giving up.
                 fallback_language = payload.get("fallback_language")
                 primary_language = payload.get("language")
                 if fallback_language and fallback_language != primary_language:
@@ -263,17 +274,17 @@ class TtsNatsAdapter(NatsAdapterBase):
                             "request_id": request_id,
                             "primary_language": primary_language,
                             "fallback_language": fallback_language,
-                            "error": str(exc),
+                            "error": _safe_reason(exc),
                         },
                     )
                     try:
                         await loop.run_in_executor(self._executor, _synthesize, fallback_language)
-                    except ValueError as fallback_exc:
+                    except api.ParamValidationError as fallback_exc:
                         log.warning(
                             "param_validation_failed",
                             extra={
                                 "request_id": request_id,
-                                "reason": str(fallback_exc),
+                                "reason": _safe_reason(fallback_exc),
                                 "after_fallback": True,
                             },
                         )
@@ -285,13 +296,13 @@ class TtsNatsAdapter(NatsAdapterBase):
                 else:
                     # No fallback available — surface a static error code so callers can
                     # distinguish a bad param from an engine crash.
-                    # param_validation_failed because _check_str raises for any short
-                    # metadata field (text, voice, language, accent, personality, emotion),
-                    # not just text. Static code matches STT, and the exc message stays in
-                    # the structured log only (never echoed over the wire — security).
+                    # ParamValidationError is raised only by _check_str/_check_float/_check_int,
+                    # so path-escape and engine ValueErrors propagate to the outer except
+                    # block as synthesis_failed. Static code matches STT; exc message stays
+                    # in the structured log only (never echoed over the wire — security).
                     log.warning(
                         "param_validation_failed",
-                        extra={"request_id": request_id, "reason": str(exc)},
+                        extra={"request_id": request_id, "reason": _safe_reason(exc)},
                     )
                     await self.reply(
                         msg,
