@@ -28,4 +28,5 @@ voicecli.vocab
 .claude/worktrees/
 
 .claude/dev-core.yml
-artifacts/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
