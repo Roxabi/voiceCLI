@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import functools
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +12,8 @@ from typing import Any
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
+from voicecli.nats._stt_runner import SttRunnerState, run_transcription
+from voicecli.nats._validation import validate_stt_request
 from voicecli.nats.queue_groups import STT_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
 
@@ -23,88 +23,42 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 log = logging.getLogger(__name__)
 
 
-def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
-    """Sanitize an exception message for safe inclusion in structured logs.
-
-    Escapes \\n/\\r to prevent multi-line log injection and caps length so a
-    large user-controlled payload cannot bloat log records.
-    """
-    return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
-
-
 SUBJECT = "lyra.voice.stt.request"
-
-# 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
-# Safety cap to prevent memory blowup from crafted or misrouted large payloads.
-MAX_AUDIO_B64_LEN = 25 * 1024 * 1024  # 25 MB
 HEARTBEAT_SUBJECT = "lyra.voice.stt.heartbeat"
 
-_MIME_TO_EXT: dict[str, str] = {
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/mp3": "mp3",
-    "audio/mpeg": "mp3",
-    "audio/ogg": "ogg",
-    "audio/flac": "flac",
-    "audio/webm": "webm",
-}
+# Audio shape helpers + size cap are re-exported here so tests + adapter callers
+# keep importing from voicecli.nats.stt_adapter. The actual definitions live in
+# _audio_utils.py to keep the adapter ↔ runner dependency direction one-way
+# (the runner imports the helpers from _audio_utils directly, not from here).
+from voicecli.nats._audio_utils import (  # noqa: E402
+    MAX_AUDIO_B64_LEN,
+    _MIME_TO_EXT,
+    _duration_from_segments,
+    _ext_from_mime,
+)
 
-
-def _duration_from_segments(segments: list[dict]) -> float:
-    """Compute duration in seconds from whisper segment timestamps.
-
-    Returns the `end` timestamp of the last segment, or 0.0 if no segments
-    (silent audio or detection failure)."""
-    if not segments:
-        return 0.0
-    last = segments[-1]
-    if "end" not in last:
-        log.warning("segment_missing_end_key", extra={"segments_count": len(segments)})
-        return 0.0
-    end = last["end"]
-    try:
-        return float(end)
-    except (TypeError, ValueError):
-        log.warning(
-            "segment_end_not_numeric",
-            extra={"segments_count": len(segments), "end_type": type(end).__name__},
-        )
-        return 0.0
-
-
-def _ext_from_mime(mime_type: str | None) -> str:
-    """Derive file extension from mime_type.
-
-    Default 'wav'. Known mappings:
-      audio/wav → wav, audio/x-wav → wav,
-      audio/mp3 → mp3, audio/mpeg → mp3,
-      audio/ogg → ogg, audio/flac → flac, audio/webm → webm.
-    Unknown/None → 'wav'.
-    """
-    if mime_type is None:
-        return "wav"
-    return _MIME_TO_EXT.get(mime_type.lower().split(";")[0].strip(), "wav")
+__all__ = [
+    "MAX_AUDIO_B64_LEN",
+    "_MIME_TO_EXT",
+    "_duration_from_segments",
+    "_ext_from_mime",
+    "SttNatsAdapter",
+    "SUBJECT",
+    "HEARTBEAT_SUBJECT",
+]
 
 
 def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:
-    if not request_id:
-        m = SttResponse.model_construct(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id="",
-            error=error,
-        )
-    else:
-        m = SttResponse(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id=request_id,
-            error=error,
-        )
+    fields: dict[str, Any] = {
+        "contract_version": CONTRACT_VERSION,
+        "trace_id": trace_id,
+        "issued_at": datetime.now(timezone.utc),
+        "ok": False,
+        "request_id": request_id or "",
+        "error": error,
+    }
+    # Skip validation only when request_id is empty (otherwise the contract requires it).
+    m = SttResponse.model_construct(**fields) if not request_id else SttResponse(**fields)
     return m.model_dump_json(exclude_none=True).encode()
 
 
@@ -134,7 +88,26 @@ class SttNatsAdapter(NatsAdapterBase):
         self.model_loaded: str | None = None
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
-        self._model_warm: bool = False
+        self._runner_state = SttRunnerState(
+            executor=self._executor,
+            set_model_warm=self._set_model_warm,
+            set_model_loaded=self._set_model_loaded,
+            model_warm=False,
+        )
+
+    @property
+    def _model_warm(self) -> bool:
+        return self._runner_state.model_warm
+
+    @_model_warm.setter
+    def _model_warm(self, v: bool) -> None:
+        self._runner_state.model_warm = v
+
+    def _set_model_warm(self, v: bool) -> None:
+        self._runner_state.model_warm = v
+
+    def _set_model_loaded(self, v: str | None) -> None:
+        self.model_loaded = v
 
     def heartbeat_payload(self) -> dict:
         payload = super().heartbeat_payload()
@@ -160,48 +133,12 @@ class SttNatsAdapter(NatsAdapterBase):
             )
             return
 
-        audio_b64 = payload.get("audio_b64")
-        if not audio_b64 or not isinstance(audio_b64, str):
-            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
+        outcome = validate_stt_request(payload)
+        if outcome.error_code is not None:
+            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code))
             return
-
-        for key, expected_types in (
-            ("language", (str,)),
-            ("language_detection_threshold", (int, float)),
-            ("language_detection_segments", (int,)),
-            ("language_fallback", (str,)),
-            ("initial_prompt", (str,)),
-            ("task", (str,)),
-        ):
-            val = payload.get(key)
-            if val is None:
-                continue
-            if key == "language_detection_segments" and isinstance(val, bool):
-                # bool is a subclass of int in Python; reject separately
-                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-                return
-            if not isinstance(val, expected_types):
-                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-                return
-
-        # Whisper accepts "transcribe" or "translate"; reject anything else early.
-        task_val = payload.get("task")
-        if task_val is not None and task_val not in ("transcribe", "translate"):
-            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-            return
-
-        overrides = {
-            k: v
-            for k, v in {
-                "language": payload.get("language"),
-                "language_detection_threshold": payload.get("language_detection_threshold"),
-                "language_detection_segments": payload.get("language_detection_segments"),
-                "language_fallback": payload.get("language_fallback"),
-                "initial_prompt": payload.get("initial_prompt"),
-                "task": payload.get("task"),
-            }.items()
-            if v is not None
-        }
+        audio_b64 = payload["audio_b64"]  # validated by validate_stt_request to be str
+        overrides = outcome.overrides or {}
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked()
@@ -235,56 +172,20 @@ class SttNatsAdapter(NatsAdapterBase):
         ext = _ext_from_mime(payload.get("mime_type"))
         out_path = scoped_path(request_id, ext)
         try:
-            # Fix #2: cap payload size before decode to prevent memory blowup
-            if len(audio_b64) > MAX_AUDIO_B64_LEN:
-                log.warning(
-                    "payload_too_large",
-                    extra={"request_id": request_id, "size": len(audio_b64)},
-                )
-                await self.reply(msg, _err_stt(trace_id, request_id, "payload_too_large"))
-                cleanup(out_path)
-                return
-
-            # Decode audio bytes first — isolate bad-base64 from transcription failures
-            try:
-                audio_bytes = base64.b64decode(audio_b64, validate=True)
-            except Exception:
-                log.warning("audio_decode_failed", extra={"request_id": request_id})
-                await self.reply(msg, _err_stt(trace_id, request_id, "audio_decode_failed"))
-                # Fix #4: remove redundant cleanup(out_path) here; finally block handles it
-                return
-
-            out_path.write_bytes(audio_bytes)
-            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
-
-            # Fix #1: warm up the model once; distinguish load failures from inference failures.
-            # _load_model() handles the mock env-gate short-circuit internally.
-            if not self._model_warm:
-                try:
-                    from voicecli.api import warmup_model
-
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(self._executor, warmup_model, self.default_model)
-                    self._model_warm = True
-                    # Fix #3: set model_loaded only after the model is actually warm
-                    self.model_loaded = self.default_model
-                except Exception:
-                    log.exception("model_load_failed", extra={"request_id": request_id})
-                    await self.reply(msg, _err_stt(trace_id, request_id, "model_load_failed"))
-                    return
-
-            from voicecli import api
-
-            fn = functools.partial(
-                api.transcribe,
-                out_path,
-                model=self.default_model,
-                _skip_daemon=True,
-                **overrides,
+            ok, result = await run_transcription(
+                self._runner_state,
+                self.default_model,
+                MAX_AUDIO_B64_LEN,
+                payload,
+                request_id,
+                audio_b64,
+                overrides,
+                trace_id=trace_id,
             )
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(self._executor, fn)
-            duration_seconds = _duration_from_segments(result.segments)
+            if not ok:
+                await self.reply(msg, _err_stt(trace_id, request_id, result))  # type: ignore[arg-type]
+                return
+            fields = result  # type: ignore[assignment]
             await self.reply(
                 msg,
                 SttResponse(
@@ -293,23 +194,12 @@ class SttNatsAdapter(NatsAdapterBase):
                     issued_at=datetime.now(timezone.utc),
                     ok=True,
                     request_id=request_id,
-                    text=result.text,
-                    language=result.language,
-                    duration_seconds=duration_seconds,
+                    text=fields["text"],
+                    language=fields["language"],
+                    duration_seconds=fields["duration_seconds"],
                 )
                 .model_dump_json(exclude_none=True)
                 .encode(),
             )
-        except api.ParamValidationError as exc:
-            # Distinct error code for param validation failures so callers can tell
-            # them apart from an engine/model crash.
-            log.warning(
-                "param_validation_failed",
-                extra={"request_id": request_id, "reason": _safe_reason(exc)},
-            )
-            await self.reply(msg, _err_stt(trace_id, request_id, "param_validation_failed"))
-        except Exception:
-            log.exception("transcription_failed", extra={"request_id": request_id})
-            await self.reply(msg, _err_stt(trace_id, request_id, "transcription_failed"))
         finally:
             cleanup(out_path)

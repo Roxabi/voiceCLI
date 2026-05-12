@@ -91,4 +91,5 @@ dev = [
     "pip-licenses>=5.5.1",
     "pyright>=1.1.408",
     "import-linter>=2.0,<3.0",
+    "pytest-cov>=7.1.0",
 ]

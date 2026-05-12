@@ -1,0 +1,7 @@
+{
+  "contract_version": "1",
+  "error": "malformed_request",
+  "ok": false,
+  "request_id": "req-noaudio",
+  "trace_id": "trace-stt-3"
+}

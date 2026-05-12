@@ -1,9 +1,16 @@
-"""Envelope validation for NATS payloads.
+"""NATS identifier-token validation — single-regex helper for subject prefixes,
+queue-group names, and similar tokens that interpolate into NATS protocol lines.
 
-NOTE: ADR-044's `contract_version` field is read defensively per the spec
+See also
+--------
+``voicecli.nats._validation`` — per-handler envelope/payload validation for
+TTS/STT requests (a broader, request-shape concern that DELEGATES here for
+the engine-token check but otherwise owns its own rules).
+
+NOTE: ADR-044's ``contract_version`` field is read defensively per the spec
 (no validation, log WARN once on mismatch) and MUST NOT be routed through
-this module. This module validates only the structural envelope —
-field presence, types, length caps — not protocol versions.
+this module — this module validates structural tokens only, not protocol
+versions.
 """
 
 from __future__ import annotations

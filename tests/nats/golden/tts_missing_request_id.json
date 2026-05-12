@@ -1,0 +1,7 @@
+{
+  "contract_version": "1",
+  "error": "malformed_request",
+  "ok": false,
+  "request_id": "",
+  "trace_id": "trace-tts-1"
+}

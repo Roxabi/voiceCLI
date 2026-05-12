@@ -1,0 +1,7 @@
+{
+  "contract_version": "1",
+  "error": "engine_unavailable",
+  "ok": false,
+  "request_id": "req-noeng",
+  "trace_id": "trace-tts-8"
+}

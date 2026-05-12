@@ -18,6 +18,11 @@ STT/audio_in/*
 STT/texts_out/*
 !STT/texts_out/.gitkeep
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/
 .claude/skills/*
 !.claude/skills/voice-design/
 voicecli.toml

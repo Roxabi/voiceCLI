@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64
+import base64  # noqa: F401 — test patch anchor for voicecli.nats.tts_adapter.base64.b64encode
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -13,16 +13,10 @@ from typing import Any
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
-from roxabi_nats._validate import validate_nats_token
+from voicecli.nats._tts_runner import TtsRunnerState, run_synthesis
+from voicecli.nats._validation import validate_tts_request
 from voicecli.nats.queue_groups import TTS_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
-from voicecli.nats.tts_wav_utils import (
-    cleanup_chunks,
-    collect_chunked_output,
-    concat_wav_chunks,
-    wav_duration_ms,
-    wav_waveform_b64,
-)
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).
@@ -97,6 +91,10 @@ class TtsNatsAdapter(NatsAdapterBase):
         self.model_loaded: str | None = None
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
+        self._runner_state = TtsRunnerState(
+            executor=self._executor,
+            set_model_loaded=lambda v: setattr(self, "model_loaded", v),
+        )
 
     def heartbeat_payload(self) -> dict:
         from voicecli.model_registry import model_registry
@@ -144,43 +142,16 @@ class TtsNatsAdapter(NatsAdapterBase):
             )
             return
 
-        # Validate text field early to avoid KeyError being masked as synthesis_failed (Fix 8)
-        text = payload.get("text")
-        if not text or not isinstance(text, str):
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
+        outcome = validate_tts_request(
+            payload,
+            default_engine=self.default_engine,
+            engine_available=_engine_available,
+        )
+        if outcome.error_code is not None:
+            await self.reply(msg, _err_tts(trace_id, request_id, outcome.error_code))
             return
-
-        # Strip newlines before passing to api.generate.
-        # _check_str rejects \n/\r for all params — a reasonable boundary guard
-        # for short metadata fields (voice, accent, personality) but pathological
-        # for free-text TTS payloads where multi-paragraph input is the standard
-        # case.  The NATS adapter is responsible for shaping its lane's input;
-        # the strict check is kept intact at the library boundary.
-        _newline_count = text.count("\n") + text.count("\r")
-        if _newline_count:
-            text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
-            log.debug(
-                "text_newlines_stripped",
-                extra={"request_id": request_id, "removed": _newline_count},
-            )
-
-        if not text.strip():
-            log.warning(
-                "text_empty_after_strip",
-                extra={"request_id": request_id, "original_length": len(payload.get("text") or "")},
-            )
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
-            return
-
-        engine = payload.get("engine") or self.default_engine
-        try:
-            validate_nats_token(engine, kind="engine")
-        except ValueError:
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
-            return
-        if not _engine_available(engine):
-            await self.reply(msg, _err_tts(trace_id, request_id, "engine_unavailable"))
-            return
+        text = outcome.cleaned_text
+        engine = outcome.engine
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked() (Fix 7)
@@ -209,134 +180,21 @@ class TtsNatsAdapter(NatsAdapterBase):
     ) -> None:
         out_path = scoped_path(request_id, "wav")
         try:
-            self.model_loaded = engine
-            from voicecli import api
-
-            # Engine-agnostic kwargs forwarded through api.generate **kwargs
-            # (translate.py will strip fields the target engine can't consume).
-            optional_kwargs = {
-                k: v
-                for k, v in {
-                    "language": payload.get("language"),
-                    "voice": payload.get("voice"),
-                    "speed": payload.get("speed"),
-                    "exaggeration": payload.get("exaggeration"),
-                    "cfg_weight": payload.get("cfg_weight"),
-                    "accent": payload.get("accent"),
-                    "personality": payload.get("personality"),
-                    "emotion": payload.get("emotion"),
-                }.items()
-                if v is not None
-            }
-
-            # Named parameters of api.generate — must be passed explicitly, not via **kwargs.
-            named_kwargs: dict[str, Any] = {}
-            chunked = payload.get("chunked")
-            if chunked is not None:
-                named_kwargs["chunked"] = bool(chunked)
-            for key in ("chunk_size", "segment_gap", "crossfade"):
-                value = payload.get(key)
-                if value is not None:
-                    named_kwargs[key] = value
-
-            loop = asyncio.get_running_loop()
-
-            def _synthesize(language: str | None) -> None:
-                from voicecli.adapters.synthesis import LocalSynthesisAdapter
-                from voicecli.model_registry import model_registry
-                from voicecli.utils import UNRESTRICTED
-
-                kw = dict(optional_kwargs)
-                if language is not None:
-                    kw["language"] = language
-                api.generate(
-                    text,
-                    engine=engine,
-                    output=out_path,
-                    allowed_base=UNRESTRICTED,
-                    _synthesis=LocalSynthesisAdapter(model_registry),
-                    **kw,
-                    **named_kwargs,
-                )
-
-            try:
-                await loop.run_in_executor(self._executor, _synthesize, None)
-            except api.ParamValidationError as exc:
-                # ADR-044 fallback_language semantics: api.generate raises
-                # ParamValidationError for param/language validation; retry once
-                # with the fallback before giving up.
-                fallback_language = payload.get("fallback_language")
-                primary_language = payload.get("language")
-                if fallback_language and fallback_language != primary_language:
-                    log.warning(
-                        "language_synthesis_failed_retrying_with_fallback",
-                        extra={
-                            "request_id": request_id,
-                            "primary_language": primary_language,
-                            "fallback_language": fallback_language,
-                            "error": _safe_reason(exc),
-                        },
-                    )
-                    try:
-                        await loop.run_in_executor(self._executor, _synthesize, fallback_language)
-                    except api.ParamValidationError as fallback_exc:
-                        log.warning(
-                            "param_validation_failed",
-                            extra={
-                                "request_id": request_id,
-                                "reason": _safe_reason(fallback_exc),
-                                "after_fallback": True,
-                            },
-                        )
-                        await self.reply(
-                            msg,
-                            _err_tts(trace_id, request_id, "param_validation_failed"),
-                        )
-                        return
-                else:
-                    # No fallback available — surface a static error code so callers can
-                    # distinguish a bad param from an engine crash.
-                    # ParamValidationError is raised only by _check_str/_check_float/_check_int,
-                    # so path-escape and engine ValueErrors propagate to the outer except
-                    # block as synthesis_failed. Static code matches STT; exc message stays
-                    # in the structured log only (never echoed over the wire — security).
-                    log.warning(
-                        "param_validation_failed",
-                        extra={"request_id": request_id, "reason": _safe_reason(exc)},
-                    )
-                    await self.reply(
-                        msg,
-                        _err_tts(
-                            trace_id,
-                            request_id,
-                            "param_validation_failed",
-                        ),
-                    )
-                    return
-
-            # If the engine ran in chunked mode it writes {stem}_NNN.wav files
-            # plus a {stem}.done sentinel instead of {stem}.wav directly.
-            # Detect and concatenate chunks into out_path before encoding.
-            chunks = collect_chunked_output(out_path)
-            if chunks:
-                # issue #60: explicitly tighten each chunk before it is read or
-                # deleted, so chunk confidentiality does not rely solely on umask.
-                for c in chunks:
-                    c.chmod(0o600)
-                concat_wav_chunks(chunks, out_path)
-                cleanup_chunks(out_path, chunks)
-
-            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
-            audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
-            duration_ms = wav_duration_ms(out_path)
-            waveform_b64 = wav_waveform_b64(out_path)
-            reply_fields: dict[str, Any] = {
-                "audio_b64": audio_b64,
-                "mime_type": "audio/wav",
-                "duration_ms": duration_ms,
-            }
-            if waveform_b64 is not None:
-                reply_fields["waveform_b64"] = waveform_b64
+            ok, result = await run_synthesis(
+                self._runner_state,
+                payload,
+                request_id,
+                text,
+                engine,
+                out_path,
+                trace_id=trace_id,
+            )
+            if not ok:
+                # result is the error_code string
+                await self.reply(msg, _err_tts(trace_id, request_id, result))  # type: ignore[arg-type]
+                return
+            # result is the fields dict
+            fields = result  # type: ignore[assignment]
             await self.reply(
                 msg,
                 TtsResponse(
@@ -345,16 +203,13 @@ class TtsNatsAdapter(NatsAdapterBase):
                     issued_at=datetime.now(timezone.utc),
                     ok=True,
                     request_id=request_id,
-                    audio_b64=audio_b64,
-                    mime_type="audio/wav",
-                    duration_ms=duration_ms,
-                    waveform_b64=waveform_b64,
+                    audio_b64=fields["audio_b64"],
+                    mime_type=fields["mime_type"],
+                    duration_ms=fields["duration_ms"],
+                    waveform_b64=fields.get("waveform_b64"),
                 )
                 .model_dump_json(exclude_none=True)
                 .encode(),
             )
-        except Exception:
-            log.exception("synthesis_failed", extra={"request_id": request_id})
-            await self.reply(msg, _err_tts(trace_id, request_id, "synthesis_failed"))
         finally:
             cleanup(out_path)
