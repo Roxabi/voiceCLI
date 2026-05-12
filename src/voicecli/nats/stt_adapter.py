@@ -23,15 +23,6 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 log = logging.getLogger(__name__)
 
 
-def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
-    """Sanitize an exception message for safe inclusion in structured logs.
-
-    Escapes \\n/\\r to prevent multi-line log injection and caps length so a
-    large user-controlled payload cannot bloat log records.
-    """
-    return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
-
-
 SUBJECT = "lyra.voice.stt.request"
 
 # 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
@@ -51,60 +42,41 @@ _MIME_TO_EXT: dict[str, str] = {
 
 
 def _duration_from_segments(segments: list[dict]) -> float:
-    """Compute duration in seconds from whisper segment timestamps.
-
-    Returns the `end` timestamp of the last segment, or 0.0 if no segments
-    (silent audio or detection failure)."""
+    """End timestamp of the last whisper segment; 0.0 on missing/non-numeric `end`."""
     if not segments:
         return 0.0
     last = segments[-1]
     if "end" not in last:
         log.warning("segment_missing_end_key", extra={"segments_count": len(segments)})
         return 0.0
-    end = last["end"]
     try:
-        return float(end)
+        return float(last["end"])
     except (TypeError, ValueError):
         log.warning(
             "segment_end_not_numeric",
-            extra={"segments_count": len(segments), "end_type": type(end).__name__},
+            extra={"segments_count": len(segments), "end_type": type(last["end"]).__name__},
         )
         return 0.0
 
 
 def _ext_from_mime(mime_type: str | None) -> str:
-    """Derive file extension from mime_type.
-
-    Default 'wav'. Known mappings:
-      audio/wav → wav, audio/x-wav → wav,
-      audio/mp3 → mp3, audio/mpeg → mp3,
-      audio/ogg → ogg, audio/flac → flac, audio/webm → webm.
-    Unknown/None → 'wav'.
-    """
+    """File extension for mime_type via _MIME_TO_EXT; 'wav' on unknown/None."""
     if mime_type is None:
         return "wav"
     return _MIME_TO_EXT.get(mime_type.lower().split(";")[0].strip(), "wav")
 
 
 def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:
-    if not request_id:
-        m = SttResponse.model_construct(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id="",
-            error=error,
-        )
-    else:
-        m = SttResponse(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id=request_id,
-            error=error,
-        )
+    fields: dict[str, Any] = {
+        "contract_version": CONTRACT_VERSION,
+        "trace_id": trace_id,
+        "issued_at": datetime.now(timezone.utc),
+        "ok": False,
+        "request_id": request_id or "",
+        "error": error,
+    }
+    # Skip validation only when request_id is empty (otherwise the contract requires it).
+    m = SttResponse.model_construct(**fields) if not request_id else SttResponse(**fields)
     return m.model_dump_json(exclude_none=True).encode()
 
 
