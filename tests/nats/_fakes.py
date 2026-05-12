@@ -10,16 +10,37 @@ Contents:
   * ``bound_but_closed_socket`` — context manager that leaves a refusing
     socket fs entry (for probing the ECONNREFUSED branch).
   * ``assert_dispatch_outcome`` — three-way assertion for ``_dispatch`` tests.
+  * ``SyncExecutor`` — drop-in for ThreadPoolExecutor that runs submitted
+    callables synchronously on the current thread; used by runner tests
+    that don't want to spin a real pool just to assert call ordering.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import socket
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
+
+
+class SyncExecutor:
+    """Drop-in for ThreadPoolExecutor that runs submitted callables synchronously.
+
+    Returns a fulfilled ``Future`` so ``loop.run_in_executor`` callers can await
+    it immediately. Exceptions propagate via ``Future.set_exception``.
+    """
+
+    def submit(self, fn, *args, **kwargs):  # noqa: ANN001 — drop-in shape
+        f: concurrent.futures.Future = concurrent.futures.Future()
+        try:
+            f.set_result(fn(*args, **kwargs))
+        except BaseException as exc:  # noqa: BLE001
+            f.set_exception(exc)
+        return f
+
 
 if TYPE_CHECKING:
     from roxabi_nats import NatsAdapterBase

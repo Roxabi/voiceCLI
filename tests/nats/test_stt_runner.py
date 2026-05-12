@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import concurrent.futures
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _fakes import SyncExecutor
 
 from voicecli.nats._stt_runner import (
     SttRunnerState,
@@ -24,18 +24,6 @@ from voicecli.nats._stt_runner import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class _SyncExecutor:
-    """Drop-in for ThreadPoolExecutor that runs submitted callables synchronously."""
-
-    def submit(self, fn, *args, **kwargs):
-        f: concurrent.futures.Future = concurrent.futures.Future()
-        try:
-            f.set_result(fn(*args, **kwargs))
-        except BaseException as exc:  # noqa: BLE001
-            f.set_exception(exc)
-        return f
 
 
 class _FakeApi:
@@ -79,7 +67,7 @@ def _make_state(
     cb_loaded = set_model_loaded or (lambda m: loaded_calls.append(m))
 
     state = SttRunnerState(  # type: ignore[call-arg]
-        executor=_SyncExecutor(),  # type: ignore[arg-type]
+        executor=SyncExecutor(),  # type: ignore[arg-type]
         set_model_warm=cb_warm,
         set_model_loaded=cb_loaded,
         model_warm=model_warm,

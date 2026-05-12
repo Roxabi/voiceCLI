@@ -24,46 +24,28 @@ log = logging.getLogger(__name__)
 
 
 SUBJECT = "lyra.voice.stt.request"
-
-# 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
-# Safety cap to prevent memory blowup from crafted or misrouted large payloads.
-MAX_AUDIO_B64_LEN = 25 * 1024 * 1024  # 25 MB
 HEARTBEAT_SUBJECT = "lyra.voice.stt.heartbeat"
 
-_MIME_TO_EXT: dict[str, str] = {
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/mp3": "mp3",
-    "audio/mpeg": "mp3",
-    "audio/ogg": "ogg",
-    "audio/flac": "flac",
-    "audio/webm": "webm",
-}
+# Audio shape helpers + size cap are re-exported here so tests + adapter callers
+# keep importing from voicecli.nats.stt_adapter. The actual definitions live in
+# _audio_utils.py to keep the adapter ↔ runner dependency direction one-way
+# (the runner imports the helpers from _audio_utils directly, not from here).
+from voicecli.nats._audio_utils import (  # noqa: E402
+    MAX_AUDIO_B64_LEN,
+    _MIME_TO_EXT,
+    _duration_from_segments,
+    _ext_from_mime,
+)
 
-
-def _duration_from_segments(segments: list[dict]) -> float:
-    """End timestamp of the last whisper segment; 0.0 on missing/non-numeric `end`."""
-    if not segments:
-        return 0.0
-    last = segments[-1]
-    if "end" not in last:
-        log.warning("segment_missing_end_key", extra={"segments_count": len(segments)})
-        return 0.0
-    try:
-        return float(last["end"])
-    except (TypeError, ValueError):
-        log.warning(
-            "segment_end_not_numeric",
-            extra={"segments_count": len(segments), "end_type": type(last["end"]).__name__},
-        )
-        return 0.0
-
-
-def _ext_from_mime(mime_type: str | None) -> str:
-    """File extension for mime_type via _MIME_TO_EXT; 'wav' on unknown/None."""
-    if mime_type is None:
-        return "wav"
-    return _MIME_TO_EXT.get(mime_type.lower().split(";")[0].strip(), "wav")
+__all__ = [
+    "MAX_AUDIO_B64_LEN",
+    "_MIME_TO_EXT",
+    "_duration_from_segments",
+    "_ext_from_mime",
+    "SttNatsAdapter",
+    "SUBJECT",
+    "HEARTBEAT_SUBJECT",
+]
 
 
 def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:

@@ -132,6 +132,17 @@ class TestValidateTtsRequest:
         # Assert
         assert result.error_code == "malformed_request"
 
+    def test_text_empty_string_returns_malformed(self) -> None:
+        # Arrange — empty-string text reaches the `not text` truthiness branch
+        # *before* whitespace-strip; pins that named edge case.
+        payload = _valid_tts_payload(text="")
+        # Act
+        result = validate_tts_request(
+            payload, default_engine="mock", engine_available=_engine_available
+        )
+        # Assert
+        assert result.error_code == "malformed_request"
+
     # -----------------------------------------------------------------------
     # newline stripping in text
     # -----------------------------------------------------------------------
@@ -359,6 +370,15 @@ class TestValidateSttRequest:
     def test_audio_b64_none_returns_malformed(self) -> None:
         # Arrange
         payload = _valid_stt_payload(audio_b64=None)
+        # Act
+        result = validate_stt_request(payload)
+        # Assert
+        assert result.error_code == "malformed_request"
+
+    def test_audio_b64_empty_string_returns_malformed(self) -> None:
+        # Arrange — empty-string audio_b64 reaches the `not audio_b64`
+        # truthiness branch; pins that named edge case.
+        payload = _valid_stt_payload(audio_b64="")
         # Act
         result = validate_stt_request(payload)
         # Assert

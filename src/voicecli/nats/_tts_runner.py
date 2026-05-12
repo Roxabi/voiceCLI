@@ -10,12 +10,11 @@ Cross-reference:
     validates before invoking run_synthesis).
 
 Threading constraint:
-    set_model_loaded is called from run_synthesis (on the async event-loop thread)
+    set_model_loaded is called from run_synthesis on the async event-loop thread,
     before the executor is engaged.  The adapter reads model_loaded from the same
-    async loop (heartbeat), so no cross-thread access occurs.  The callback itself
-    may be swapped for one that writes an attribute from within an executor thread
-    in future refactors; CPython's GIL makes single-attribute writes safe for that
-    case, but callers should document the boundary if they do so.
+    async loop (heartbeat), so no cross-thread access occurs.  Callers that swap
+    the callback for one that writes from an executor thread are violating this
+    contract — wrap the write in an asyncio.Event or a thread-safe primitive.
 
 Single-source-of-truth note:
     OPTIONAL_KWARGS and NAMED_KWARGS define exactly which adapter-payload fields

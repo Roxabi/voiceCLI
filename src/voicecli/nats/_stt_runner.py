@@ -18,8 +18,9 @@ the design keeps all attribute mutations on the loop thread to avoid races.
 MAX_AUDIO_B64_LEN
 -----------------
 The cap is passed in as ``max_audio_b64_len`` rather than imported here. The
-named constant ``MAX_AUDIO_B64_LEN`` lives in ``stt_adapter.py`` and is
-forwarded by the adapter, keeping the dependency direction adapter → runner.
+named constant ``MAX_AUDIO_B64_LEN`` lives in ``voicecli.nats._audio_utils``
+(re-exported by ``stt_adapter.py``) and is forwarded by the adapter, keeping
+the dependency direction adapter → runner.
 """
 
 from __future__ import annotations
@@ -67,11 +68,7 @@ async def run_transcription(
     file.  This function writes decoded bytes to ``out_path`` but never calls
     ``cleanup()`` — the adapter wraps this coroutine in ``try/finally``.
     """
-    # Deferred imports: avoid pulling torch / faster-whisper at module load time
-    # and prevent a circular import (stt_adapter → _stt_runner → stt_adapter
-    # would be a load-time cycle; deferred import is safe because stt_adapter
-    # only imports this runner after its own module-level init is complete).
-    from voicecli.nats.stt_adapter import _duration_from_segments, _ext_from_mime  # noqa: PLC0415
+    from voicecli.nats._audio_utils import _duration_from_segments, _ext_from_mime  # noqa: PLC0415
 
     ext = _ext_from_mime(payload.get("mime_type"))
     out_path = _tempdir.scoped_path(request_id, ext)

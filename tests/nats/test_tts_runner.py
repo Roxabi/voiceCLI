@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import concurrent.futures
 import io
 import wave
 from collections.abc import Callable
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _fakes import SyncExecutor
 
 from voicecli.nats._tts_runner import (
     NAMED_KWARGS,
@@ -23,18 +23,6 @@ from voicecli.nats._tts_runner import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class _SyncExecutor:
-    """Drop-in for ThreadPoolExecutor that runs submitted callables synchronously."""
-
-    def submit(self, fn, *args, **kwargs):
-        f: concurrent.futures.Future = concurrent.futures.Future()
-        try:
-            f.set_result(fn(*args, **kwargs))
-        except BaseException as exc:  # noqa: BLE001
-            f.set_exception(exc)
-        return f
 
 
 class _FakeApi:
@@ -55,7 +43,7 @@ class _FakeApi:
 def _make_state(*, set_model_loaded=None) -> "TtsRunnerState":
     recorded: list[str] = []
     cb = set_model_loaded or (lambda e: recorded.append(e))
-    return TtsRunnerState(executor=_SyncExecutor(), set_model_loaded=cb)  # type: ignore[arg-type]
+    return TtsRunnerState(executor=SyncExecutor(), set_model_loaded=cb)  # type: ignore[arg-type]
 
 
 def _make_silent_wav_bytes(n_frames: int = 2205) -> bytes:
@@ -183,7 +171,7 @@ class TestRunSynthesisHappyPath:
 
         fake_api._behavior = _behavior
         state = TtsRunnerState(  # type: ignore[call-arg]
-            executor=_SyncExecutor(),  # type: ignore[arg-type]
+            executor=SyncExecutor(),  # type: ignore[arg-type]
             set_model_loaded=lambda e: recorded.append(e),
         )
 
@@ -349,12 +337,16 @@ class TestRunSynthesisErrors:
     def test_runtime_error_returns_synthesis_failed(self, tmp_path: Path, monkeypatch) -> None:
         # Arrange
         out_path = tmp_path / "req-rt.wav"
+        recorded: list[str] = []
 
         def _fake_generate(text, *, engine, output, **kw):
             raise RuntimeError("GPU OOM")
 
         monkeypatch.setattr("voicecli.api.generate", _fake_generate)
-        state = _make_state()
+        state = TtsRunnerState(  # type: ignore[call-arg]
+            executor=SyncExecutor(),  # type: ignore[arg-type]
+            set_model_loaded=lambda e: recorded.append(e),
+        )
 
         # Act
         ok, error_code = _run(
@@ -364,16 +356,25 @@ class TestRunSynthesisErrors:
         # Assert
         assert ok is False
         assert error_code == "synthesis_failed"
+        # set_model_loaded fires BEFORE synthesis (intentional design — pinned here so a
+        # refactor that moves the call after-success would not silently pass this test).
+        assert recorded == ["mock"], (
+            f"expected set_model_loaded(engine) called once before failure, got {recorded}"
+        )
 
     def test_generic_exception_returns_synthesis_failed(self, tmp_path: Path, monkeypatch) -> None:
         # Arrange
         out_path = tmp_path / "req-exc.wav"
+        recorded: list[str] = []
 
         def _fake_generate(text, *, engine, output, **kw):
             raise Exception("boom")  # noqa: TRY002
 
         monkeypatch.setattr("voicecli.api.generate", _fake_generate)
-        state = _make_state()
+        state = TtsRunnerState(  # type: ignore[call-arg]
+            executor=SyncExecutor(),  # type: ignore[arg-type]
+            set_model_loaded=lambda e: recorded.append(e),
+        )
 
         # Act
         ok, error_code = _run(
@@ -383,6 +384,11 @@ class TestRunSynthesisErrors:
         # Assert
         assert ok is False
         assert error_code == "synthesis_failed"
+        # set_model_loaded fires BEFORE synthesis (intentional design — pinned here so a
+        # refactor that moves the call after-success would not silently pass this test).
+        assert recorded == ["mock"], (
+            f"expected set_model_loaded(engine) called once before failure, got {recorded}"
+        )
 
 
 # ===========================================================================
