@@ -12,6 +12,7 @@ import concurrent.futures
 import io
 import wave
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -61,7 +62,9 @@ class _SyncExecutor:
 class _FakeApi:
     """Captures api.generate call kwargs and delegates to a configurable behavior."""
 
-    def __init__(self):
+    _behavior: Callable[..., None] | None
+
+    def __init__(self) -> None:
         self.calls: list[dict] = []
         self._behavior = None  # set per-test
 
