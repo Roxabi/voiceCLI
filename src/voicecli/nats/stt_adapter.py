@@ -14,6 +14,7 @@ from typing import Any
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
+from voicecli.nats._validation import validate_stt_request
 from voicecli.nats.queue_groups import STT_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
 
@@ -160,48 +161,12 @@ class SttNatsAdapter(NatsAdapterBase):
             )
             return
 
-        audio_b64 = payload.get("audio_b64")
-        if not audio_b64 or not isinstance(audio_b64, str):
-            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
+        outcome = validate_stt_request(payload)
+        if outcome.error_code is not None:
+            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code))
             return
-
-        for key, expected_types in (
-            ("language", (str,)),
-            ("language_detection_threshold", (int, float)),
-            ("language_detection_segments", (int,)),
-            ("language_fallback", (str,)),
-            ("initial_prompt", (str,)),
-            ("task", (str,)),
-        ):
-            val = payload.get(key)
-            if val is None:
-                continue
-            if key == "language_detection_segments" and isinstance(val, bool):
-                # bool is a subclass of int in Python; reject separately
-                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-                return
-            if not isinstance(val, expected_types):
-                await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-                return
-
-        # Whisper accepts "transcribe" or "translate"; reject anything else early.
-        task_val = payload.get("task")
-        if task_val is not None and task_val not in ("transcribe", "translate"):
-            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
-            return
-
-        overrides = {
-            k: v
-            for k, v in {
-                "language": payload.get("language"),
-                "language_detection_threshold": payload.get("language_detection_threshold"),
-                "language_detection_segments": payload.get("language_detection_segments"),
-                "language_fallback": payload.get("language_fallback"),
-                "initial_prompt": payload.get("initial_prompt"),
-                "task": payload.get("task"),
-            }.items()
-            if v is not None
-        }
+        audio_b64 = payload["audio_b64"]  # validated by validate_stt_request to be str
+        overrides = outcome.overrides or {}
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked()
