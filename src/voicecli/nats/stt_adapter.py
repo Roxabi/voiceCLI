@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import functools
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +12,7 @@ from typing import Any
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
+from voicecli.nats._stt_runner import SttRunnerState, run_transcription
 from voicecli.nats._validation import validate_stt_request
 from voicecli.nats.queue_groups import STT_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
@@ -135,7 +134,26 @@ class SttNatsAdapter(NatsAdapterBase):
         self.model_loaded: str | None = None
         self._sem = asyncio.Semaphore(max_concurrent)
         self._executor = ThreadPoolExecutor(max_workers=max_concurrent)
-        self._model_warm: bool = False
+        self._runner_state = SttRunnerState(
+            executor=self._executor,
+            set_model_warm=self._set_model_warm,
+            set_model_loaded=self._set_model_loaded,
+            model_warm=False,
+        )
+
+    @property
+    def _model_warm(self) -> bool:
+        return self._runner_state.model_warm
+
+    @_model_warm.setter
+    def _model_warm(self, v: bool) -> None:
+        self._runner_state.model_warm = v
+
+    def _set_model_warm(self, v: bool) -> None:
+        self._runner_state.model_warm = v
+
+    def _set_model_loaded(self, v: str | None) -> None:
+        self.model_loaded = v
 
     def heartbeat_payload(self) -> dict:
         payload = super().heartbeat_payload()
@@ -200,56 +218,20 @@ class SttNatsAdapter(NatsAdapterBase):
         ext = _ext_from_mime(payload.get("mime_type"))
         out_path = scoped_path(request_id, ext)
         try:
-            # Fix #2: cap payload size before decode to prevent memory blowup
-            if len(audio_b64) > MAX_AUDIO_B64_LEN:
-                log.warning(
-                    "payload_too_large",
-                    extra={"request_id": request_id, "size": len(audio_b64)},
-                )
-                await self.reply(msg, _err_stt(trace_id, request_id, "payload_too_large"))
-                cleanup(out_path)
-                return
-
-            # Decode audio bytes first — isolate bad-base64 from transcription failures
-            try:
-                audio_bytes = base64.b64decode(audio_b64, validate=True)
-            except Exception:
-                log.warning("audio_decode_failed", extra={"request_id": request_id})
-                await self.reply(msg, _err_stt(trace_id, request_id, "audio_decode_failed"))
-                # Fix #4: remove redundant cleanup(out_path) here; finally block handles it
-                return
-
-            out_path.write_bytes(audio_bytes)
-            out_path.chmod(0o600)  # issue #60: belt-and-suspenders over umask 0o077
-
-            # Fix #1: warm up the model once; distinguish load failures from inference failures.
-            # _load_model() handles the mock env-gate short-circuit internally.
-            if not self._model_warm:
-                try:
-                    from voicecli.api import warmup_model
-
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(self._executor, warmup_model, self.default_model)
-                    self._model_warm = True
-                    # Fix #3: set model_loaded only after the model is actually warm
-                    self.model_loaded = self.default_model
-                except Exception:
-                    log.exception("model_load_failed", extra={"request_id": request_id})
-                    await self.reply(msg, _err_stt(trace_id, request_id, "model_load_failed"))
-                    return
-
-            from voicecli import api
-
-            fn = functools.partial(
-                api.transcribe,
-                out_path,
-                model=self.default_model,
-                _skip_daemon=True,
-                **overrides,
+            ok, result = await run_transcription(
+                self._runner_state,
+                self.default_model,
+                MAX_AUDIO_B64_LEN,
+                payload,
+                request_id,
+                audio_b64,
+                overrides,
+                trace_id=trace_id,
             )
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(self._executor, fn)
-            duration_seconds = _duration_from_segments(result.segments)
+            if not ok:
+                await self.reply(msg, _err_stt(trace_id, request_id, result))  # type: ignore[arg-type]
+                return
+            fields = result  # type: ignore[assignment]
             await self.reply(
                 msg,
                 SttResponse(
@@ -258,23 +240,12 @@ class SttNatsAdapter(NatsAdapterBase):
                     issued_at=datetime.now(timezone.utc),
                     ok=True,
                     request_id=request_id,
-                    text=result.text,
-                    language=result.language,
-                    duration_seconds=duration_seconds,
+                    text=fields["text"],
+                    language=fields["language"],
+                    duration_seconds=fields["duration_seconds"],
                 )
                 .model_dump_json(exclude_none=True)
                 .encode(),
             )
-        except api.ParamValidationError as exc:
-            # Distinct error code for param validation failures so callers can tell
-            # them apart from an engine/model crash.
-            log.warning(
-                "param_validation_failed",
-                extra={"request_id": request_id, "reason": _safe_reason(exc)},
-            )
-            await self.reply(msg, _err_stt(trace_id, request_id, "param_validation_failed"))
-        except Exception:
-            log.exception("transcription_failed", extra={"request_id": request_id})
-            await self.reply(msg, _err_stt(trace_id, request_id, "transcription_failed"))
         finally:
             cleanup(out_path)
