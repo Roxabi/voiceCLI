@@ -272,6 +272,13 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     if not dest.exists() or dest.stat().st_size == 0:
         raise RuntimeError("parecord produced no output — check microphone and PulseAudio")
 
+    import soundfile
+
+    try:
+        soundfile.info(dest)
+    except soundfile.LibsndfileError as e:
+        raise RuntimeError("recorded file appears corrupt — check microphone and PulseAudio") from e
+
     _chime("stop")
     print(f"Saved recording to {dest}")
     return dest
