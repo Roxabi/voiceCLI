@@ -1,0 +1,91 @@
+---
+title: Split nats/tts_adapter.py and nats/stt_adapter.py (>300 lines)
+issue: 147
+status: approved
+tier: F-lite
+date: 2026-05-12
+---
+
+## Problem
+
+`src/voicecli/nats/tts_adapter.py` and `src/voicecli/nats/stt_adapter.py` cross the 300-line file-length gate on branch `fix/nats-tts-newlines-and-error-codes` (349 and 305 lines respectively). They were already at the cap before commit `ae9dd80`; the newline-strip + distinct error code paths pushed them over and were landed under an exemption in `tools/file_exemptions.txt` pointing at this issue.
+
+Each adapter mixes three responsibilities:
+
+1. **NATS plumbing** — `__init__`, subscribe, `_extra_subjects`, `run`, heartbeat, semaphore guard, reply emission.
+2. **Request validation** — `request_id` pattern, text/audio presence, type checks on optional fields, engine/task allowlists, newline stripping.
+3. **Run loop** — engine invocation through an executor (TTS: synthesis + chunked output post-processing + fallback_language retry; STT: base64 decode, model warmup state, transcribe), plus error classification onto the static reply codes.
+
+## Intent
+
+The file-length gate is an early-warning signal that a module is taking on too many responsibilities. Exemptions are temporary debt, not solutions — each subsequent error-path fix to the same handlers makes the adapters harder to read, harder to test in isolation, and increases the likelihood the next fix lands as another exemption.
+
+**End state:**
+
+- The adapter **class** becomes a thin NATS plumbing layer: lifecycle, heartbeat, dispatch, semaphore guard, reply emission. Its public surface (constructor, `handle`, `heartbeat_payload`, `run`, `_extra_subjects`) is unchanged.
+- Validation logic moves into a named, testable helper in `src/voicecli/nats/_validation.py` (distinct from the existing narrow `nats/_validate.py`, which covers only NATS identifier tokens). `_validation.py` produces an outcome that the adapter maps to a reply error code — the wire-format mapping stays in the adapter.
+- The synthesis and transcription run loops move into named functions/modules so they can be unit-tested without instantiating an adapter and so their error-path branches are visible at a glance.
+- Both adapter files end under 300 lines; their entries in `tools/file_exemptions.txt` are removed in the same change.
+- No on-wire behavior change: subjects, queue groups, inbox prefixes, reply error codes (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `param_validation_failed`, `text_validation_failed`, `synthesis_failed`, `payload_too_large`, `audio_decode_failed`, `model_load_failed`, `transcription_failed`) are byte-identical.
+
+## Architecture (sketch, to be locked at /spec)
+
+Module layout after the split (proposed names, finalize in spec):
+
+| Module | Responsibility | Approx LoC |
+|---|---|---|
+| `nats/tts_adapter.py` | Class + lifecycle + heartbeat + dispatch + reply | ≤200 |
+| `nats/stt_adapter.py` | Class + lifecycle + heartbeat + dispatch + reply | ≤180 |
+| `nats/_validation.py` (new) | `validate_tts_request(payload)`, `validate_stt_request(payload)` → typed result (error code or cleaned fields) | ~120 |
+| `nats/_tts_runner.py` (new, or kept inline) | `run_synthesis(...)` — executor invocation, fallback_language retry, chunked output assembly, error classification | ~140 |
+| `nats/_stt_runner.py` (new, or kept inline) | `run_transcription(...)` — base64 decode, warmup state, transcribe, error classification | ~110 |
+
+Open architectural choices (to resolve in `/spec`):
+
+- One shared `_validation.py` vs. per-handler `_tts_validation.py`/`_stt_validation.py`. Lean: one file, two functions — they share the `request_id` pattern + `_err_*` mapping.
+- Runners as **module-level functions** taking the adapter (or just the executor + state it needs) vs. **methods on a small dataclass** owning `_executor`, `_model_warm`. Lean: module-level functions with explicit args — easier to unit-test without an adapter fixture.
+- Whether STT module-level helpers (`MAX_AUDIO_B64_LEN`, `_duration_from_segments`, `_ext_from_mime`) move to the runner. Lean: leave them in `stt_adapter.py` to avoid gratuitous test-import churn — they're cheap and self-contained.
+
+## Consumers (impact validation)
+
+| Consumer | Imports | Impact |
+|---|---|---|
+| `src/voicecli/cli_nats.py` | `TtsNatsAdapter`, `SttNatsAdapter` (lazy, inside handlers) | None — class names + constructors preserved |
+| `src/voicecli/nats/__init__.py` | Re-exports via `__getattr__` | None — `__all__` unchanged |
+| `tests/test_model_registry.py` | `TtsNatsAdapter` | None |
+| `tests/nats/test_tts_adapter.py` | `TtsNatsAdapter` + uses `_resolve_engine` (from `nats.config`, untouched), `scoped_path` (from `nats.tempdir`, untouched) | None — behavior tests run through `TtsNatsAdapter(...)`; new validation/runner units may get additive unit tests |
+| `tests/nats/test_stt_adapter.py` | `SttNatsAdapter`, `HEARTBEAT_SUBJECT`, `SUBJECT`, `_duration_from_segments`, `_ext_from_mime` | None **iff** STT helpers stay in `stt_adapter.py` (preferred). If moved, test imports update atomically. |
+| External NATS clients (lyra, other satellites) | Wire protocol only | None — no on-wire change |
+
+## Who
+
+- **Primary:** voiceCLI maintainer working on the NATS satellite path — readability of the hot fix lane (production TTS/STT handlers).
+- **Secondary:** Future contributors touching adapter behavior; CI file-length gate (recovers a clean signal once exemptions are removed).
+
+## Constraints
+
+- Pure refactor: no behavior change in the on-wire NATS protocol, reply envelopes, or error codes.
+- Lands on top of `fix/nats-tts-newlines-and-error-codes` (or its merge commit) — that branch contains the over-cap state this refactor targets. If still unmerged at /implement time, base on it explicitly.
+- Both adapters end under 300 lines; their `file_exemptions.txt` entries are removed in the same change.
+- Existing `tests/nats/test_tts_adapter.py` and `tests/nats/test_stt_adapter.py` must continue to pass with intent intact. Augmenting with unit tests for new helpers is acceptable; weakening or deleting behavior tests is not.
+- Import-layers gate preserved — new helper modules live in `src/voicecli/nats/` and may not introduce upward imports (e.g. no import of `voicecli.api` at module load; existing deferred-import pattern preserved).
+- Public adapter API (`TtsNatsAdapter`, `SttNatsAdapter` constructors and methods listed above) byte-stable for consumers.
+- Do not collapse the new `_validation.py` (envelope/param validation) into the existing `_validate.py` (NATS identifier tokens) — distinct concerns.
+
+## Out of Scope
+
+- Changing the on-wire NATS protocol, subjects, queue groups, headers, reply error codes, or `roxabi_contracts` schemas.
+- Refactoring `nats/config.py`, `nats/queue_groups.py`, `nats/tempdir.py`, `nats/tts_wav_utils.py`.
+- Cross-host orchestration changes (Quadlet units, supervisor configuration).
+- New features (telemetry, additional retries, alternate transports).
+- Touching the existing `nats/_validate.py` (NATS identifier tokens).
+
+## Complexity
+
+**Tier: F-lite** — clear scope, single domain (NATS adapters), no architectural unknowns, but more than a 3-file mechanical change: 2 adapters + 1–3 new helper modules + exemptions file + 2 test files (≈5–7 files), with three small architectural choices to lock in `/spec` (one validation module vs. two; runners as functions vs. dataclass; whether to move STT module-level helpers).
+
+Signals observed:
+- Single domain: `src/voicecli/nats/` only.
+- No new external dependency — internal module decomposition.
+- File count crosses the S threshold (≤3 files).
+- Consumer surface byte-stable — risk concentrated in not regressing error-code branches under unit tests.
