@@ -1,7 +1,4 @@
-"""RED-phase tests for nats/_stt_runner.py (issue #147 T10).
-
-The module under test does not yet exist; T11 creates it.
-All tests are SKIPPED until voicecli.nats._stt_runner is implemented.
+"""Unit tests for voicecli.nats._stt_runner (issue #147).
 
 Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
 on-disk audio file. The runner writes the decoded bytes via scoped_path but
@@ -19,25 +16,9 @@ from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Lazy import shim — lets --collect-only succeed before _stt_runner.py exists
-# ---------------------------------------------------------------------------
-
-try:
-    from voicecli.nats._stt_runner import (
-        SttRunnerState,
-        run_transcription,
-    )
-
-    _IMPORT_ERROR: ImportError | None = None
-except ImportError as e:  # noqa: BLE001
-    _IMPORT_ERROR = e
-    run_transcription = None  # type: ignore[assignment]
-    SttRunnerState = None  # type: ignore[assignment]
-
-pytestmark = pytest.mark.skipif(
-    _IMPORT_ERROR is not None,
-    reason=f"voicecli.nats._stt_runner not yet implemented: {_IMPORT_ERROR}",
+from voicecli.nats._stt_runner import (
+    SttRunnerState,
+    run_transcription,
 )
 
 # ---------------------------------------------------------------------------
@@ -478,12 +459,14 @@ class TestRunTranscriptionModelLoad:
 
 
 class TestRunTranscriptionParamValidation:
-    def test_value_error_returns_param_validation_failed(
+    def test_param_validation_error_returns_param_validation_failed(
         self, patch_scoped_path, monkeypatch
     ) -> None:
         # Arrange
+        from voicecli.api import ParamValidationError
+
         def _bad_transcribe(out_path, *, model, _skip_daemon=True, **kw):
-            raise ValueError("bad lang")
+            raise ParamValidationError("bad lang")
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _bad_transcribe)

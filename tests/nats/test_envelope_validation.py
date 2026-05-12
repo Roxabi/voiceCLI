@@ -1,36 +1,12 @@
-"""RED-phase tests for nats/_validation.py (issue #147 T1).
-
-The module under test does not yet exist; T2 creates it.
-All tests are SKIPPED until voicecli.nats._validation is implemented.
-"""
+"""Unit tests for voicecli.nats._validation (issue #147)."""
 
 from __future__ import annotations
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Lazy import shim — lets --collect-only succeed before _validation.py exists
-# ---------------------------------------------------------------------------
-
-try:
-    from voicecli.nats._validation import (
-        SttValidationOutcome,
-        TtsValidationOutcome,
-        validate_stt_request,
-        validate_tts_request,
-    )
-
-    _IMPORT_ERROR: ImportError | None = None
-except ImportError as e:  # noqa: BLE001
-    _IMPORT_ERROR = e
-    validate_tts_request = None  # type: ignore[assignment]
-    validate_stt_request = None  # type: ignore[assignment]
-    TtsValidationOutcome = None  # type: ignore[assignment]
-    SttValidationOutcome = None  # type: ignore[assignment]
-
-pytestmark = pytest.mark.skipif(
-    _IMPORT_ERROR is not None,
-    reason=f"voicecli.nats._validation not yet implemented: {_IMPORT_ERROR}",
+from voicecli.nats._validation import (
+    validate_stt_request,
+    validate_tts_request,
 )
 
 # ---------------------------------------------------------------------------
@@ -118,10 +94,9 @@ class TestValidateTtsRequest:
         result = validate_tts_request(
             payload, default_engine="mock", engine_available=_engine_available
         )
-        # Assert — valid request_id should not produce a request_id error
-        assert result.error_code != "malformed_request" or result.engine is not None  # noqa: PT017
-        # More precisely: the outcome is success (error_code None) for otherwise valid payload
+        # Assert — valid 128-char request_id produces a success outcome.
         assert result.error_code is None
+        assert result.engine is not None
 
     # -----------------------------------------------------------------------
     # text validation

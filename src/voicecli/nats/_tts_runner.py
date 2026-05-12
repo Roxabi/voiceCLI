@@ -78,6 +78,10 @@ async def run_synthesis(
     The caller (TtsNatsAdapter) owns out_path cleanup via a finally block; this
     function never deletes out_path.
     """
+    # Deferred import so we can reference api.ParamValidationError in the except
+    # clause below without pulling torch at module load.
+    import voicecli.api as api  # noqa: PLC0415
+
     try:
         state.set_model_loaded(engine)
 
@@ -102,10 +106,9 @@ async def run_synthesis(
         def _synthesize(language: str | None) -> None:
             # All heavy imports deferred — keeps startup fast and avoids
             # pulling torch when only inspecting the adapter (e.g. --help).
-            import voicecli.api as api
-            from voicecli.adapters.synthesis import LocalSynthesisAdapter
-            from voicecli.model_registry import model_registry
-            from voicecli.utils import UNRESTRICTED
+            from voicecli.adapters.synthesis import LocalSynthesisAdapter  # noqa: PLC0415
+            from voicecli.model_registry import model_registry  # noqa: PLC0415
+            from voicecli.utils import UNRESTRICTED  # noqa: PLC0415
 
             kw = dict(optional_kwargs)
             if language is not None:
@@ -122,7 +125,7 @@ async def run_synthesis(
 
         try:
             await loop.run_in_executor(state.executor, _synthesize, None)
-        except ValueError as exc:
+        except api.ParamValidationError as exc:
             fallback_language = payload.get("fallback_language")
             primary_language = payload.get("language")
             if fallback_language and fallback_language != primary_language:
@@ -137,7 +140,7 @@ async def run_synthesis(
                 )
                 try:
                     await loop.run_in_executor(state.executor, _synthesize, fallback_language)
-                except ValueError as fallback_exc:
+                except api.ParamValidationError as fallback_exc:
                     log.warning(
                         "param_validation_failed",
                         extra={

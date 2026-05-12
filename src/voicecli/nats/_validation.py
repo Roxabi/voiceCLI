@@ -20,11 +20,14 @@ any running NATS connection or loaded model.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Callable
 
 from roxabi_nats._validate import validate_nats_token
+
+log = logging.getLogger(__name__)
 
 # request_id pattern: 1–128 alphanumeric/underscore/hyphen chars.
 # Mirrors the same check in both staging adapters (tts_adapter.py and
@@ -119,11 +122,26 @@ def validate_tts_request(
         return _MALFORMED
 
     # 4. Newline normalisation — \r\n first to avoid double-space
-    if "\r" in text or "\n" in text:
+    _newline_count = text.count("\n") + text.count("\r")
+    if _newline_count:
         text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+        log.debug(
+            "text_newlines_stripped",
+            extra={
+                "request_id": payload.get("request_id", ""),
+                "removed": _newline_count,
+            },
+        )
 
     # 5. Non-empty after strip
     if not text.strip():
+        log.warning(
+            "text_empty_after_strip",
+            extra={
+                "request_id": payload.get("request_id", ""),
+                "original_length": len(payload.get("text") or ""),
+            },
+        )
         return _MALFORMED
 
     # 6. Engine token validation

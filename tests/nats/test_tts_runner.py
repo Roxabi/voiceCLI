@@ -1,8 +1,4 @@
-"""RED-phase tests for nats/_tts_runner.py (issue #147 T6).
-
-The module under test does not yet exist; T7 creates it.
-All tests are SKIPPED until voicecli.nats._tts_runner is implemented.
-"""
+"""Unit tests for voicecli.nats._tts_runner (issue #147)."""
 
 from __future__ import annotations
 
@@ -11,35 +7,17 @@ import base64
 import concurrent.futures
 import io
 import wave
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Lazy import shim — lets --collect-only succeed before _tts_runner.py exists
-# ---------------------------------------------------------------------------
-
-try:
-    from voicecli.nats._tts_runner import (
-        NAMED_KWARGS,
-        OPTIONAL_KWARGS,
-        TtsRunnerState,
-        run_synthesis,
-    )
-
-    _IMPORT_ERROR: ImportError | None = None
-except ImportError as e:  # noqa: BLE001
-    _IMPORT_ERROR = e
-    run_synthesis = None  # type: ignore[assignment]
-    TtsRunnerState = None  # type: ignore[assignment]
-    OPTIONAL_KWARGS = ()  # type: ignore[assignment]
-    NAMED_KWARGS = ()  # type: ignore[assignment]
-
-pytestmark = pytest.mark.skipif(
-    _IMPORT_ERROR is not None,
-    reason=f"voicecli.nats._tts_runner not yet implemented: {_IMPORT_ERROR}",
+from voicecli.nats._tts_runner import (
+    NAMED_KWARGS,
+    OPTIONAL_KWARGS,
+    TtsRunnerState,
+    run_synthesis,
 )
 
 # ---------------------------------------------------------------------------

@@ -118,7 +118,14 @@ async def run_transcription(
             **overrides,
         )
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(state.executor, fn)
+        try:
+            result = await loop.run_in_executor(state.executor, fn)
+        except api.ParamValidationError as exc:
+            log.warning(
+                "param_validation_failed",
+                extra={"request_id": request_id, "reason": str(exc)},
+            )
+            return (False, "param_validation_failed")
         duration_seconds = _duration_from_segments(result.segments)
         return (
             True,
@@ -129,12 +136,6 @@ async def run_transcription(
             },
         )
 
-    except ValueError as exc:
-        log.warning(
-            "param_validation_failed",
-            extra={"request_id": request_id, "reason": str(exc)},
-        )
-        return (False, "param_validation_failed")
     except Exception:  # noqa: BLE001
         log.exception("transcription_failed", extra={"request_id": request_id})
         return (False, "transcription_failed")

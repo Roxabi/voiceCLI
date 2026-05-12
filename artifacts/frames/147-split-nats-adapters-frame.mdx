@@ -26,7 +26,7 @@ The file-length gate is an early-warning signal that a module is taking on too m
 - Validation logic moves into a named, testable helper in `src/voicecli/nats/_validation.py` (distinct from the existing narrow `nats/_validate.py`, which covers only NATS identifier tokens). `_validation.py` produces an outcome that the adapter maps to a reply error code — the wire-format mapping stays in the adapter.
 - The synthesis and transcription run loops move into named functions/modules so they can be unit-tested without instantiating an adapter and so their error-path branches are visible at a glance.
 - Both adapter files end under 300 lines; their entries in `tools/file_exemptions.txt` are removed in the same change.
-- No on-wire behavior change: subjects, queue groups, inbox prefixes, reply error codes (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `param_validation_failed`, `text_validation_failed`, `synthesis_failed`, `payload_too_large`, `audio_decode_failed`, `model_load_failed`, `transcription_failed`) are byte-identical.
+- No on-wire behavior change: subjects, queue groups, inbox prefixes, reply error codes (`malformed_request`, `engine_unavailable`, `capacity_exceeded`, `param_validation_failed`, `synthesis_failed`, `payload_too_large`, `audio_decode_failed`, `model_load_failed`, `transcription_failed`) are byte-identical.
 
 ## Architecture (sketch, to be locked at /spec)
 
