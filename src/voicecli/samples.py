@@ -244,6 +244,7 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     ensure_dir()
     if not name.endswith(".wav"):
         name = f"{name}.wav"
+    name = Path(name).name
     dest = SAMPLES_DIR / name
 
     _chime("start")
@@ -277,6 +278,7 @@ def record_sample(name: str, duration: float = 10.0, samplerate: int = 24000) ->
     try:
         soundfile.info(dest)
     except soundfile.LibsndfileError as e:
+        dest.unlink(missing_ok=True)
         raise RuntimeError("recorded file appears corrupt — check microphone and PulseAudio") from e
 
     _chime("stop")
