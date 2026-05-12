@@ -13,7 +13,7 @@ from typing import Any
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
-from roxabi_nats._validate import validate_nats_token
+from voicecli.nats._validation import validate_tts_request
 from voicecli.nats.queue_groups import TTS_WORKERS
 from voicecli.nats.tempdir import cleanup, scoped_path
 from voicecli.nats.tts_wav_utils import (
@@ -144,43 +144,16 @@ class TtsNatsAdapter(NatsAdapterBase):
             )
             return
 
-        # Validate text field early to avoid KeyError being masked as synthesis_failed (Fix 8)
-        text = payload.get("text")
-        if not text or not isinstance(text, str):
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
+        outcome = validate_tts_request(
+            payload,
+            default_engine=self.default_engine,
+            engine_available=_engine_available,
+        )
+        if outcome.error_code is not None:
+            await self.reply(msg, _err_tts(trace_id, request_id, outcome.error_code))
             return
-
-        # Strip newlines before passing to api.generate.
-        # _check_str rejects \n/\r for all params — a reasonable boundary guard
-        # for short metadata fields (voice, accent, personality) but pathological
-        # for free-text TTS payloads where multi-paragraph input is the standard
-        # case.  The NATS adapter is responsible for shaping its lane's input;
-        # the strict check is kept intact at the library boundary.
-        _newline_count = text.count("\n") + text.count("\r")
-        if _newline_count:
-            text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
-            log.debug(
-                "text_newlines_stripped",
-                extra={"request_id": request_id, "removed": _newline_count},
-            )
-
-        if not text.strip():
-            log.warning(
-                "text_empty_after_strip",
-                extra={"request_id": request_id, "original_length": len(payload.get("text") or "")},
-            )
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
-            return
-
-        engine = payload.get("engine") or self.default_engine
-        try:
-            validate_nats_token(engine, kind="engine")
-        except ValueError:
-            await self.reply(msg, _err_tts(trace_id, request_id, "malformed_request"))
-            return
-        if not _engine_available(engine):
-            await self.reply(msg, _err_tts(trace_id, request_id, "engine_unavailable"))
-            return
+        text = outcome.cleaned_text
+        engine = outcome.engine
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked() (Fix 7)
