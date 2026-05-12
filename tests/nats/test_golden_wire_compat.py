@@ -148,7 +148,8 @@ class _FakeNatsConn:
         self.is_connected = True
         self.is_closed = False
 
-    async def publish(self, subject: str, data: bytes) -> None:
+    async def publish(self, _subject: str, data: bytes) -> None:
+        del _subject
         await self._msg.respond(data)
 
 
