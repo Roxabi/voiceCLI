@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import soundfile
 
 from voicecli.samples import _check_tool, record_sample
 
@@ -19,6 +18,7 @@ def samples_env(tmp_path, monkeypatch):
     samples_dir = tmp_path / "samples"
     samples_dir.mkdir()
     monkeypatch.setattr("voicecli.samples.SAMPLES_DIR", samples_dir)
+    # soundfile.info patched so happy-path fixtures need not produce real WAV bytes
     monkeypatch.setattr("soundfile.info", lambda _: None)
     return samples_dir
 
@@ -76,7 +76,8 @@ class TestRecordSample:
 
     @patch("voicecli.samples.shutil.which", return_value="/usr/bin/parecord")
     def test_corrupt_wav_raises(self, _mock_which, samples_env, mock_chime, monkeypatch):
-        # Arrange — parecord writes non-empty bytes but soundfile.info rejects them
+        import soundfile
+
         def fake_run(cmd, *, timeout):
             Path(cmd[-1]).write_bytes(b"not a wav")
             raise subprocess.TimeoutExpired(cmd, timeout)
@@ -85,14 +86,12 @@ class TestRecordSample:
             raise soundfile.LibsndfileError("fake", 0)
 
         monkeypatch.setattr("soundfile.info", corrupt_info)
+        dest = samples_env / "corrupt.wav"
 
         with patch("voicecli.samples.subprocess.run", side_effect=fake_run):
             with pytest.raises(RuntimeError, match="recorded file appears corrupt"):
-                dest = samples_env / "corrupt.wav"
                 record_sample("corrupt", duration=2.0)
 
-        # dest must be cleaned up after corrupt-file detection
-        dest = samples_env / "corrupt.wav"
         assert not dest.exists()
 
     @patch("voicecli.samples.shutil.which", return_value=None)
