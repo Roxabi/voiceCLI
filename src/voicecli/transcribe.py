@@ -1,12 +1,9 @@
-"""File-based speech-to-text using Faster Whisper.
-
-Daemon-first: if the STT daemon is running, transcribe requests are forwarded
-over Unix socket to reuse the warm model. Falls back to local model loading
-if the daemon is unavailable.
-"""
+"""File-based STT via Faster Whisper. Daemon-first: forwards to warm model over Unix socket,
+falls back to local load if unavailable."""
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +38,102 @@ VALID_MODELS = frozenset(
 
 _model_cache: dict[str, WhisperModel] = {}
 _model_lock = threading.Lock()
+
+# Known Whisper hallucination signatures (YouTube/TV subtitle closings).
+# Case-insensitive match; stripped from tail and from standalone mid-text sentences.
+
+# Generic regex patterns for Whisper hallucination classes.
+# Anchored to end-of-text ($) so mid-sentence legitimate mentions are NOT matched.
+# Leading whitespace/dashes are consumed to handle "– Sous-titrage FR 2021" variants.
+# The pattern requires at least one non-whitespace token AFTER the keyword to distinguish
+# "Sous-titrage FR 2021" (hallucination) from "Le sous-titrage est important" (legit).
+_HALLUCINATION_REGEXES = (
+    # "Sous-titrage <broadcaster> <year/num>" — FR TV/radio broadcaster IDs
+    # Covers: "Sous-titrage FR 2021", "Sous-titres FR 2024", "Sous-titrage TF1 2019",
+    #         "Sous-titrage Société Radio-Canada", "Sous-titrage ST' 501", etc.
+    # Requires the keyword to follow a sentence boundary (period, start, or dash/whitespace
+    # after period) so bare "Le sous-titrage est important" is not matched.
+    re.compile(
+        r"(?:(?<=\.)|^)[.\s\-–—]*sous-titr(?:e|es|age)\s+\S[^.]*$",
+        re.IGNORECASE,
+    ),
+    # "Captions by <name>" — English equivalent
+    re.compile(r"(?:(?<=\.)|^)[.\s\-–—]*captions?\s+by\s+\S[^.]*$", re.IGNORECASE),
+)
+
+_HALLUCINATIONS = frozenset(
+    {
+        "sous-titrage société radio-canada",
+        "sous-titrage st' 501",
+        "sous-titres réalisés par la communauté d'amara.org",
+        "sous-titres réalisés par les sous-titreurs amara.org",
+        "sous-titres faits par la communauté d'amara.org",
+        "❤️ par soustitreur.com",
+        "par soustitreur.com",
+        "merci d'avoir regardé cette vidéo",
+        "merci d'avoir regardé la vidéo",
+        "n'oubliez pas de vous abonner",
+        "abonnez-vous à la chaîne",
+        "thanks for watching",
+        "thank you for watching",
+        "please subscribe",
+        "don't forget to subscribe",
+        "subtitles by the amara.org community",
+    }
+)
+
+
+def _strip_hallucinations(text: str) -> str:
+    """Strip known Whisper hallucination signatures from text."""
+    import sys
+
+    # Tail pass — loop handles chained hallucinations (e.g. two appended).
+    # Each iteration applies literal patterns first (faster/more specific),
+    # then regex patterns.  Max 5 iterations to avoid infinite loops.
+    for _ in range(5):
+        changed = False
+
+        # Literal pattern pass.
+        norm = text.lower().rstrip(" .,!?")
+        for pat in _HALLUCINATIONS:
+            if norm.endswith(pat):
+                start = len(norm) - len(pat)
+                print(f"[stt] stripped hallucination: {text[start:].strip()!r}", file=sys.stderr)
+                # Strip only leading punctuation/whitespace separators before the hallucination,
+                # not the legitimate trailing period of the preceding sentence.
+                text = text[:start].rstrip(" \t–—-")
+                changed = True
+                break
+
+        # Regex pattern pass — handles broadcaster+year variants and leading dashes.
+        for rx in _HALLUCINATION_REGEXES:
+            new_text = rx.sub("", text)
+            if new_text != text:
+                matched = text[len(new_text) :]
+                print(
+                    f"[stt] stripped hallucination (regex): {matched.strip()!r}",
+                    file=sys.stderr,
+                )
+                # Strip trailing whitespace only — preserve legitimate punctuation
+                # (e.g. the period in "Mon vrai texte. – Sous-titrage FR 2021").
+                text = new_text.rstrip(" \t")
+                changed = True
+                break
+
+        if not changed:
+            break
+
+    # Sentence pass — remove mid-text standalone hallucination sentences.
+    parts = [s.strip() for s in text.split(".") if s.strip()]
+    clean = [s for s in parts if s.lower().rstrip(" .,!?") not in _HALLUCINATIONS]
+    for removed in set(parts) - set(clean):
+        print(f"[stt] stripped hallucination: {removed!r}", file=sys.stderr)
+    if len(clean) != len(parts):
+        text = ". ".join(clean)
+        if text and not text.endswith("."):
+            text += "."
+
+    return text
 
 
 @dataclass
@@ -144,8 +237,7 @@ def transcribe(
             return daemon_result
 
     whisper = _load_model(model)
-    # transcribe() short-circuits for mock at the top, so whisper is non-None here.
-    assert whisper is not None
+    assert whisper is not None  # mock short-circuits at top
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -180,6 +272,10 @@ def transcribe(
         task=task,
         beam_size=5,
         vad_filter=True,
+        condition_on_previous_text=False,
+        no_speech_threshold=0.7,
+        compression_ratio_threshold=2.4,
+        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=400),
     )
     if initial_prompt is not None:
         kwargs["initial_prompt"] = initial_prompt
@@ -190,13 +286,16 @@ def transcribe(
     segments, info = whisper.transcribe(str(audio_path), **kwargs)
     seg_list = []
     for s in segments:
-        seg_list.append({"start": s.start, "end": s.end, "text": s.text.strip()})
+        seg_text = _strip_hallucinations(s.text.strip())
+        if not seg_text:
+            continue
+        seg_list.append({"start": s.start, "end": s.end, "text": seg_text})
         duration = s.end - s.start
         print(
-            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {s.text.strip()}",
+            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {seg_text}",
             file=__import__("sys").stderr,
         )
-    full_text = " ".join(s["text"] for s in seg_list)
+    full_text = _strip_hallucinations(" ".join(s["text"] for s in seg_list))
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 
 
@@ -226,11 +325,7 @@ def unload_model() -> None:
 
 
 def _load_model(model: str) -> WhisperModel | None:
-    """Load a faster-whisper model, caching for reuse.
-
-    Returns None when the mock env gate is set — mirrors the short-circuit at
-    the top of transcribe(), so adapter warmup paths stay engine-agnostic.
-    """
+    """Load and cache a faster-whisper model. Returns None when mock env gate is set."""
     from voicecli.env import coerce_bool_env
 
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
