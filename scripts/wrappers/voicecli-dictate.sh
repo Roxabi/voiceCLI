@@ -25,6 +25,34 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:${PATH:-}"
 
 VOICECLI_BIN="${VOICECLI_BIN:-voicecli}"
 
+# Orphan-recorder guard: if a previous --run-recorder process is still alive
+# but the toggle state file is gone (or points at a stale PID), kill it before
+# delegating. Otherwise `voicecli dictate nats` would see "not recording" and
+# spawn a second recorder on top of the first.
+STATE_FILE="$HOME/.local/share/voicecli/nats-recording.json"
+if command -v pgrep >/dev/null 2>&1; then
+    orphan_pids="$(pgrep -u "$USER" -f 'voicecli\.nats_recorder .*--run-recorder' || true)"
+    if [ -n "$orphan_pids" ]; then
+        tracked_pid=""
+        if [ -f "$STATE_FILE" ] && command -v python3 >/dev/null 2>&1; then
+            tracked_pid="$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("pid",""))
+except Exception: pass' "$STATE_FILE" 2>/dev/null || true)"
+        fi
+        for pid in $orphan_pids; do
+            [ "$pid" = "$tracked_pid" ] && continue
+            kill "$pid" 2>/dev/null || true
+        done
+        if [ -z "$tracked_pid" ] || ! kill -0 "$tracked_pid" 2>/dev/null; then
+            rm -f "$STATE_FILE" \
+                  "$HOME/.local/share/voicecli/nats-recording.wav.partial"
+            if command -v notify-send >/dev/null 2>&1; then
+                notify-send -u low "VoiceCLI" "Cleaned up orphan recorder"
+            fi
+        fi
+    fi
+fi
+
 # Pre-flight: 2-second TCP probe so the user gets immediate feedback when
 # the hub is unreachable (offline, Tailscale down, hub off). Skipped when
 # the URL cannot be resolved — voicecli will print a clearer error than us.
