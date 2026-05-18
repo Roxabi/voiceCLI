@@ -2191,6 +2191,7 @@ dependencies = [
     { name = "lameenc" },
     { name = "pyaudio" },
     { name = "soundfile" },
+    { name = "transformers" },
     { name = "typer" },
 ]
 
@@ -2269,6 +2270,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'tts'", specifier = ">=2.7" },
     { name = "torchaudio", marker = "extra == 'stt'", specifier = ">=2.7" },
     { name = "torchaudio", marker = "extra == 'tts'", specifier = ">=2.7" },
+    { name = "transformers", specifier = ">=4.57.6" },
     { name = "typer", specifier = ">=0.12" },
     { name = "voicecli", extras = ["tts", "stt", "nats"], marker = "extra == 'all'" },
     { name = "voxtral-tts", extras = ["int4"], marker = "extra == 'voxtral'", git = "https://github.com/Roxabi/voxtral-tts.git?branch=main" },
