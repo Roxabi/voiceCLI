@@ -1,9 +1,5 @@
-"""File-based speech-to-text using Faster Whisper.
-
-Daemon-first: if the STT daemon is running, transcribe requests are forwarded
-over Unix socket to reuse the warm model. Falls back to local model loading
-if the daemon is unavailable.
-"""
+"""File-based STT via Faster Whisper. Daemon-first: forwards to warm model over Unix socket,
+falls back to local load if unavailable."""
 
 from __future__ import annotations
 
@@ -41,6 +37,59 @@ VALID_MODELS = frozenset(
 
 _model_cache: dict[str, WhisperModel] = {}
 _model_lock = threading.Lock()
+
+# Known Whisper hallucination signatures (YouTube/TV subtitle closings).
+# Case-insensitive match; stripped from tail and from standalone mid-text sentences.
+_HALLUCINATIONS = frozenset(
+    {
+        "sous-titrage société radio-canada",
+        "sous-titrage st' 501",
+        "sous-titres réalisés par la communauté d'amara.org",
+        "sous-titres réalisés par les sous-titreurs amara.org",
+        "sous-titres faits par la communauté d'amara.org",
+        "❤️ par soustitreur.com",
+        "par soustitreur.com",
+        "merci d'avoir regardé cette vidéo",
+        "merci d'avoir regardé la vidéo",
+        "n'oubliez pas de vous abonner",
+        "abonnez-vous à la chaîne",
+        "thanks for watching",
+        "thank you for watching",
+        "please subscribe",
+        "don't forget to subscribe",
+        "subtitles by the amara.org community",
+    }
+)
+
+
+def _strip_hallucinations(text: str) -> str:
+    """Strip known Whisper hallucination signatures from text."""
+    import sys
+
+    # Tail pass — loop handles chained hallucinations (e.g. two appended).
+    changed = True
+    while changed:
+        changed = False
+        norm = text.lower().rstrip(" .,!?")
+        for pat in _HALLUCINATIONS:
+            if norm.endswith(pat):
+                start = len(norm) - len(pat)
+                print(f"[stt] stripped hallucination: {text[start:].strip()!r}", file=sys.stderr)
+                text = text[:start].rstrip(" .,!?")
+                changed = True
+                break
+
+    # Sentence pass — remove mid-text standalone hallucination sentences.
+    parts = [s.strip() for s in text.split(".") if s.strip()]
+    clean = [s for s in parts if s.lower().rstrip(" .,!?") not in _HALLUCINATIONS]
+    for removed in set(parts) - set(clean):
+        print(f"[stt] stripped hallucination: {removed!r}", file=sys.stderr)
+    if len(clean) != len(parts):
+        text = ". ".join(clean)
+        if text and not text.endswith("."):
+            text += "."
+
+    return text
 
 
 @dataclass
@@ -144,8 +193,7 @@ def transcribe(
             return daemon_result
 
     whisper = _load_model(model)
-    # transcribe() short-circuits for mock at the top, so whisper is non-None here.
-    assert whisper is not None
+    assert whisper is not None  # mock short-circuits at top
 
     # If threshold + fallback are set, run a fast language detection pass first
     # (only applies for transcribe task, not translate)
@@ -180,6 +228,10 @@ def transcribe(
         task=task,
         beam_size=5,
         vad_filter=True,
+        condition_on_previous_text=False,
+        no_speech_threshold=0.7,
+        compression_ratio_threshold=2.4,
+        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=400),
     )
     if initial_prompt is not None:
         kwargs["initial_prompt"] = initial_prompt
@@ -190,13 +242,16 @@ def transcribe(
     segments, info = whisper.transcribe(str(audio_path), **kwargs)
     seg_list = []
     for s in segments:
-        seg_list.append({"start": s.start, "end": s.end, "text": s.text.strip()})
+        seg_text = _strip_hallucinations(s.text.strip())
+        if not seg_text:
+            continue
+        seg_list.append({"start": s.start, "end": s.end, "text": seg_text})
         duration = s.end - s.start
         print(
-            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {s.text.strip()}",
+            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {seg_text}",
             file=__import__("sys").stderr,
         )
-    full_text = " ".join(s["text"] for s in seg_list)
+    full_text = _strip_hallucinations(" ".join(s["text"] for s in seg_list))
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 
 
@@ -226,11 +281,7 @@ def unload_model() -> None:
 
 
 def _load_model(model: str) -> WhisperModel | None:
-    """Load a faster-whisper model, caching for reuse.
-
-    Returns None when the mock env gate is set — mirrors the short-circuit at
-    the top of transcribe(), so adapter warmup paths stay engine-agnostic.
-    """
+    """Load and cache a faster-whisper model. Returns None when mock env gate is set."""
     from voicecli.env import coerce_bool_env
 
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
