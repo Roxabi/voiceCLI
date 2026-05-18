@@ -28,6 +28,20 @@ __all__ = [
 
 
 @pytest.fixture(autouse=True)
+def _isolate_nats_env_from_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent the user's ``~/.voicecli/voicecli.toml`` from leaking NATS_URL
+    into ``nats-serve`` CLI tests.
+
+    ``cli_nats`` calls ``apply_nats_env_from_config()`` which backfills
+    ``NATS_URL`` from the local TOML when the env var is unset. CI hosts have
+    no config file so tests pass there, but dev machines with a populated
+    ``[nats]`` section see the "missing NATS_URL" path silently skipped and
+    the test ends up actually trying to connect to NATS.
+    """
+    monkeypatch.setattr("voicecli.config.apply_nats_env_from_config", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _restore_umask() -> Generator[None, None, None]:
     """Save/restore process umask around each test.
 

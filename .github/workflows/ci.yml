@@ -33,7 +33,7 @@ jobs:
       - name: Import layer contracts
         run: uv run lint-imports
       - name: Test
-        run: uv run python -m pytest --ignore=tests/test_overlay.py
+        run: uv run python -m pytest
       - name: Check lyra.* subject literals
         run: ./scripts/check-lyra-literals.sh
 

@@ -1,4 +1,4 @@
-"""Tests for voicecli.overlay._hotkey_badge and _resolve_test_mode."""
+"""Tests for voicecli.overlay_draw.hotkey_badge and voicecli.overlay._resolve_test_mode."""
 
 from __future__ import annotations
 
@@ -16,11 +16,12 @@ sys.modules["gi.repository.GLib"] = MagicMock()
 sys.modules["gi.repository.Gtk"] = MagicMock()
 sys.modules["gi.repository.GtkLayerShell"] = MagicMock()
 
-from voicecli.overlay import _hotkey_badge, _resolve_test_mode  # noqa: E402
+from voicecli.overlay import _resolve_test_mode  # noqa: E402
+from voicecli.overlay_draw import hotkey_badge  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Parameterized unit tests for _hotkey_badge()
+# Parameterized unit tests for hotkey_badge()
 # ---------------------------------------------------------------------------
 
 
@@ -45,9 +46,9 @@ from voicecli.overlay import _hotkey_badge, _resolve_test_mode  # noqa: E402
     ],
 )
 def test_hotkey_badge(hotkey: str, expected: str) -> None:
-    """_hotkey_badge() converts a raw hotkey string into a compact badge label."""
-    result = _hotkey_badge(hotkey)
-    assert result == expected, f"_hotkey_badge({hotkey!r}) → {result!r}, want {expected!r}"
+    """hotkey_badge() converts a raw hotkey string into a compact badge label."""
+    result = hotkey_badge(hotkey)
+    assert result == expected, f"hotkey_badge({hotkey!r}) → {result!r}, want {expected!r}"
 
 
 # ---------------------------------------------------------------------------
