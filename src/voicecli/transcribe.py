@@ -3,6 +3,7 @@ falls back to local load if unavailable."""
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +41,26 @@ _model_lock = threading.Lock()
 
 # Known Whisper hallucination signatures (YouTube/TV subtitle closings).
 # Case-insensitive match; stripped from tail and from standalone mid-text sentences.
+
+# Generic regex patterns for Whisper hallucination classes.
+# Anchored to end-of-text ($) so mid-sentence legitimate mentions are NOT matched.
+# Leading whitespace/dashes are consumed to handle "– Sous-titrage FR 2021" variants.
+# The pattern requires at least one non-whitespace token AFTER the keyword to distinguish
+# "Sous-titrage FR 2021" (hallucination) from "Le sous-titrage est important" (legit).
+_HALLUCINATION_REGEXES = (
+    # "Sous-titrage <broadcaster> <year/num>" — FR TV/radio broadcaster IDs
+    # Covers: "Sous-titrage FR 2021", "Sous-titres FR 2024", "Sous-titrage TF1 2019",
+    #         "Sous-titrage Société Radio-Canada", "Sous-titrage ST' 501", etc.
+    # Requires the keyword to follow a sentence boundary (period, start, or dash/whitespace
+    # after period) so bare "Le sous-titrage est important" is not matched.
+    re.compile(
+        r"(?:(?<=\.)|^)[.\s\-–—]*sous-titr(?:e|es|age)\s+\S[^.]*$",
+        re.IGNORECASE,
+    ),
+    # "Captions by <name>" — English equivalent
+    re.compile(r"(?:(?<=\.)|^)[.\s\-–—]*captions?\s+by\s+\S[^.]*$", re.IGNORECASE),
+)
+
 _HALLUCINATIONS = frozenset(
     {
         "sous-titrage société radio-canada",
@@ -67,17 +88,40 @@ def _strip_hallucinations(text: str) -> str:
     import sys
 
     # Tail pass — loop handles chained hallucinations (e.g. two appended).
-    changed = True
-    while changed:
+    # Each iteration applies literal patterns first (faster/more specific),
+    # then regex patterns.  Max 5 iterations to avoid infinite loops.
+    for _ in range(5):
         changed = False
+
+        # Literal pattern pass.
         norm = text.lower().rstrip(" .,!?")
         for pat in _HALLUCINATIONS:
             if norm.endswith(pat):
                 start = len(norm) - len(pat)
                 print(f"[stt] stripped hallucination: {text[start:].strip()!r}", file=sys.stderr)
-                text = text[:start].rstrip(" .,!?")
+                # Strip only leading punctuation/whitespace separators before the hallucination,
+                # not the legitimate trailing period of the preceding sentence.
+                text = text[:start].rstrip(" \t–—-")
                 changed = True
                 break
+
+        # Regex pattern pass — handles broadcaster+year variants and leading dashes.
+        for rx in _HALLUCINATION_REGEXES:
+            new_text = rx.sub("", text)
+            if new_text != text:
+                matched = text[len(new_text) :]
+                print(
+                    f"[stt] stripped hallucination (regex): {matched.strip()!r}",
+                    file=sys.stderr,
+                )
+                # Strip trailing whitespace only — preserve legitimate punctuation
+                # (e.g. the period in "Mon vrai texte. – Sous-titrage FR 2021").
+                text = new_text.rstrip(" \t")
+                changed = True
+                break
+
+        if not changed:
+            break
 
     # Sentence pass — remove mid-text standalone hallucination sentences.
     parts = [s.strip() for s in text.split(".") if s.strip()]
