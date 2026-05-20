@@ -10,8 +10,9 @@ Image=ghcr.io/roxabi/voicecli-tts:staging
 Label=io.containers.autoupdate=registry
 ContainerName=voicecli-tts
 Network=roxabi.network
-Volume=voicecli-models:/home/voicecli/.cache/huggingface
-Volume=voicecli-models:/home/voicecli/.cache/voicecli
+Volume=%h/.cache/huggingface:/home/voicecli/.cache/huggingface
+Volume=%h/.cache/voicecli:/home/voicecli/.cache/voicecli
+Environment=HF_HOME=/home/voicecli/.cache/huggingface
 Secret=voicecli-nats-tts,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400,uid=1501,gid=1501
 AddDevice=nvidia.com/gpu=all
 # UID 1501 fixed in image; anchor mapping so secret mount (uid=1501) is readable inside.

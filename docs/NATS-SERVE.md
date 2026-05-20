@@ -544,7 +544,6 @@ of containerized NATS satellites without manual podman commands.
 |---|---|
 | `voicecli-tts.container` | TTS satellite as a systemd service |
 | `voicecli-stt.container` | STT satellite as a systemd service |
-| `voicecli-models.volume` | Shared volume for HuggingFace model cache |
 
 ### Installation
 
@@ -553,7 +552,7 @@ of containerized NATS satellites without manual podman commands.
 
    ```bash
    mkdir -p ~/.config/containers/systemd
-   cp deploy/quadlet/*.container deploy/quadlet/*.volume ~/.config/containers/systemd/
+   cp deploy/quadlet/*.container ~/.config/containers/systemd/
    ```
 
 2. Create the NKey seed secrets (one per satellite):
@@ -586,23 +585,13 @@ of containerized NATS satellites without manual podman commands.
 ### Pre-seeding models
 
 On first run, each satellite downloads its model (~7 GB for TTS, ~2 GB for STT).
-To avoid a cold-start delay on production hosts, pre-seed the shared volume:
+Model cache is stored in `~/.cache/huggingface/` on the host (bind-mounted into the
+container). If the host already has models cached (e.g. from a dev box with 120G of
+HF cache), the satellites reuse them immediately with no extra steps.
 
-```bash
-# Build the image locally first
-podman build -t voicecli:latest .
-
-# Run a one-shot container to populate the cache
-podman run --rm -v voicecli-models:/root/.cache/huggingface voicecli:latest uv run voicecli --help
-# The TTS/STT model will download on first synthesis/transcription
-```
-
-Alternatively, copy an existing cache from another host:
-
-```bash
-podman volume create voicecli-models
-podman run --rm -v voicecli-models:/data alpine tar xf - -C /data < cache.tar
-```
+On a fresh production host, models auto-download on first use via `from_pretrained()`.
+No pre-seeding step is required — re-download (~15G on M₁) is the chosen migration
+strategy.
 
 ### Resource considerations
 
