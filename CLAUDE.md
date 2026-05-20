@@ -153,6 +153,5 @@ Production hosts can run voiceCLI as a Podman container managed by systemd via Q
 | `deploy/entrypoint.sh` | Mode selector (`tts` \| `stt`) → `nats-serve` |
 | `deploy/quadlet/voicecli-tts.container` | TTS satellite systemd unit |
 | `deploy/quadlet/voicecli-stt.container` | STT satellite systemd unit |
-| `deploy/quadlet/voicecli-models.volume` | Shared HuggingFace cache volume |
 
 Full Quadlet setup: [`docs/NATS-SERVE.md#quadlet-deployment-podman--systemd`](docs/NATS-SERVE.md#quadlet-deployment-podman--systemd).

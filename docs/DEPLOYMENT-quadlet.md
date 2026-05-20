@@ -15,7 +15,6 @@ deploy library and image-naming convention come from ADR-055 D1 / D5.
 
 | Unit | Purpose |
 |---|---|
-| `voicecli-models.volume`   | Named volume for HuggingFace + voicecli model caches |
 | `voicecli-stt.container`   | STT worker — subscribes to `lyra.voice.stt.request` queue group (namespace matches Lyra's ACL matrix) |
 | `voicecli-tts.container`   | TTS worker — subscribes to `lyra.voice.tts.request` queue group |
 
@@ -53,7 +52,8 @@ Canonical ACLs are in Lyra's `deploy/nats/acl-matrix.json` under the
 
 ```bash
 make quadlet-install
-# copies deploy/quadlet/*.{container,volume} → ~/.config/containers/systemd/
+# creates ~/.cache/huggingface and ~/.cache/voicecli bind-mount sources if absent
+# copies deploy/quadlet/*.container → ~/.config/containers/systemd/
 # reloads systemd --user
 ```
 
