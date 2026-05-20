@@ -54,7 +54,7 @@ deploy:  ## pull latest staging images on $(DEPLOY_HOST) and restart voicecli-tt
 quadlet-install:  ## install Quadlet units to $(QUADLET_DIR) + reload
 	@mkdir -p "$(QUADLET_DIR)"
 	@mkdir -p "$(HOME)/.cache/huggingface" "$(HOME)/.cache/voicecli"
-	@rm -f "$(QUADLET_DIR)"/voicecli*.{network,volume,container}
+	@rm -f "$(QUADLET_DIR)"/voicecli*.{network,container}
 	@cp deploy/quadlet/voicecli-stt.container        "$(QUADLET_DIR)/voicecli-stt.container"
 	@cp deploy/quadlet/voicecli-tts.container        "$(QUADLET_DIR)/voicecli-tts.container"
 	@systemctl --user daemon-reload
