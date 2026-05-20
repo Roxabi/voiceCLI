@@ -8,6 +8,7 @@ dependencies = [
     "soundfile",
     "lameenc>=1.7",
     "pyaudio>=0.2.14",
+    "transformers>=4.57.6",
 ]
 
 [project.scripts]
