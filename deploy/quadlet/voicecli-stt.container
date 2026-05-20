@@ -10,8 +10,9 @@ Image=ghcr.io/roxabi/voicecli-stt:staging
 Label=io.containers.autoupdate=registry
 ContainerName=voicecli-stt
 Network=roxabi.network
-Volume=voicecli-models:/home/voicecli/.cache/huggingface
-Volume=voicecli-models:/home/voicecli/.cache/voicecli
+Volume=%h/.cache/huggingface:/home/voicecli/.cache/huggingface
+Volume=%h/.cache/voicecli:/home/voicecli/.cache/voicecli
+Environment=HF_HOME=/home/voicecli/.cache/huggingface
 Exec=stt
 Secret=voicecli-nats-stt,type=mount,target=/home/voicecli/.config/voicecli/nkeys/seed.seed,mode=0400,uid=1501,gid=1501
 AddDevice=nvidia.com/gpu=all
