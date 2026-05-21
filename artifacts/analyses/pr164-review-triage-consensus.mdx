@@ -1,0 +1,91 @@
+---
+title: "PR #164 Review Triage — Expert Consensus"
+issue: null
+pr: 164
+status: consensus-reached
+date: 2026-05-21
+panel: architect, devops, product-lead
+confidence: high
+---
+
+## Problem
+
+PR #164 (recorder-error-surfacing) is a 138-line debugging-affordance fix: redirect recorder stderr from `/dev/null` to `~/.local/state/voicecli/recorder.log`, plus a wrapper notification when the log shows `ImportError`/`ModuleNotFoundError`. Multi-domain code review surfaced **14 findings** (4 tagged blockers, 5 suggestions, 5 nitpicks). Question: which to ACCEPT (fix now), DEFER (follow-up), or REJECT (disagree)?
+
+## Panel
+
+| Role | Focus |
+|---|---|
+| architect | scope discipline, maintainability |
+| devops | ops realism, signal semantics, disk usage |
+| product-lead | velocity, ceremony, solo-author context |
+
+## Consensus
+
+**Apply only:** #1, #6, #12. Defer everything else.
+
+### Triage table
+
+| # | Finding | Verdict | Vote (A/D/P) | Rationale |
+|---|---|---|---|---|
+| 1 | False-positive notify on exit 69 (network) | **ACCEPT** | A/A/A | Unanimous. Bug introduced by this PR — false alarm flips the PR's own purpose. 1-line guard: skip log-check when `EXIT_CODE -eq 69`. |
+| 2 | Happy-path test missing | DEFER | D/D/R | Test scaffolding doubles diff for a 47-line shim. Solo dev = author = reviewer. |
+| 3 | `PermissionError` branch untested | DEFER | D/D/R | Cold path on single-user dev box; ¬user-visible regression risk. |
+| 4 | Append-mode unverified | DEFER | D/D/R | `"a"` is a stdlib contract; pinning belongs in a dedicated log-contract suite. |
+| 5 | ExitStack file-handle lifecycle | REJECT | R/R/D | Current code correct; refactor is style-only, ¬correctness. |
+| 6 | `except Exception` → `except OSError` | **ACCEPT** | A/A/D | 1-word change, real value (narrows catch, lets programmer errors surface). |
+| 7 | `exec` → call signal semantics | DEFER | R/D/D | COSMIC Spawn() has no controlling TTY → SIGINT path doesn't apply. SIGTERM still propagates. |
+| 8 | `recorder.log` 0o644 traceback exposure | DEFER | A/D/D | Architect dissents (legit `secret-leak` class), but file lives in user-owned `~/.local/state/`; single-user threat model. |
+| 9 | Unbounded log growth | DEFER | D/D/D | Unanimous defer. Normal ops append 0 bytes (subprocess exits 0). Rotation matters only under crash-loop; ¬today's risk. |
+| 10 | `mkdir(mode=0o700)` no-op on existing | DEFER | D/R/D | Benign confusion; parent dir already user-owned. |
+| 11 | Path duplicated bash↔Python | DEFER | D/D/D | Unanimous defer. Real maintenance smell but ¬safety issue; fix when log path moves (XDG migration). |
+| 12 | `notify-send -u critical` overkill | **ACCEPT** | A/A/D | 1-word change (`critical` → `normal`). `critical` doesn't auto-dismiss; trains user to ignore alerts. |
+| 13 | Monkey-patch brittleness | DEFER | D/R/D | Acceptable for unit speed; revisit if symbols rename. |
+| 14 | Bash untested (add comment) | DEFER | A/D/R | 1-1-1 split → conservative defer. |
+
+### Rationale (consensus)
+
+- **ACCEPT only changes that are trivial (≤ 1 line each) AND advance the PR's stated goal** of making future regressions visible.
+- **#1 is the only finding all three agents flag as a must-fix blocker.** It's a bug introduced by this PR (spurious notification on network failure), not a pre-existing concern. Cannot defer.
+- **#6 and #12 are unanimous in two of three reviewers** and each costs <5 minutes; opportunistic accept.
+- **Test coverage (#2–4) defers because** the testing investment is disproportionate to the file size (47-line debugging shim, no production traffic, author = reviewer). A future test PR can cover the success branch + the `PermissionError` fallback + the append-mode contract together.
+- **Log rotation (#9) defers because** real-world growth is negligible (one append per recorder spawn, only on failure). Revisit when log size becomes observable.
+- **Path drift (#11) defers because** the two paths (bash + Python) are unlikely to diverge before someone touches both intentionally; a cross-file comment is sufficient and not blocking.
+
+### Trade-offs
+
+1. **Correctness vs scope on tests** — accepting #2-4 would double the diff and add brittle mocking. Defer trades verification confidence for reviewability.
+2. **Security purity vs threat realism on #8** — architect wants `0o600` perms (1 line); devops + product-lead say no real threat on single-user dev box. Majority wins; the fix is cheap enough that it'd be a low-cost stretch — but principle of "don't expand scope" overrides.
+3. **Ship-velocity vs review purity** — most findings are real but orthogonal to the PR's job. Filing follow-ups for each is more tracking overhead than the fixes are worth.
+
+## Alternatives
+
+| Option | Proposed by | Rejected because |
+|---|---|---|
+| Accept all 14 | implicit baseline | Bloats a 138-line PR to ~400 lines; mixes fixes with debugging-affordance change |
+| Accept #1 only, defer everything else | strict-minimum reading | Misses #6 and #12 which are trivially correct fixes already validated by two reviewers |
+| Reject all tests as ceremony | product-lead alone | Skill rubric tags them blockers; deferring (≠ rejecting) preserves the audit trail |
+
+## Dissent
+
+- **Architect dissents on #8** (file perms): considers it a legitimate `secret-leak` class. Recorded; majority overrides on threat-model grounds (single-user dev box).
+- **Product-lead dissents on tests #2-4** (advocates REJECT): considers them ceremony for a debugging shim. Recorded; defer (not reject) preserves traceability without expanding this PR.
+- **Devops dissents on #10, #13** (advocates REJECT): treats them as not-actionable nitpicks. Recorded; defer keeps options open.
+
+None of the dissents block consensus on the ACCEPT set (#1, #6, #12).
+
+## Implementation Notes
+
+For `/fix` to apply:
+
+1. **#1** — `scripts/wrappers/voicecli-dictate.sh` lines 80-88: add `[ "$EXIT_CODE" -eq 69 ] && exit 69` (or equivalent guard) before the log-check block. Verify: previous TCP-probe-fail path still exits 69 cleanly without firing the stale-venv notification.
+
+2. **#6** — `src/voicecli/nats_recorder.py:108`: change `except Exception as e:` → `except OSError as e:`. Verify: `uv run pytest tests/test_nats_recorder_log_path.py -x` still green; `uv run pyright src/voicecli/nats_recorder.py` still clean.
+
+3. **#12** — `scripts/wrappers/voicecli-dictate.sh:85`: change `notify-send -u critical` → `notify-send -u normal`. (Note: the TCP-probe notification at line 66 stays `-u critical` — different severity.)
+
+All three fixes are ≤ 1 line each. Single follow-up commit on the same worktree.
+
+## Next
+
+`/fix` — apply the 3 accepted findings. After fix lands, the PR is ready to merge.
