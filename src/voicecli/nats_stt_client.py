@@ -15,12 +15,13 @@ from typing import Any
 from uuid import uuid4
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttRequest, SttResponse
 from roxabi_nats import nats_connect
 
 log = logging.getLogger(__name__)
 
-SUBJECT = "lyra.voice.stt.request"
+SUBJECT = VOICE_SUBJECTS.stt_request
 DEFAULT_TIMEOUT = 60.0
 
 

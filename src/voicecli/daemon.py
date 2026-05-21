@@ -108,7 +108,7 @@ def _load_engine(name: str, fast: bool = False):
 
     eng = get_engine(name)
     if fast and name in QWEN_ENGINES:
-        eng._small = True
+        eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
     return eng
 
 
