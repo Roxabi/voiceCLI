@@ -1,12 +1,8 @@
 SHELL := /bin/bash -o pipefail
 
-SUPERVISOR_HUB ?= $(HOME)/projects
-HUB_SERVICES   := tts stt
--include $(SUPERVISOR_HUB)/hub.mk
-
 QUADLET_DIR        ?= $(HOME)/.config/containers/systemd
 VOICECLI_NKEYS_DIR ?= $(HOME)/.voicecli/nkeys
-DEPLOY_HOST        := $(shell grep '^DEPLOY_HOST=' $(SUPERVISOR_HUB)/lyra/.env 2>/dev/null | cut -d= -f2)
+DEPLOY_HOST        ?= roxabituwer
 VOICECLI_SVCS      := voicecli-tts voicecli-stt
 TTS_IMAGE          := ghcr.io/roxabi/voicecli-tts:staging
 STT_IMAGE          := ghcr.io/roxabi/voicecli-stt:staging
@@ -14,21 +10,13 @@ STT_IMAGE          := ghcr.io/roxabi/voicecli-stt:staging
 .PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install deploy
 
 register:
-	@echo "Registering voiceCLI with supervisor hub..."
-	@$(HUB_GEN_MK) voicecli "$(abspath .)" tts stt
-	$(call hub-link-conf,voicecli_tts,supervisor/conf.d/voicecli_tts.conf)
-	$(call hub-link-conf,voicecli_stt,supervisor/conf.d/voicecli_stt.conf)
-	@mkdir -p "$(HOME)/.local/state/voicecli/logs"
-	$(hub_reread)
-	@echo "Done. Run 'make tts' or 'make stt' to start services."
+	@echo "supervisor registration removed — use Quadlet: systemctl --user start voicecli-tts"
 
 tts:
-	$(ensure_hub)
-	@$(HUB_SVC) voicecli_tts $(SVC_CMD)
+	@echo "Use: systemctl --user start voicecli-tts"
 
 stt:
-	$(ensure_hub)
-	@$(HUB_SVC) voicecli_stt $(SVC_CMD)
+	@echo "Use: systemctl --user start voicecli-stt"
 
 install:
 	uv sync
@@ -42,7 +30,7 @@ test:
 # ── Remote deploy (pull latest image + restart on DEPLOY_HOST) ───────────────
 
 deploy:  ## pull latest staging images on $(DEPLOY_HOST) and restart voicecli-tts + voicecli-stt
-	@[ -n "$(DEPLOY_HOST)" ] || { echo "Error: DEPLOY_HOST not found in $(SUPERVISOR_HUB)/lyra/.env"; exit 1; }
+	@[ -n "$(DEPLOY_HOST)" ] || { echo "Error: DEPLOY_HOST not set. Pass DEPLOY_HOST=<host> or set it in your environment."; exit 1; }
 	@echo "Pulling images on $(DEPLOY_HOST)..."
 	@ssh $(DEPLOY_HOST) "podman pull $(TTS_IMAGE) && podman pull $(STT_IMAGE)"
 	@echo "Restarting $(VOICECLI_SVCS)..."
@@ -62,7 +50,7 @@ quadlet-install:  ## install Quadlet units to $(QUADLET_DIR) + reload
 	@echo "Next: run 'make quadlet-secrets-install' to (re)create Podman secrets."
 
 quadlet-secrets-install:  ## (re)create Podman secrets from $(VOICECLI_NKEYS_DIR)
-	@test -d "$(VOICECLI_NKEYS_DIR)" || { echo "ERROR: $(VOICECLI_NKEYS_DIR) not found. Run the seed-relocation runbook first (docs/DEPLOYMENT-quadlet.md)."; exit 1; }
+	@test -d "$(VOICECLI_NKEYS_DIR)" || { echo "ERROR: $(VOICECLI_NKEYS_DIR) not found. Run the seed-relocation runbook first (docs/QUADLET-DEPLOYMENT.md)."; exit 1; }
 	@# Single shell block with EXIT trap — always attempts restart, even on failure.
 	@# Prevents services being left stopped with a partial secret rotation.
 	@set -e; \
