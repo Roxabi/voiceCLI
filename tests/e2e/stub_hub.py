@@ -12,9 +12,10 @@ from typing import Any
 
 import nats
 from nats.errors import NoRespondersError
+from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 
-TTS_REQUEST_SUBJECT = "lyra.voice.tts.request"
-STT_REQUEST_SUBJECT = "lyra.voice.stt.request"
+TTS_REQUEST_SUBJECT = VOICE_SUBJECTS.tts_request
+STT_REQUEST_SUBJECT = VOICE_SUBJECTS.stt_request
 REPLY_TIMEOUT = 30.0
 # Pre-built image: containers start in seconds, no inline uv sync.
 SUBSCRIBER_WAIT = 60.0

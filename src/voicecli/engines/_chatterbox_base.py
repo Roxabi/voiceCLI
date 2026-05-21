@@ -4,8 +4,8 @@
 ChatterboxEngine (multilingual) and ChatterboxTurboEngine share identical
 chunked generation and near-identical segmented generation. The only
 per-segment difference is the multilingual variant's language_id dispatch;
-subclasses override `_apply_segment_overrides` to inject variant-specific
-kwargs without duplicating the loop body.
+subclasses override `_segment_kwargs` to return a delta dict merged into
+the per-segment kwargs without duplicating the loop body.
 """
 
 from __future__ import annotations
@@ -27,12 +27,13 @@ class ChatterboxBase(TTSEngine):
     def _load_model(self):  # pragma: no cover — overridden by subclasses
         raise NotImplementedError
 
-    def _apply_segment_overrides(self, kw: dict, seg: Segment) -> None:
-        """Inject variant-specific per-segment kwargs.
+    def _segment_kwargs(self, seg: Segment) -> dict:
+        """Return a delta dict of variant-specific per-segment kwargs.
 
-        Default: no extra overrides (Turbo path). The multilingual subclass
-        overrides this to dispatch `language_id` from `seg.language`.
+        Default: empty (Turbo path). The multilingual subclass overrides this
+        to dispatch `language_id` from `seg.language`.
         """
+        return {}
 
     def _generate_chunked(self, text: str, **gen_kwargs) -> np.ndarray:
         """Generate audio in sentence-sized chunks and concatenate."""
@@ -72,7 +73,7 @@ class ChatterboxBase(TTSEngine):
                 kw["min_p"] = seg.min_p
             if seg.repetition_penalty is not None:
                 kw["repetition_penalty"] = seg.repetition_penalty
-            self._apply_segment_overrides(kw, seg)
+            kw.update(self._segment_kwargs(seg))
             audio = self._generate_chunked(seg.text, **kw)
             all_wavs.append(audio)
 

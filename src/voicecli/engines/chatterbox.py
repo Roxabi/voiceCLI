@@ -37,9 +37,10 @@ class ChatterboxEngine(ChatterboxBase):
                 print("[chatterbox] Model loaded.")
         return self._model
 
-    def _apply_segment_overrides(self, kw: dict, seg: Segment) -> None:
-        if seg.language is not None:
-            kw["language_id"] = _resolve_language(seg.language)
+    def _segment_kwargs(self, seg: Segment) -> dict:
+        if seg.language is None:
+            return {}
+        return {"language_id": _resolve_language(seg.language)}
 
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:
         language = _resolve_language(kwargs.get("language", "English"))

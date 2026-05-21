@@ -25,15 +25,6 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 log = logging.getLogger(__name__)
 
 
-def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
-    """Sanitize an exception message for safe inclusion in structured logs.
-
-    Escapes \\n/\\r to prevent multi-line log injection and caps length so a
-    large user-controlled payload cannot bloat log records.
-    """
-    return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
-
-
 SUBJECT = VOICE_SUBJECTS.tts_request
 HEARTBEAT_SUBJECT = VOICE_SUBJECTS.tts_heartbeat
 

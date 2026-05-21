@@ -12,10 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from voicecli.ports.synthesis import SynthesisPort
 
-from voicecli.api_chunked import (
-    clone_chunked as _clone_chunked,
-    generate_chunked as _generate_chunked,
-)
+from voicecli.api_chunked import clone_chunked, generate_chunked
 from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
 log = logging.getLogger(__name__)
@@ -399,8 +396,7 @@ def _resolve_ref(ref: Path | str | None) -> Path:
 
 
 # ── Chunked output helpers ──────────────────────────────────────────────────
-# Implementation lives in voicecli.api_chunked; imported at module top under
-# the historical underscore-prefixed names that the rest of api.py uses.
+# Implementation lives in voicecli.api_chunked; imported at module top.
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -531,8 +527,8 @@ def generate(
 
             eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
-        chunk_paths = _generate_chunked(
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+        chunk_paths = generate_chunked(
             eng,
             r_text,
             r_voice,
@@ -696,8 +692,8 @@ def clone(
 
             eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
-        chunk_paths = _clone_chunked(
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+        chunk_paths = clone_chunked(
             eng,
             r_text,
             ref_path,

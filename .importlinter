@@ -39,7 +39,7 @@ ignore_imports =
     voicecli.daemon -> voicecli.daemon_protocol
     # Transitional: daemon_protocol directly loads engines — covered by the same SynthesisPort ADR-059 wiring work as daemon
     voicecli.daemon_protocol -> voicecli.engine
-    # Transitional: stt_daemon reuses the wire-protocol helpers from daemon_protocol (audit #162) — same infrastructure layer, peer import acceptable
+    # Permanent peer-import: daemon_protocol is shared wire-encoding, not TTS-specific (audit #162). Structural fix would be extracting voicecli.wire_protocol below both daemons — deferred.
     voicecli.stt_daemon -> voicecli.daemon_protocol
     # Transitional: voicecli.stt_daemon imports voicecli.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-059)
     voicecli.stt_daemon -> voicecli.transcribe

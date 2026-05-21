@@ -41,6 +41,10 @@ class QwenEngine(TTSEngine):
         self._clone_model = None
         self._small = False  # use 0.6B models
 
+    def set_small_mode(self, small: bool = True) -> None:
+        """Toggle the smaller (0.6B) Qwen models. Affects subsequent _load_model calls."""
+        self._small = small
+
     def _load_model(self):
         if self._model is None:
             with cuda_guard("qwen"):

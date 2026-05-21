@@ -140,7 +140,7 @@ class DaemonSynthesisAdapter:
         # Fallback to local engine
         eng = get_engine(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         return eng.generate(
             text,
             voice,
@@ -199,7 +199,7 @@ class DaemonSynthesisAdapter:
         # Fallback to local engine
         eng = get_engine(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         return eng.clone(
             text,
             ref_audio,
@@ -246,7 +246,7 @@ class LocalSynthesisAdapter:
 
         eng = self._registry.get(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         return eng.generate(
             text,
             voice,
@@ -282,7 +282,7 @@ class LocalSynthesisAdapter:
 
         eng = self._registry.get(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
-            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
+            eng.set_small_mode()  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         return eng.clone(
             text,
             ref_audio,

@@ -49,7 +49,7 @@ class TestLocalSynthesisAdapterGenerate:
         with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
             adapter.generate("qwen", "hello", None, out, fast=True)
 
-        assert engine._small is True
+        engine.set_small_mode.assert_called_once()
 
     def test_fast_not_forwarded_to_engine(self, mock_registry):
         from voicecli.adapters.synthesis import LocalSynthesisAdapter
@@ -103,7 +103,7 @@ class TestLocalSynthesisAdapterClone:
         with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
             adapter.clone("qwen", "hello", ref, out, fast=True)
 
-        assert engine._small is True
+        engine.set_small_mode.assert_called_once()
 
     def test_fast_not_forwarded_to_engine(self, mock_registry):
         from voicecli.adapters.synthesis import LocalSynthesisAdapter
