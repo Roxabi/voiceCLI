@@ -1,0 +1,70 @@
+---
+title: epic(refactor) — stage-axis audit findings (5 local + 3 cross-repo)
+issue: 162
+status: approved
+tier: F-lite
+date: 2026-05-21
+---
+
+## Problem
+
+The 2026-05-20 stage-axis audit (`artifacts/analyses/stage-axis-audit-2026-05-20.md`) identified 7 actionable items in voiceCLI: 5 local findings (Chatterbox sibling duplication, `_small` ABC pollution, `api.py` complexity residue, dual daemon wire-protocol paths) and 3 cross-repo follow-ups (NATS subjects as magic constants, undeclared `roxabi-contracts` direct dep, `str(exc)` socket leaks).
+
+Two of the cross-repo items (Cross-repo #1 + #3) were blocked on lyra-side upstream additions: `roxabi_contracts.voice.SUBJECTS` and `roxabi_nats.sanitize_for_wire(exc)`. That upstream work landed in **lyra #1291** (closed 2026-05-20), so the blocker is gone — `roxabi-contracts 0.4.0` and `roxabi-nats 0.4.1` are now present in `uv.lock`.
+
+Acting now collapses the latent cascade before it bites: a third Chatterbox variant or a new Qwen-family knob would each trigger a sibling-fix sweep across multiple files.
+
+## Who
+
+- **Primary:** voiceCLI maintainers — fewer cross-file edits when adding new engines / NATS subjects / daemon-protocol fields.
+- **Secondary:** lyra hub operators — subject rename now propagates via `roxabi-contracts` instead of grep-and-pray across 3 voiceCLI files + 1 imageCLI file.
+
+## Constraints
+
+- Public API (`generate`, `clone`, `transcribe`) must stay byte-compatible — `voicecli.toml` + `.md` script frontmatter consumers depend on it.
+- ¬ break the daemon wire protocol — `voicecli serve` / `stt-serve` are managed by supervisord and restart in-place; old in-flight requests must drain cleanly.
+- Stick to `branch = staging` for `roxabi-contracts` / `roxabi-nats` (consistent with current `pyproject.toml` pin for `roxabi-nats`).
+- F-lite tier: 7 fixes, all bounded; no new architecture, no engine-protocol change.
+- Single PR preferred (per `~/projects/CLAUDE.md` release convention) — slice via commits, not separate PRs, since the items share a worktree and validate together.
+
+## Out of Scope
+
+- Stage-axis pivot proper (lyra #1277-style 7-phase rewrite) — `ENGINE_CAPS` matrix already absorbs the M-axis decomposition.
+- Splitting TTS vs STT into separate projects — VRAM coordination + shared `utils.py` / `config.py` make this lossy.
+- TTS NATS retry/fallback parity with STT — different operational profiles, tracked separately if needed.
+- Lyra hub-side migration to `voice.SUBJECTS` imports — owned by lyra #1291 follow-up, not this issue.
+
+## Premise Validity
+
+**Success in 6 months (2026-11-21):**
+All 7 audit items closed:
+1. `pyproject.toml` declares `roxabi-contracts` as direct dep with matching `[tool.uv.sources]` entry (Cross-repo #2).
+2. 3 voiceCLI sites import `roxabi_contracts.voice.SUBJECTS` instead of `lyra.voice.*` literals (Cross-repo #1).
+3. 3 socket-path `str(exc)` sites replaced with `sanitize_for_wire(exc)` (Cross-repo #3).
+4. `ChatterboxBase` mixin extracted, ~76 LOC saved across the 2 Chatterbox engines (Finding 1).
+5. `_small` moved from `TTSEngine` ABC to `QwenEngine` constructor argument (Finding 2).
+6. `api.py` chunked-generation helpers extracted (Finding 4).
+7. `stt_daemon.py` `_send_json`/`_recv_json` import from `daemon_protocol.py` instead of duplicating (Finding 5, ~25 LOC saved).
+
+Observable: 0 hardcoded `lyra.voice.*` literals in `src/voicecli/`; 0 raw `str(exc)` on socket-bound paths.
+
+**Failure in 6 months (2026-11-21):** Falsifiable — any of these = the refactor failed to stick:
+- (a) ≥1 new `lyra.voice.*` literal lands in `src/voicecli/`, OR
+- (b) ≥1 new `str(exc)` appears on a socket-bound path, OR
+- (c) a third Chatterbox variant lands without using `ChatterboxBase`.
+
+Counts real code; no proxy metrics. Each can be checked by a single grep in CI.
+
+**Simplest alternative:** Do only Cross-repo #2 — declare `roxabi-contracts` as direct dep in `pyproject.toml` (1-line change), close the rest as wontfix.
+
+**Why not simplest:** Leaves 6 of 7 audit items open; the now-shipped upstream work (`voice.SUBJECTS`, `sanitize_for_wire`) sits unused — wasted lyra effort; Chatterbox latent cascade stays uncollapsed and bites on the next variant; `_small` ABC pollution grows on the next Qwen knob; `api.py` stays >1k LOC, blocking the file-length quality gate (max 300, currently exempt — see `tools/file_exemptions.txt`).
+
+## Complexity
+
+**Tier: F-lite** — 7 bounded fixes across ≤10 files, single domain (refactor only), zero new architecture or engine-protocol change. Issue label `size:F-lite` confirms.
+
+Signals observed:
+- Multiple files touched but each fix is self-contained (no cross-cutting state changes).
+- Upstream dependencies already pinned (`roxabi-contracts 0.4.0`, `roxabi-nats 0.4.1` in `uv.lock`).
+- No unknowns — exact file/line references in audit, exact symbol names in upstream lyra #1291.
+- Single worktree, single PR (per ~/projects/CLAUDE.md merge-commit convention).
