@@ -203,7 +203,7 @@ def _record_until_signal(stop_event: threading.Event) -> bytes:
         return _record_parecord(stop_event)
 
 
-def _handle_stop_signal(signum: int, frame: Any) -> None:
+def _handle_stop_signal(_signum: int, _frame: Any) -> None:
     """Signal handler to stop recording."""
     global _stop_event
     if _stop_event:

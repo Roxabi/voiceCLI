@@ -80,7 +80,7 @@ EXIT_CODE=$?
 if [ "$EXIT_CODE" -ne 0 ]; then
     LOG="$HOME/.local/state/voicecli/recorder.log"
     if [ -f "$LOG" ] && command -v notify-send >/dev/null 2>&1; then
-        if tail -n 50 "$LOG" | grep -q "ImportError"; then
+        if tail -n 50 "$LOG" | grep -qE "ImportError|ModuleNotFoundError"; then
             notify-send -u critical "voicecli-dictate" \
                 "Recorder failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
         fi
