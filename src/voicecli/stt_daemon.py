@@ -12,7 +12,6 @@ Actions:
 
 from __future__ import annotations
 
-import json
 import os
 import socket
 import struct
@@ -21,13 +20,22 @@ import threading
 from enum import Enum
 from pathlib import Path
 
+from roxabi_nats import sanitize_for_wire
+
 from voicecli.clipboard import auto_paste, write_clipboard
 from voicecli.config import load_stt_config
+from voicecli.daemon_protocol import recv_json
+from voicecli.daemon_protocol import send_json as _send_json
 from voicecli.history import append_history, wav_duration_s
 from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
 from voicecli.ui_sounds import play_ui_sound
 
 MAX_MSG = 65536
+
+
+def _recv_json(sock: socket.socket) -> dict:
+    return recv_json(sock, max_msg=MAX_MSG)
+
 
 LEVEL_FILE = Path("/tmp/voicecli_audio_level")
 
@@ -447,7 +455,7 @@ class SttDaemon:
                 self._handle_unknown(conn, action)
         except Exception as exc:
             try:
-                _send_json(conn, {"status": "error", "message": str(exc)})
+                _send_json(conn, {"status": "error", "message": sanitize_for_wire(exc)})
             except Exception:
                 pass
         finally:
@@ -774,24 +782,3 @@ class SttDaemon:
 
         if self._recording_thread:
             self._recording_thread.start()
-
-
-# ── Wire protocol (copied from daemon.py) ─────────────────────────────────────
-
-
-def _send_json(sock: socket.socket, data: dict) -> None:
-    payload = json.dumps(data, ensure_ascii=False) + "\n"
-    sock.sendall(payload.encode())
-
-
-def _recv_json(sock: socket.socket) -> dict:
-    buf = bytearray()
-    while True:
-        chunk = sock.recv(4096)
-        if not chunk:
-            break
-        buf.extend(chunk)
-        if b"\n" in buf or len(buf) >= MAX_MSG:
-            break
-    line = buf.split(b"\n")[0]
-    return json.loads(line)

@@ -12,6 +12,8 @@ import math
 import socket
 from pathlib import Path
 
+from roxabi_nats import sanitize_for_wire
+
 from voicecli.engine import QWEN_ENGINES
 
 
@@ -30,14 +32,19 @@ def send_json(sock: socket.socket, data: dict) -> None:
     sock.sendall(payload.encode())
 
 
-def recv_json(sock: socket.socket) -> dict:
+def recv_json(sock: socket.socket, max_msg: int | None = None) -> dict:
+    """Read a newline-terminated JSON message from `sock`.
+
+    `max_msg`: optional cap on buffered bytes; protects against a peer that
+    never sends a newline. Pass None to disable (default).
+    """
     buf = bytearray()
     while True:
         chunk = sock.recv(65536)
         if not chunk:
             break
         buf.extend(chunk)
-        if b"\n" in buf:
+        if b"\n" in buf or (max_msg is not None and len(buf) >= max_msg):
             break
     line = buf.split(b"\n")[0]
     return json.loads(line)
@@ -177,7 +184,9 @@ def _load_engine(name: str, fast: bool = False):
 
     eng = get_engine(name)
     if fast and name in QWEN_ENGINES:
-        eng._small = True
+        # `_small` is a QwenEngine-only knob; the QWEN_ENGINES guard narrows
+        # eng to QwenEngine at runtime. setattr avoids ABC type-check noise.
+        setattr(eng, "_small", True)
     return eng
 
 
@@ -308,7 +317,7 @@ def handle_job(
 
     except Exception as exc:
         try:
-            send_json(conn, {"status": "error", "message": str(exc)})
+            send_json(conn, {"status": "error", "message": sanitize_for_wire(exc)})
         except Exception as send_exc:
             print(
                 f"[voicecli daemon] warning: failed to send error response: {send_exc}",

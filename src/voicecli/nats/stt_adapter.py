@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
 from voicecli.nats._stt_runner import SttRunnerState, run_transcription
@@ -22,9 +23,8 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
-
-SUBJECT = "lyra.voice.stt.request"
-HEARTBEAT_SUBJECT = "lyra.voice.stt.heartbeat"
+SUBJECT = VOICE_SUBJECTS.stt_request
+HEARTBEAT_SUBJECT = VOICE_SUBJECTS.stt_heartbeat
 
 # Audio shape helpers + size cap are re-exported here so tests + adapter callers
 # keep importing from voicecli.nats.stt_adapter. The actual definitions live in

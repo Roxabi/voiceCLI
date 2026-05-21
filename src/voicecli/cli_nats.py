@@ -46,7 +46,7 @@ def nats_serve_tts(
         bool, typer.Option("--allow-coexist", envvar="VOICECLI_ALLOW_COEXIST")
     ] = False,
 ) -> None:
-    """Subscribe to lyra.voice.tts.request and reply with synthesized audio."""
+    """Subscribe to the TTS request subject and reply with synthesized audio."""
     import asyncio
 
     from voicecli.config import apply_nats_env_from_config, load_nats_config
@@ -115,7 +115,7 @@ def nats_serve_stt(
         bool, typer.Option("--allow-coexist", envvar="VOICECLI_ALLOW_COEXIST")
     ] = False,
 ) -> None:
-    """Subscribe to lyra.voice.stt.request and reply with transcription."""
+    """Subscribe to the STT request subject and reply with transcription."""
     import asyncio
 
     from voicecli.config import apply_nats_env_from_config

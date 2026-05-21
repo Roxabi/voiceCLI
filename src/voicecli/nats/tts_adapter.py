@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
 from voicecli.nats._tts_runner import TtsRunnerState, run_synthesis
@@ -23,7 +24,6 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
-
 def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
     """Sanitize an exception message for safe inclusion in structured logs.
 
@@ -33,8 +33,8 @@ def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
     return str(exc)[:max_len].replace("\n", "\\n").replace("\r", "\\r")
 
 
-SUBJECT = "lyra.voice.tts.request"
-HEARTBEAT_SUBJECT = "lyra.voice.tts.heartbeat"
+SUBJECT = VOICE_SUBJECTS.tts_request
+HEARTBEAT_SUBJECT = VOICE_SUBJECTS.tts_heartbeat
 
 
 def _engine_available(engine: str) -> bool:
