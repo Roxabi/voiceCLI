@@ -24,6 +24,7 @@ from voicecli.nats.tempdir import cleanup, scoped_path
 
 log = logging.getLogger(__name__)
 
+
 def _safe_reason(exc: BaseException, *, max_len: int = 200) -> str:
     """Sanitize an exception message for safe inclusion in structured logs.
 

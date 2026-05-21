@@ -531,9 +531,7 @@ def generate(
 
             eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
-            # `_small` is a QwenEngine-only knob; the QWEN_ENGINES guard
-            # narrows eng to QwenEngine at runtime. setattr avoids ABC noise.
-            setattr(eng, "_small", True)
+            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         chunk_paths = _generate_chunked(
             eng,
             r_text,
@@ -698,9 +696,7 @@ def clone(
 
             eng = get_engine(r_engine)
         if r_fast and r_engine in QWEN_ENGINES:
-            # `_small` is a QwenEngine-only knob; the QWEN_ENGINES guard
-            # narrows eng to QwenEngine at runtime. setattr avoids ABC noise.
-            setattr(eng, "_small", True)
+            eng._small = True  # pyright: ignore[reportAttributeAccessIssue]  # Qwen-only
         chunk_paths = _clone_chunked(
             eng,
             r_text,
