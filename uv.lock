@@ -1696,15 +1696,15 @@ wheels = [
 [[package]]
 name = "roxabi-contracts"
 version = "0.4.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging#8d2a09f530bc2eb223e051385059ee9ff29927e2" }
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging#e99cc6adec4097929bdab9afed0c15c2bbf23724" }
 dependencies = [
     { name = "pydantic" },
 ]
 
 [[package]]
 name = "roxabi-nats"
-version = "0.3.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging#8d2a09f530bc2eb223e051385059ee9ff29927e2" }
+version = "0.4.1"
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging#e99cc6adec4097929bdab9afed0c15c2bbf23724" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
