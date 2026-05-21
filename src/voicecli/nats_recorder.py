@@ -105,7 +105,7 @@ def start_recording(
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
         log_fh = RECORDER_LOG.open("a")
-    except Exception as e:
+    except OSError as e:
         log.error("Failed to open recorder log: %s", e)
     try:
         proc = subprocess.Popen(
