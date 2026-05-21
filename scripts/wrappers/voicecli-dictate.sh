@@ -74,4 +74,17 @@ cmd=( "$VOICECLI_BIN" dictate nats )
 if [ -n "${VOICECLI_MODE:-}" ]; then
     cmd+=( --mode "$VOICECLI_MODE" )
 fi
-exec "${cmd[@]}"
+"${cmd[@]}"
+EXIT_CODE=$?
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+    LOG="$HOME/.local/state/voicecli/recorder.log"
+    if [ -f "$LOG" ] && command -v notify-send >/dev/null 2>&1; then
+        if tail -n 50 "$LOG" | grep -q "ImportError"; then
+            notify-send -u critical "voicecli-dictate" \
+                "Recorder failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
+        fi
+    fi
+fi
+
+exit "$EXIT_CODE"

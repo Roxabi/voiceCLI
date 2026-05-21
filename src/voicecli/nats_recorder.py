@@ -31,6 +31,9 @@ STATE_FILE = STATE_DIR / "nats-recording.json"
 WAV_FILE = STATE_DIR / "nats-recording.wav"
 WAV_PARTIAL = STATE_DIR / "nats-recording.wav.partial"
 
+LOG_DIR = Path.home() / ".local" / "state" / "voicecli"
+RECORDER_LOG = LOG_DIR / "recorder.log"
+
 
 def _ensure_state_dir() -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -98,17 +101,25 @@ def start_recording(
     if language:
         cmd.extend(["--language", language])
 
+    log_fh = None
     try:
-        # Use start_new_session to detach from terminal
+        LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        log_fh = RECORDER_LOG.open("a")
+    except Exception as e:
+        log.error("Failed to open recorder log: %s", e)
+    try:
         proc = subprocess.Popen(
             cmd,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=log_fh if log_fh is not None else subprocess.DEVNULL,
         )
     except Exception as e:
         log.error("Failed to spawn recorder: %s", e)
         return {"error": f"cannot start recorder: {e}"}
+    finally:
+        if log_fh is not None:
+            log_fh.close()
 
     # Give it a moment to write state file
     for _ in range(10):
@@ -117,8 +128,8 @@ def start_recording(
             break
 
     if not STATE_FILE.exists():
-        log.error("Recorder did not write state file")
-        return {"error": "recorder failed to start"}
+        log.error("Recorder did not write state file — see %s", RECORDER_LOG)
+        return {"error": f"recorder failed to start — see {RECORDER_LOG}"}
 
     return {"status": "recording", "pid": proc.pid}
 
