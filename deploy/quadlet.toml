@@ -1,0 +1,13 @@
+[meta]
+tool = "voicecli"
+uid = 1501
+
+[component.stt]
+container = "voicecli-stt.container"
+required_secrets = ["voicecli-nats-stt"]
+host_roles = ["voice-worker"]
+
+[component.tts]
+container = "voicecli-tts.container"
+required_secrets = ["voicecli-nats-tts"]
+host_roles = ["voice-worker"]

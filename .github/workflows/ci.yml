@@ -65,7 +65,7 @@ jobs:
         # publish.yml only pushes to ghcr on staging push, so PR builds must
         # build the mock image locally and tag it as the staging ref the
         # compose file expects.
-        run: docker build -f Dockerfile.mock -t ghcr.io/roxabi/voicecli-mock:staging .
+        run: docker build -f deploy/Dockerfile.mock -t ghcr.io/roxabi/voicecli-mock:staging .
       - name: Run E2E tests
         run: pytest tests/e2e/ -v
       - name: Dump compose logs on failure
