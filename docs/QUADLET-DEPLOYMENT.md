@@ -92,16 +92,21 @@ See [Lyra's container-publishing.md](../../lyra/docs/ops/container-publishing.md
 
 ### Manual fallback
 
-`scripts/deploy-quadlet.sh` sources the shared library from
-`~/.local/lib/roxabi/deploy-lib.sh` (installed by Lyra's
-`make quadlet-install-deploy-lib` — single SSoT per ADR-055 D5) and runs the
-standard pipeline: `git pull` → `uv sync` → `pytest` → `podman build
-localhost/voicecli:latest` → `systemctl --user restart voicecli-stt voicecli-tts`.
+Use `~/projects/deploy.sh` (cross-repo idempotent deploy) or `deploy/install.sh`
+(per-repo, installs Quadlets + secrets). For image builds:
 
-Per-project variables live at the top of `scripts/deploy-quadlet.sh` (PROJECT,
-IMAGE, ADAPTER_SERVICES, etc.) and map directly onto the library's interface.
+```bash
+podman build -f deploy/Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
+systemctl --user restart voicecli-tts
+```
 
-## Seed-relocation runbook (one-time, from supervisord era)
+## [Historical] Seed-relocation runbook (one-time, from supervisord era)
+
+> Traceability only — supervisord was fully retired. Quadlet is now the sole deployment
+> method on M₁ (voice-worker role). Steps below are preserved for historical reference.
+
+<details>
+<summary>Seed-relocation runbook</summary>
 
 Only needed once when flipping a previously-supervisord-deployed M₁ to Quadlet.
 
@@ -121,17 +126,24 @@ chmod 600 ~/.voicecli/nkeys/*.seed
 # 4. (Later, at Quadlet cutover) follow Provisioning above + disable supervisord confs.
 ```
 
-## Cutover checklist (supervisord → Quadlet)
+</details>
 
-- [ ] `systemctl --user status lyra-nats` — lyra-nats is up and healthy
-- [ ] `~/.voicecli/nkeys/voice-{stt,tts}.seed` exists, 0600
-- [ ] `make quadlet-install` ran without error; units in `~/.config/containers/systemd/`
-- [ ] `make quadlet-secrets-install` ran; `podman secret ls` shows voicecli-nats-{stt,tts}
-- [ ] `systemctl --user start voicecli-tts voicecli-stt` succeeds; containers report `Running`
-- [ ] `UserNS=keep-id` maps voicecli image `appuser` UID → host UID correctly (verify with `podman exec voicecli-stt id`)
-- [ ] End-to-end: Lyra hub publishes a `voice.stt.request`, receives a reply
-- [ ] Disable + remove old supervisord confs: `supervisorctl stop voicecli_stt voicecli_tts && rm supervisor/conf.d/voicecli_{stt,tts}.conf`
-- [ ] Remove voiceCLI from Lyra's `deploy.sh` EXTRA_REPOS once autonomous `voicecli-deploy.timer` is in place
+## [Historical] Cutover checklist (supervisord → Quadlet)
+
+> Completed on M₁ (roxabituwer). Kept for traceability.
+
+<details>
+<summary>Cutover checklist</summary>
+
+- [x] `systemctl --user status lyra-nats` — lyra-nats is up and healthy
+- [x] `~/.voicecli/nkeys/voice-{stt,tts}.seed` exists, 0600
+- [x] Quadlet units installed; `podman secret ls` shows voicecli-nats-{stt,tts}
+- [x] `systemctl --user start voicecli-tts voicecli-stt` succeeds; containers report `Running`
+- [x] `UserNS=keep-id` maps voicecli image `appuser` UID → host UID correctly (verify with `podman exec voicecli-stt id`)
+- [x] End-to-end: Lyra hub publishes a `voice.stt.request`, receives a reply
+- [x] Old supervisord confs removed: `supervisor/` dir deleted from repo
+
+</details>
 
 ## Ecosystem note
 

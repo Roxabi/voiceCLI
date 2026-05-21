@@ -38,8 +38,8 @@ Both subcommands are now available: `nats-serve tts` (Slice 1) and `nats-serve s
 Precedence: `CLI flag > env var > voicecli.toml > hardcoded default`
 
 All variables below are read at startup. Changes take effect only after a process restart.
-Set them in the supervisord `environment=` line (comma-separated `KEY="value"` pairs) or
-export them in the shell environment before running `voicecli nats-serve`.
+Set them in a Quadlet `Environment=` line, in an env file, or export them in the shell
+before running `voicecli nats-serve` (dev).
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -47,7 +47,7 @@ export them in the shell environment before running `voicecli nats-serve`.
 | `NATS_NKEY_SEED_PATH` | — (required for nkey auth) | Path to the NKey seed file. **File permissions must be `0600`** — the satellite refuses to start if the file is world- or group-readable. |
 | `NATS_CA_CERT` | — (optional) | Path to a PEM CA certificate for TLS verification |
 | `VOICECLI_ENGINE` | from `voicecli.toml` | TTS engine override (`qwen`, `qwen-fast`, `chatterbox`, etc.) |
-| `LYRA_TTS_ENGINE` | — | Alias for `VOICECLI_ENGINE`. Provided for the lyra#658 S3 cutover so existing supervisord `environment=` lines keep working without renaming. Takes the same values; `VOICECLI_ENGINE` wins if both are set. |
+| `LYRA_TTS_ENGINE` | — | Alias for `VOICECLI_ENGINE`. Provided for the lyra#658 S3 cutover for backward compatibility. Takes the same values; `VOICECLI_ENGINE` wins if both are set. |
 | `VOICECLI_MAX_CONCURRENT` | TTS: `1` / STT: `2` | Maximum requests processed in parallel. Keep at `1` for single-GPU hosts unless VRAM allows more. |
 | `VOICECLI_HEARTBEAT_INTERVAL` | `5.0` | Seconds between heartbeat publishes. Must stay ≤ 5 per ADR-044 — the hub declares a satellite dead after two missed beats. |
 | `VOICECLI_DRAIN_TIMEOUT` | `30` | Seconds to wait for in-flight requests to finish during graceful shutdown before exiting with code 3. |
@@ -80,9 +80,13 @@ a given host — not both. The guard enforces this automatically.
 **To resolve exit 78:** stop the socket daemon before starting the NATS satellite.
 
 ```bash
-# From ~/projects/lyra (or wherever your supervisord Makefile lives)
-make tts stop                            # stop voicecli_tts (socket daemon)
-supervisorctl start voicecli_nats_tts   # start NATS satellite
+# Quadlet (prod — M₁):
+systemctl --user stop voicecli-tts       # stop socket daemon if running
+systemctl --user start voicecli-tts      # start NATS satellite
+
+# Native dev (M₂):
+pkill -f 'voicecli serve' || true        # stop socket daemon if running
+voicecli nats-serve tts                  # start NATS satellite
 ```
 
 On local-dev machines or large-VRAM boxes (e.g. RTX 5070 Ti with 16 GB) where coexistence
@@ -90,7 +94,7 @@ is safe, bypass the guard with the flag or env var:
 
 ```bash
 voicecli nats-serve tts --allow-coexist
-# or via env var (suitable for supervisord environment= lines)
+# or via env var
 VOICECLI_ALLOW_COEXIST=1 voicecli nats-serve tts
 ```
 
@@ -112,22 +116,22 @@ complete, then exits.
 | `3` | Drain timeout exceeded; at least one in-flight request did not finish within the window | Restart is safe; investigate slow synthesis if this recurs frequently — consider raising `VOICECLI_DRAIN_TIMEOUT` |
 | `78` | VRAM-sequencing guard tripped — a live socket daemon was detected on startup | Stop the socket daemon (`voicecli tts-serve` / `voicecli stt-serve`) before restarting, OR pass `--allow-coexist` |
 
-Any other non-zero exit code is an unhandled error — check `stderr_logfile` for the Python
-traceback.
+Any other non-zero exit code is an unhandled error — check the service logs for the Python
+traceback (`journalctl --user -u voicecli-tts`).
 
-supervisord's default `exitcodes` is `0`, which means it treats exit 3 and exit 78 as
-unexpected and will attempt a restart. Always override with `exitcodes=0,3,78` as shown in
-[Required supervisord stanza](#required-supervisord-stanza).
+In Quadlet, `Restart=on-failure RestartSec=10` handles restart throttling for all exit
+codes including 3 and 78 — no extra configuration needed.
 
 ---
 
-## Required supervisord stanza
+## [Historical] supervisord stanza (TTS)
 
-`autorestart=unexpected` combined with `exitcodes=0,3,78` is **critical**. Without it,
-supervisord treats exit 78 as unexpected and loop-restarts the process — causing a tight
-restart loop on misconfigured hosts. Always include all three exit codes together.
+> **Not recommended.** supervisord is the legacy deployment method.
+> Use Quadlet (`deploy/quadlet/voicecli-tts.container`) for production.
+> This section is kept for reference during migration only.
 
-Copy this block into your supervisord `conf.d/` directory and fill in host-specific values:
+<details>
+<summary>supervisord stanza (TTS)</summary>
 
 ```ini
 [program:voicecli_nats_tts]
@@ -146,18 +150,10 @@ stdout_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_tts.log
 stderr_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_tts.err
 ```
 
-Key fields:
+Key: `autorestart=unexpected` + `exitcodes=0,3,78` is critical — without it supervisord
+loop-restarts on exit 78. `stopwaitsecs=35` must exceed `VOICECLI_DRAIN_TIMEOUT` (30 s).
 
-| Field | Guidance |
-|---|---|
-| `autorestart=unexpected` | Restart on non-zero exits not listed in `exitcodes`; do NOT use `autorestart=true` |
-| `exitcodes=0,3,78` | All three intentional exits: 0 (clean), 3 (drain timeout exceeded), 78 (VRAM guard tripped) — without 3, supervisord loop-restarts the process whenever the drain window is exceeded during shutdown |
-| `stopsignal=TERM` | Sends SIGTERM on `supervisorctl stop`, triggering graceful drain before exit |
-| `stopwaitsecs=35` | Must exceed `VOICECLI_DRAIN_TIMEOUT` (default 30 s) by a margin; 35 s gives the satellite time to drain before supervisord sends SIGKILL |
-| `startsecs=15` | GPU model load time; lower on fast NVMe + large VRAM, raise if startup OOM observed |
-| `user=lyra` | Match the user that owns the NKey seed file and log directory |
-
-For the STT satellite stanza, see [STT — Required supervisord stanza](#stt--required-supervisord-stanza) below.
+</details>
 
 ---
 
@@ -167,13 +163,13 @@ For the STT satellite stanza, see [STT — Required supervisord stanza](#stt--re
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon via supervisorctl, then restart; or pass `--allow-coexist` if coexistence is intentional |
+| Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon (`systemctl --user stop voicecli-tts` or `pkill -f 'voicecli serve'`), then restart; or pass `--allow-coexist` if coexistence is intentional |
 | `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.voicecli/nkeys/voice-tts.seed` |
 | Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts-workers` (TTS) and `stt-workers` (STT) |
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
 | Satellite starts but produces no output; logs show CUDA OOM | VRAM exhausted by coexisting processes | Stop other GPU-heavy daemons, reduce `VOICECLI_MAX_CONCURRENT`, or move to a host with more VRAM |
-| supervisord keeps restarting the process in a tight loop | `autorestart=true` or `exitcodes` missing 78 or 3 | Set `autorestart=unexpected` and use `exitcodes=0,3,78` — see [Required supervisord stanza](#required-supervisord-stanza) |
+| Quadlet keeps restarting in a tight loop on exit 78 | VRAM guard firing continuously — socket daemon still running | Stop the socket daemon first; `RestartSec=10` in the Quadlet unit throttles restart loops |
 | TLS handshake errors connecting to NATS | Missing or wrong CA certificate | Set `NATS_CA_CERT` to the PEM file for your internal CA |
 
 ### Checking liveness
@@ -416,28 +412,31 @@ Behaviour is identical to the TTS guard — see [VRAM sequencing](#vram-sequenci
 STT socket daemon causes exit 78 unless `--allow-coexist` / `VOICECLI_ALLOW_COEXIST=1` is set.
 
 ```bash
-make stt stop                            # stop voicecli_stt (socket daemon)
-supervisorctl start voicecli_nats_stt   # start NATS satellite
+# Quadlet (prod — M₁):
+systemctl --user stop voicecli-stt       # stop socket daemon if running
+systemctl --user start voicecli-stt      # start NATS satellite
+
+# Native dev (M₂):
+pkill -f 'voicecli stt-serve' || true    # stop socket daemon if running
+voicecli nats-serve stt                  # start NATS satellite
 ```
 
 > **Co-located GPU warning — RTX 3080 (10 GB) and similar hosts**
 >
 > On hosts where TTS and STT satellites share a single GPU (e.g. `roxabituwer`:
 > TTS ~7.4 GB + STT ~2.2 GB = ~9.6 GB steady-state), set `VOICECLI_MAX_CONCURRENT=1`
-> on the STT satellite:
->
-> ```ini
-> environment=...,VOICECLI_MAX_CONCURRENT="1"
-> ```
->
-> or pass `--max-concurrent 1` on the command line. A second concurrent STT decode would
-> overflow the remaining VRAM headroom and OOM. The default `2` is intended for hosts
-> running the STT satellite standalone.
+> on the STT satellite. Pass `--max-concurrent 1` on the command line or set
+> `Environment=VOICECLI_MAX_CONCURRENT=1` in the Quadlet unit. A second concurrent STT
+> decode would overflow the remaining VRAM headroom and OOM. The default `2` is intended
+> for hosts running the STT satellite standalone.
 
-### STT — Required supervisord stanza
+### [Historical] STT — Required supervisord stanza
 
-Same rules as TTS (`autorestart=unexpected`, `exitcodes=0,3,78`) — see
-[Required supervisord stanza](#required-supervisord-stanza) for rationale.
+> **Not recommended.** Use Quadlet (`deploy/quadlet/voicecli-stt.container`) for production.
+> This section is kept for reference during migration only.
+
+<details>
+<summary>supervisord stanza (STT)</summary>
 
 ```ini
 [program:voicecli_nats_stt]
@@ -455,8 +454,9 @@ stdout_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_stt.log
 stderr_logfile=/home/lyra/.local/state/lyra/logs/voicecli_nats_stt.err
 ```
 
-`VOICECLI_MAX_CONCURRENT="1"` is set here because this example targets a co-located GPU
-host (TTS + STT on the same GPU). Remove or raise to `2` on standalone-STT hosts.
+`VOICECLI_MAX_CONCURRENT="1"` targets co-located GPU. Remove or raise to `2` on standalone-STT hosts.
+
+</details>
 
 ---
 
@@ -597,9 +597,8 @@ strategy.
 
 The TTS and STT satellites both require GPU access. On single-GPU hosts with
 limited VRAM (e.g. RTX 3080 10 GB), run only one satellite at a time or use
-`VOICECLI_MAX_CONCURRENT=1` on the STT satellite — see
-[STT — Required supervisord stanza](#stt--required-supervisord-stanza) for the
-supervisord equivalent.
+`VOICECLI_MAX_CONCURRENT=1` on the STT satellite — set via `--max-concurrent 1` or
+`Environment=VOICECLI_MAX_CONCURRENT=1` in the Quadlet unit.
 
 Quadlet does not directly support `exitcodes=` for restart policy tuning. The
 `Restart=on-failure` directive in the Quadlet files restarts on non-zero exits,
@@ -631,7 +630,7 @@ Image=ghcr.io/roxabi/voicecli-tts@sha256:<digest>
 Build and push from the repo root:
 
 ```bash
-podman build -f Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
+podman build -f deploy/Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
 podman push ghcr.io/roxabi/voicecli-tts:staging
 ```
 

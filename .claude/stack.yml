@@ -28,7 +28,7 @@ lsp:
   server: pyright
 
 deploy:
-  platform: none
+  platform: quadlet
 
 commands:
   dev: uv run voicecli
