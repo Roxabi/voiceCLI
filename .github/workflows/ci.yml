@@ -51,7 +51,10 @@ jobs:
       - name: Install minimal e2e deps
         # Host only drives docker compose + publishes via NATS client.
         # Satellites install the full voicecli extra inside containers.
-        run: uv pip install --system pytest "nats-py>=2.6,<3" "nkeys>=0.1"
+        # roxabi-contracts pulled in for stub_hub's voice.SUBJECTS import (audit #162).
+        run: |
+          uv pip install --system pytest "nats-py>=2.6,<3" "nkeys>=0.1" \
+            "roxabi-contracts @ git+https://github.com/Roxabi/lyra.git@staging#subdirectory=packages/roxabi-contracts"
       - name: Seed-leak lint
         run: |
           if find tests/e2e/ \( -name '*.seed' -o -name '*.nk' \) | grep .; then
