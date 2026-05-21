@@ -107,28 +107,38 @@ Two dictation modes:
 
 ## Gotchas
 
-### Daemons managed by supervisord
+### Daemon management by host
 
-`voicecli serve` (TTS) ∧ `voicecli stt-serve` (STT) = **¬standalone** — managed by supervisor hub @ `~/projects/`. `kill` won't work — supervisord auto-restarts within seconds.
+**M₁ (roxabituwer, voice-worker) — Quadlet:**
+`voicecli-tts` and `voicecli-stt` run as Podman containers under systemd. `kill` on the process won't stick — systemd restarts within `RestartSec=10`.
 
-Temp stop: use hub Make targets:
 ```bash
-make -C ~/projects tts stop      # stop TTS daemon
-make -C ~/projects stt stop      # stop STT daemon
-make -C ~/projects tts start     # restart TTS daemon
-make -C ~/projects stt start     # restart STT daemon
-make -C ~/projects ps            # status all services
+systemctl --user stop voicecli-tts      # stop TTS satellite
+systemctl --user stop voicecli-stt      # stop STT satellite
+systemctl --user start voicecli-tts     # restart TTS
+systemctl --user start voicecli-stt     # restart STT
+systemctl --user status voicecli-{tts,stt}  # status
+journalctl --user -u voicecli-tts -f    # logs
 ```
+
+**M₂ (roxabitower, dev) — native socket daemon:**
+`voicecli serve` (TTS) ∧ `voicecli stt-serve` (STT) run as native processes. Stop with `pkill` or Ctrl-C in the terminal.
 
 ### VRAM contention on RTX 3080 (10 GB)
 
 TTS daemon (qwen-fast) ~7.4 GB + STT daemon ~2.2 GB → fills whole GPU. Both running → `voicecli clone` (∨ any op needing extra VRAM alloc) fails CUDA OOM even though model already loaded.
 
-**Fix:** stop STT daemon before clone, restart after:
+**Fix:** stop STT satellite before clone, restart after:
 ```bash
-make -C ~/projects stt stop
+# M₁ (Quadlet):
+systemctl --user stop voicecli-stt
 voicecli clone "text" -e qwen-fast
-make -C ~/projects stt start
+systemctl --user start voicecli-stt
+
+# M₂ (native):
+pkill -f 'voicecli stt-serve'
+voicecli clone "text" -e qwen-fast
+voicecli stt-serve &
 ```
 
 ### NATS satellite vs socket daemon — pick one mode per host
@@ -149,9 +159,12 @@ Production hosts can run voiceCLI as a Podman container managed by systemd via Q
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | Multi-stage build for CUDA 12.4 + uv + extras |
+| `deploy/Dockerfile.tts` | TTS image — CUDA 12.4 + uv + extras |
+| `deploy/Dockerfile.stt` | STT image — CUDA 12.4 + uv + extras |
 | `deploy/entrypoint.sh` | Mode selector (`tts` \| `stt`) → `nats-serve` |
 | `deploy/quadlet/voicecli-tts.container` | TTS satellite systemd unit |
 | `deploy/quadlet/voicecli-stt.container` | STT satellite systemd unit |
+| `deploy/quadlet.toml` | Manifest (components, host_roles, secrets) |
+| `deploy/install.sh` | Idempotent installer (secrets + Quadlets + daemon-reload) |
 
-Full Quadlet setup: [`docs/NATS-SERVE.md#quadlet-deployment-podman--systemd`](docs/NATS-SERVE.md#quadlet-deployment-podman--systemd).
+Full Quadlet setup: [`docs/QUADLET-DEPLOYMENT.md`](docs/QUADLET-DEPLOYMENT.md).

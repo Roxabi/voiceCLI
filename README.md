@@ -330,27 +330,18 @@ voicecli serve --fast             # use smaller 0.6B model
 
 `generate` and `clone` automatically use the daemon when it's running — no flags needed. Falls back silently to standalone if the daemon isn't up.
 
-To keep the daemon running across sessions, register with [lyra-stack](https://github.com/Roxabi/lyra-stack) (recommended) or use systemd.
+To keep the daemon running across sessions, use systemd (Quadlet on M₁) or a terminal multiplexer.
 
-#### Supervised daemons (lyra-stack)
-
-If you have [lyra-stack](https://github.com/Roxabi/lyra-stack) set up, register voiceCLI's TTS and STT daemons with:
+#### Production (M₁ — Quadlet)
 
 ```bash
-make register        # symlinks supervisor configs into lyra-stack
+systemctl --user start voicecli-tts.service
+systemctl --user start voicecli-stt.service
+systemctl --user status voicecli-{tts,stt}   # status
+journalctl --user -u voicecli-tts -f          # logs
 ```
 
-Then manage them from either repo:
-
-```bash
-make tts             # start TTS daemon
-make tts reload      # restart
-make tts logs        # tail stdout
-make tts stop        # stop
-make stt             # same for STT daemon
-```
-
-If you installed via `make setup` in lyra-stack (and said yes to voiceCLI), registration was done automatically. You only need `make register` when cloning voiceCLI standalone.
+See [`docs/QUADLET-DEPLOYMENT.md`](docs/QUADLET-DEPLOYMENT.md) for full setup.
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
