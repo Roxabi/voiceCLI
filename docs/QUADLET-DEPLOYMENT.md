@@ -92,14 +92,13 @@ See [Lyra's container-publishing.md](../../lyra/docs/ops/container-publishing.md
 
 ### Manual fallback
 
-`scripts/deploy-quadlet.sh` sources the shared library from
-`~/.local/lib/roxabi/deploy-lib.sh` (installed by Lyra's
-`make quadlet-install-deploy-lib` — single SSoT per ADR-055 D5) and runs the
-standard pipeline: `git pull` → `uv sync` → `pytest` → `podman build
-localhost/voicecli:latest` → `systemctl --user restart voicecli-stt voicecli-tts`.
+Use `~/projects/deploy.sh` (cross-repo idempotent deploy) or `deploy/install.sh`
+(per-repo, installs Quadlets + secrets). For image builds:
 
-Per-project variables live at the top of `scripts/deploy-quadlet.sh` (PROJECT,
-IMAGE, ADAPTER_SERVICES, etc.) and map directly onto the library's interface.
+```bash
+podman build -f deploy/Dockerfile.tts -t ghcr.io/roxabi/voicecli-tts:staging .
+systemctl --user restart voicecli-tts
+```
 
 ## [Historical] Seed-relocation runbook (one-time, from supervisord era)
 
