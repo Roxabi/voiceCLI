@@ -74,4 +74,20 @@ cmd=( "$VOICECLI_BIN" dictate nats )
 if [ -n "${VOICECLI_MODE:-}" ]; then
     cmd+=( --mode "$VOICECLI_MODE" )
 fi
-exec "${cmd[@]}"
+"${cmd[@]}"
+EXIT_CODE=$?
+
+# Exit 69 = TCP probe failed (hub unreachable, already notified above). Skip
+# the log check so a stale ImportError from a prior run doesn't surface a
+# spurious "stale .venv" notification on top of an unrelated network failure.
+if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 69 ]; then
+    LOG="$HOME/.local/state/voicecli/recorder.log"
+    if [ -f "$LOG" ] && command -v notify-send >/dev/null 2>&1; then
+        if tail -n 50 "$LOG" | grep -qE "ImportError|ModuleNotFoundError"; then
+            notify-send -u normal "voicecli-dictate" \
+                "Recorder failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
+        fi
+    fi
+fi
+
+exit "$EXIT_CODE"
