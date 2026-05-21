@@ -13,7 +13,6 @@ from pathlib import Path
 
 class TTSEngine(ABC):
     name: str
-    _small: bool = False
 
     @abstractmethod
     def generate(self, text: str, voice: str | None, output_path: Path, **kwargs) -> Path:

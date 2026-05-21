@@ -108,7 +108,9 @@ def _load_engine(name: str, fast: bool = False):
 
     eng = get_engine(name)
     if fast and name in QWEN_ENGINES:
-        eng._small = True
+        # `_small` is a QwenEngine-only knob; the QWEN_ENGINES guard narrows
+        # eng to QwenEngine at runtime. setattr avoids ABC type-check noise.
+        setattr(eng, "_small", True)
     return eng
 
 
