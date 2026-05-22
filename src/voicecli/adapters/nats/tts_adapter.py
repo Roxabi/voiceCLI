@@ -6,7 +6,6 @@ import asyncio
 import base64  # noqa: F401 — test patch anchor for voicecli.adapters.nats.tts_adapter.base64.b64encode
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,92 +22,6 @@ from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class TtsRequest:
-    """Typed TTS request constructed from NATS payload dict."""
-
-    text: str
-    request_id: str
-    trace_id: str = ""
-    contract_version: str = ""
-    engine: str = ""
-    language: str | None = None
-    voice: str | None = None
-    speed: float | None = None
-    exaggeration: float | None = None
-    cfg_weight: float | None = None
-    accent: str | None = None
-    personality: str | None = None
-    emotion: str | None = None
-    chunked: bool | None = None
-    chunk_size: int | None = None
-    segment_gap: float | None = None
-    crossfade: float | None = None
-    fallback_language: str | None = None
-
-    @classmethod
-    def from_payload(cls, payload: dict) -> "TtsRequest":
-        """Construct from decoded JSON payload; raise ValueError on type mismatch."""
-        text = payload.get("text")
-        if not isinstance(text, str) or not text:
-            raise ValueError("text must be a non-empty str")
-
-        request_id = payload.get("request_id", "")
-        if not request_id:
-            raise ValueError("request_id is required")
-
-        engine = payload.get("engine", "")
-
-        speed = payload.get("speed")
-        if speed is not None and not isinstance(speed, (int, float)):
-            raise ValueError("speed must be int or float")
-
-        exaggeration = payload.get("exaggeration")
-        if exaggeration is not None and not isinstance(exaggeration, (int, float)):
-            raise ValueError("exaggeration must be int or float")
-
-        cfg_weight = payload.get("cfg_weight")
-        if cfg_weight is not None and not isinstance(cfg_weight, (int, float)):
-            raise ValueError("cfg_weight must be int or float")
-
-        chunk_size = payload.get("chunk_size")
-        if chunk_size is not None and not isinstance(chunk_size, int):
-            raise ValueError("chunk_size must be an int")
-
-        segment_gap = payload.get("segment_gap")
-        if segment_gap is not None and not isinstance(segment_gap, (int, float)):
-            raise ValueError("segment_gap must be int or float")
-
-        crossfade = payload.get("crossfade")
-        if crossfade is not None and not isinstance(crossfade, (int, float)):
-            raise ValueError("crossfade must be int or float")
-
-        chunked = payload.get("chunked")
-        if chunked is not None and not isinstance(chunked, bool):
-            raise ValueError("chunked must be a bool")
-
-        return cls(
-            text=text,
-            request_id=request_id,
-            trace_id=payload.get("trace_id") or "",
-            contract_version=payload.get("contract_version", ""),
-            engine=engine,
-            language=payload.get("language"),
-            voice=payload.get("voice"),
-            speed=float(speed) if speed is not None else None,
-            exaggeration=float(exaggeration) if exaggeration is not None else None,
-            cfg_weight=float(cfg_weight) if cfg_weight is not None else None,
-            accent=payload.get("accent"),
-            personality=payload.get("personality"),
-            emotion=payload.get("emotion"),
-            chunked=chunked,
-            chunk_size=chunk_size,
-            segment_gap=float(segment_gap) if segment_gap is not None else None,
-            crossfade=float(crossfade) if crossfade is not None else None,
-            fallback_language=payload.get("fallback_language"),
-        )
 
 
 SUBJECT = VOICE_SUBJECTS.tts_request

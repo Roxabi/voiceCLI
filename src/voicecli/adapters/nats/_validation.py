@@ -27,6 +27,12 @@ from typing import Callable
 
 from roxabi_nats._validate import validate_nats_token
 
+from voicecli.adapters.nats.requests import (
+    MalformedRequestError,
+    SttRequest,
+    TtsRequest,
+)
+
 log = logging.getLogger(__name__)
 
 # request_id pattern: 1–128 alphanumeric/underscore/hyphen chars.
@@ -67,10 +73,12 @@ class SttValidationOutcome:
         overrides: Dict of optional transcription parameters supplied in the
             payload (None values excluded).  Present only on success; always
             a dict (possibly empty) — never ``None`` on success.
+        request: The successfully parsed ``SttRequest``, present only on success.
     """
 
     error_code: str | None
     overrides: dict | None = None
+    request: SttRequest | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -102,11 +110,9 @@ def validate_tts_request(
         ``TtsValidationOutcome`` with ``error_code=None`` on success, or a
         non-None ``error_code`` string on the first failing check.
     """
-    from voicecli.adapters.nats.tts_adapter import TtsRequest
-
     try:
         req = TtsRequest.from_payload(payload)
-    except (ValueError, TypeError, KeyError):
+    except (MalformedRequestError, TypeError, KeyError):
         return _MALFORMED
 
     if not _REQUEST_ID_RE.match(req.request_id):
@@ -171,14 +177,12 @@ def validate_stt_request(payload: dict) -> SttValidationOutcome:
         dict (possibly empty) on success, or ``error_code="malformed_request"``
         on the first failing check.
     """
-    from voicecli.adapters.nats.stt_adapter import SttRequest
-
     try:
         req = SttRequest.from_payload(payload)
-    except (ValueError, TypeError, KeyError):
+    except (MalformedRequestError, TypeError, KeyError):
         return _STT_MALFORMED
 
     if not _REQUEST_ID_RE.match(req.request_id):
         return _STT_MALFORMED
 
-    return SttValidationOutcome(error_code=None, overrides=req.to_overrides())
+    return SttValidationOutcome(error_code=None, overrides=req.to_overrides(), request=req)
