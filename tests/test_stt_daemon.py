@@ -1,8 +1,4 @@
-"""Tests for voicecli.stt_daemon — RED phase.
-
-The implementation (src/voicecli/stt_daemon.py) does not exist yet.
-All tests are expected to fail with ImportError until the GREEN phase.
-"""
+"""Tests for voicecli.runtime.stt_daemon."""
 
 from __future__ import annotations
 
@@ -62,11 +58,11 @@ def daemon_send(tmp_path):
     mock_warmup = MagicMock()
 
     with (
-        patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=True),
-        patch("voicecli.runtime.stt_daemon.RecordingThread", mock_recording_thread_cls),
+        patch("voicecli.runtime.recording._probe_pyaudio", return_value=True),
+        patch("voicecli.runtime.recording.RecordingThread", mock_recording_thread_cls),
         patch("voicecli.runtime.stt_daemon.play_ui_sound", mock_play_ui_sound),
         patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
-        patch("voicecli.runtime.stt_daemon.write_clipboard", mock_write_clipboard),
+        patch("voicecli.ui.clipboard.write_clipboard", mock_write_clipboard),
         patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
         # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
         # `from voicecli.runtime.transcribe import transcribe` inside the function body.
@@ -254,16 +250,16 @@ class TestTranscriptionAndClipboard:
         created_paths: list[Path] = []
 
         # Wrap _write_tempfile to capture the path it creates.
-        import voicecli.runtime.stt_daemon as stt_mod
+        import voicecli.runtime.recording as recording_mod
 
-        original_write_tempfile = stt_mod._write_tempfile
+        original_write_tempfile = recording_mod._write_tempfile
 
         def tracking_write_tempfile(wav_bytes: bytes) -> Path:
             p = original_write_tempfile(wav_bytes)
             created_paths.append(p)
             return p
 
-        monkeypatch.setattr(stt_mod, "_write_tempfile", tracking_write_tempfile)
+        monkeypatch.setattr(recording_mod, "_write_tempfile", tracking_write_tempfile)
 
         # Arrange
         send("toggle")  # N3
@@ -279,18 +275,18 @@ class TestTranscriptionAndClipboard:
         """Tempfile is deleted even when transcribe() raises an exception."""
         send, _, _ = daemon_send
 
-        import voicecli.runtime.stt_daemon as stt_mod
+        import voicecli.runtime.recording as recording_mod
         import voicecli.runtime.transcribe as transcribe_mod
 
         created_paths: list[Path] = []
-        original_write_tempfile = stt_mod._write_tempfile
+        original_write_tempfile = recording_mod._write_tempfile
 
         def tracking_write_tempfile(wav_bytes: bytes) -> Path:
             p = original_write_tempfile(wav_bytes)
             created_paths.append(p)
             return p
 
-        monkeypatch.setattr(stt_mod, "_write_tempfile", tracking_write_tempfile)
+        monkeypatch.setattr(recording_mod, "_write_tempfile", tracking_write_tempfile)
         from unittest.mock import MagicMock
 
         monkeypatch.setattr(
@@ -323,7 +319,7 @@ class TestTranscriptionAndClipboard:
         from unittest.mock import MagicMock
 
         monkeypatch.setattr(
-            "voicecli.runtime.stt_daemon.write_clipboard",
+            "voicecli.ui.clipboard.write_clipboard",
             MagicMock(side_effect=OSError("no display")),
         )
         send("toggle")  # N3: start recording
@@ -474,8 +470,6 @@ class TestQueueSupport:
 
         # Cleanup: stop the auto-started recording
         # Use a new non-blocking transcribe for cleanup
-        import voicecli.runtime.stt_daemon as stt_mod
-
         monkeypatch.setattr(transcribe_mod, "transcribe", lambda *a, **kw: _MOCK_TRANSCRIPTION)
         send("toggle")  # N4 on the auto-started recording
 
@@ -506,12 +500,12 @@ class TestPaRecordFallback:
         mock_warmup = MagicMock()
 
         with (
-            patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=False),
-            patch("voicecli.runtime.stt_daemon._record_parecord", mock_record_parecord),
-            patch("voicecli.runtime.stt_daemon.RecordingThread", mock_recording_thread_cls),
+            patch("voicecli.runtime.recording._probe_pyaudio", return_value=False),
+            patch("voicecli.runtime.recording._record_parecord", mock_record_parecord),
+            patch("voicecli.runtime.recording.RecordingThread", mock_recording_thread_cls),
             patch("voicecli.runtime.stt_daemon.play_ui_sound", MagicMock()),
             patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
-            patch("voicecli.runtime.stt_daemon.write_clipboard", mock_write_clipboard),
+            patch("voicecli.ui.clipboard.write_clipboard", mock_write_clipboard),
             patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
             patch("voicecli.runtime.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
         ):

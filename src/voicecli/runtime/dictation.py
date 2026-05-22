@@ -231,9 +231,9 @@ def stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
     except Exception as e:
         print(f"[stt] vocab load error: {e}", file=sys.stderr)
 
-    # Lazy imports so test patches on stt_daemon module are respected
-    from voicecli.runtime.stt_daemon import _write_tempfile
-    from voicecli.runtime.stt_daemon import write_clipboard
+    # Lazy imports so test patches are respected
+    from voicecli.runtime.recording import _write_tempfile
+    from voicecli.ui.clipboard import write_clipboard
 
     tmp_path = _write_tempfile(wav_bytes)
     text: str = ""
