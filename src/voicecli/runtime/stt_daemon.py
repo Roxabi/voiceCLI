@@ -2,12 +2,6 @@
 
 Protocol: newline-delimited JSON over AF_UNIX SOCK_STREAM.
 Socket path: ~/.local/share/voicecli/stt-daemon.sock
-
-Actions:
-  ping             — liveness check
-  status           — return current state
-  toggle           — start recording (idle→recording) or stop+transcribe (recording→transcribing→idle)
-  transcribe_file  — transcribe an audio file using the warm model
 """
 
 from __future__ import annotations
@@ -22,13 +16,26 @@ from pathlib import Path
 
 from roxabi_nats import sanitize_for_wire
 
-from voicecli.ui.clipboard import auto_paste, write_clipboard
 from voicecli.core.config import load_stt_config
 from voicecli.runtime.wire_protocol import recv_json
 from voicecli.runtime.wire_protocol import send_json as _send_json
-from voicecli.core.history import append_history, wav_duration_s
 from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
 from voicecli.ui.sounds import play_ui_sound
+
+from voicecli.runtime.recording import (
+    RecordingThread,
+    _probe_pyaudio,
+    _record_parecord,
+)
+from voicecli.runtime.dictation import (
+    handle_cancel,
+    handle_next_mode,
+    handle_ping,
+    handle_status,
+    handle_toggle,
+    handle_transcribe_file,
+    handle_unknown,
+)
 
 MAX_MSG = 65536
 
@@ -40,109 +47,11 @@ def _recv_json(sock: socket.socket) -> dict:
 LEVEL_FILE = Path("/tmp/voicecli_audio_level")
 
 
-# ── State machine ─────────────────────────────────────────────────────────────
-
-
 class State(Enum):
     IDLE = "idle"
     RECORDING = "recording"
     TRANSCRIBING = "transcribing"
     QUEUED = "queued"
-
-
-# ── pyaudio probe ─────────────────────────────────────────────────────────────
-
-
-def _probe_pyaudio() -> bool:
-    """Return True if pyaudio is usable; print warning and return False otherwise."""
-    try:
-        import pyaudio
-
-        # Suppress ALSA/JACK noise that pyaudio prints unconditionally on startup
-        devnull_fd = os.open(os.devnull, os.O_WRONLY)
-        saved_stderr = os.dup(2)
-        os.dup2(devnull_fd, 2)
-        try:
-            pa = pyaudio.PyAudio()
-            try:
-                stream = pa.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    frames_per_buffer=1024,
-                )
-                stream.close()
-            finally:
-                pa.terminate()
-        finally:
-            os.dup2(saved_stderr, 2)
-            os.close(saved_stderr)
-            os.close(devnull_fd)
-        return True
-    except Exception as e:
-        print(f"[stt] pyaudio unavailable ({e}), falling back to parecord", file=sys.stderr)
-        return False
-
-
-# ── WAV helpers ───────────────────────────────────────────────────────────────
-
-
-def _frames_to_wav(frames: list[bytes], samplerate: int) -> bytes:
-    import io
-    import wave
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(samplerate)
-        wf.writeframes(b"".join(frames))
-    return buf.getvalue()
-
-
-def _write_tempfile(wav_bytes: bytes) -> Path:
-    import os
-    import tempfile
-
-    fd, name = tempfile.mkstemp(suffix=".wav")
-    try:
-        os.write(fd, wav_bytes)
-    finally:
-        os.close(fd)
-    return Path(name)
-
-
-# ── Recording saver ───────────────────────────────────────────────────────────
-
-
-def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
-    """Save WAV audio and transcript to STT/audio_in and STT/texts_out."""
-    if not wav_bytes and not text:
-        return
-    from datetime import datetime
-
-    from voicecli.core.config import VOICECLI_DIR
-
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    lang_tag = f"_{language}" if language else ""
-
-    if wav_bytes:
-        audio_dir = VOICECLI_DIR / "STT" / "audio_in"
-        audio_dir.mkdir(parents=True, exist_ok=True)
-        audio_path = audio_dir / f"dictate{lang_tag}_{ts}.wav"
-        audio_path.write_bytes(wav_bytes)
-        print(f"[stt] saved audio: {audio_path}", file=sys.stderr)
-
-    if text:
-        text_dir = VOICECLI_DIR / "STT" / "texts_out"
-        text_dir.mkdir(parents=True, exist_ok=True)
-        text_path = text_dir / f"dictate{lang_tag}_{ts}.txt"
-        text_path.write_text(text, encoding="utf-8")
-        print(f"[stt] saved transcript: {text_path}", file=sys.stderr)
-
-
-# ── Overlay launcher ──────────────────────────────────────────────────────────
 
 
 def _spawn_overlay(
@@ -153,7 +62,6 @@ def _spawn_overlay(
 ) -> None:
     """Launch the waveform overlay from the daemon process (survives WSL session exit)."""
     import subprocess
-    import sys
 
     env = os.environ.copy()
     if mode:
@@ -174,152 +82,11 @@ def _spawn_overlay(
         print(f"[stt] overlay spawn failed: {e}", file=sys.stderr)
 
 
-# ── warmup (re-exported so tests can patch voicecli.stt_daemon.warmup) ────────
-
-
 def warmup(model: str) -> None:
+    """Re-exported so tests can patch voicecli.stt_daemon.warmup."""
     from voicecli.runtime.transcribe import warmup as _warmup
 
     _warmup(model)
-
-
-# ── Recording thread (pyaudio path) ──────────────────────────────────────────
-
-
-class RecordingThread(threading.Thread):
-    SAMPLERATE = 16000
-    CHANNELS = 1
-    CHUNK = 1024
-
-    def __init__(self, level_callback=None):
-        super().__init__(daemon=True)
-        self.level_callback = level_callback
-        self.frames: list[bytes] = []
-        self._stop_event = threading.Event()
-
-    def run(self) -> None:
-        import numpy as np
-        import pyaudio
-
-        # Suppress ALSA/JACK chatter on stream open
-        devnull_fd = os.open(os.devnull, os.O_WRONLY)
-        saved_stderr = os.dup(2)
-        os.dup2(devnull_fd, 2)
-        try:
-            pa = pyaudio.PyAudio()
-            stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=self.CHANNELS,
-                rate=self.SAMPLERATE,
-                input=True,
-                frames_per_buffer=self.CHUNK,
-            )
-        finally:
-            os.dup2(saved_stderr, 2)
-            os.close(saved_stderr)
-            os.close(devnull_fd)
-
-        while not self._stop_event.is_set():
-            data = stream.read(self.CHUNK, exception_on_overflow=False)
-            self.frames.append(data)
-            if self.level_callback:
-                level = np.abs(np.frombuffer(data, dtype=np.int16)).mean() / 32768.0
-                self.level_callback(level)
-        stream.stop_stream()
-        stream.close()
-        pa.terminate()
-
-    def stop(self) -> bytes:
-        self._stop_event.set()
-        self.join(timeout=2.0)
-        if self.is_alive():
-            print(
-                "[stt] WARNING: RecordingThread did not stop in 2s — audio may be truncated",
-                file=sys.stderr,
-                flush=True,
-            )
-        return _frames_to_wav(self.frames, self.SAMPLERATE)
-
-
-# ── parecord fallback ─────────────────────────────────────────────────────────
-
-
-def _record_parecord(stop_event: threading.Event, level_callback=None) -> bytes:
-    """Record via PulseAudio until stop_event is set; return WAV bytes.
-
-    Prefers `parec` (raw PCM to stdout) which enables real-time level callbacks.
-    Falls back to `parecord` (WAV to temp file, no levels) if parec is absent.
-    """
-    import shutil
-    import subprocess
-    import tempfile
-
-    SAMPLERATE = 16000
-    CHUNK = 3200  # ~100 ms at 16 kHz 16-bit mono
-
-    parec = shutil.which("parec")
-    if parec:
-        # parec writes raw s16le to stdout — ideal for real-time processing
-        proc = subprocess.Popen(
-            [parec, "--format=s16le", f"--rate={SAMPLERATE}", "--channels=1"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        frames: list[bytes] = []
-
-        def _reader() -> None:
-            import numpy as np
-
-            assert proc.stdout is not None
-            while True:
-                data = proc.stdout.read(CHUNK)
-                if not data:
-                    break
-                frames.append(data)
-                if level_callback and len(data) >= 2:
-                    samps = np.frombuffer(data, dtype=np.int16)
-                    level_callback(float(np.sqrt(np.mean(samps.astype(np.float32) ** 2))) / 32768.0)
-
-        reader = threading.Thread(target=_reader, daemon=True)
-        reader.start()
-        stop_event.wait()
-        proc.terminate()
-        try:
-            proc.wait(timeout=2.0)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        reader.join(timeout=2.0)
-        return _frames_to_wav(frames, SAMPLERATE)
-
-    # Fallback: parecord writes WAV to a temp file (no real-time level data)
-    parecord = shutil.which("parecord")
-    if not parecord:
-        return b""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        tmp_path = Path(f.name)
-    try:
-        proc2 = subprocess.Popen(
-            [
-                parecord,
-                "--format=s16le",
-                f"--rate={SAMPLERATE}",
-                "--channels=1",
-                "--file-format=wav",
-                str(tmp_path),
-            ]
-        )
-        stop_event.wait()
-        proc2.terminate()
-        try:
-            proc2.wait(timeout=2.0)
-        except subprocess.TimeoutExpired:
-            proc2.kill()
-        return tmp_path.read_bytes() if tmp_path.exists() else b""
-    finally:
-        tmp_path.unlink(missing_ok=True)
-
-
-# ── SttDaemon ────────────────────────────────────────────────────────────────
 
 
 class SttDaemon:
@@ -360,8 +127,6 @@ class SttDaemon:
         self._hotkey_cancel: str = _stt_cfg.get("hotkey_cancel", "alt+shift+esc")
         self._hotkey_mode: str = _stt_cfg.get("hotkey_mode", "alt+shift+tab")
 
-    # ── Public control ────────────────────────────────────────────────────────
-
     def stop(self) -> None:
         """Signal the accept loop to exit (used by tests)."""
         if self._server_socket is not None:
@@ -369,8 +134,6 @@ class SttDaemon:
                 self._server_socket.close()
             except Exception:
                 pass
-
-    # ── Serve (accept loop) ───────────────────────────────────────────────────
 
     def serve(self) -> None:
         self._use_pyaudio = _probe_pyaudio()
@@ -440,19 +203,19 @@ class SttDaemon:
             action = req.get("action")
             mode = req.get("mode") or None
             if action == "ping":
-                self._handle_ping(conn)
+                handle_ping(self, conn)
             elif action == "status":
-                self._handle_status(conn)
+                handle_status(self, conn)
             elif action == "toggle":
-                self._handle_toggle(conn, mode=mode)
+                handle_toggle(self, conn, mode=mode)
             elif action == "cancel":
-                self._handle_cancel(conn)
+                handle_cancel(self, conn)
             elif action == "next_mode":
-                self._handle_next_mode(conn)
+                handle_next_mode(self, conn)
             elif action == "transcribe_file":
-                self._handle_transcribe_file(conn, req)
+                handle_transcribe_file(self, conn, req)
             else:
-                self._handle_unknown(conn, action)
+                handle_unknown(self, conn, action)
         except Exception as exc:
             try:
                 _send_json(conn, {"status": "error", "message": sanitize_for_wire(exc)})
@@ -460,115 +223,6 @@ class SttDaemon:
                 pass
         finally:
             conn.close()
-
-    def _handle_ping(self, conn: socket.socket) -> None:
-        _send_json(conn, {"status": "ok"})
-
-    def _handle_status(self, conn: socket.socket) -> None:
-        with self._lock:
-            state = self._state.value
-            mode = self._current_mode or self.default_mode
-        _send_json(conn, {"status": "ok", "state": state, "mode": mode})
-
-    def _handle_unknown(self, conn: socket.socket, action: str | None) -> None:
-        _send_json(conn, {"status": "error", "message": f"unknown action: {action}"})
-
-    def _handle_transcribe_file(self, conn: socket.socket, req: dict) -> None:
-        """Transcribe an audio file using the warm model. No state-machine interaction."""
-        audio_path = req.get("audio_path")
-        if not audio_path:
-            _send_json(conn, {"status": "error", "message": "missing required field: 'audio_path'"})
-            return
-        path = Path(audio_path)
-        if not path.exists():
-            _send_json(conn, {"status": "error", "message": f"file not found: {audio_path}"})
-            return
-
-        language = req.get("language")
-        task = req.get("task", "transcribe")
-        initial_prompt = req.get("initial_prompt")
-        language_detection_threshold = req.get("language_detection_threshold")
-        language_detection_segments = req.get("language_detection_segments")
-        language_fallback = req.get("language_fallback")
-
-        # Use daemon-level defaults when caller doesn't specify
-        if language_detection_threshold is None:
-            language_detection_threshold = self.language_detection_threshold
-        if language_detection_segments is None:
-            language_detection_segments = self.language_detection_segments
-        if language_fallback is None:
-            language_fallback = self.language_fallback
-
-        import gc
-        import time
-
-        from voicecli.runtime.transcribe import transcribe
-
-        try:
-            import torch
-
-            _oom_type: type = torch.cuda.OutOfMemoryError
-        except (ImportError, AttributeError):
-            _oom_type = type(None)  # never matches — no torch, no OOM handling
-
-        max_retries = 3
-        delay = 5
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = transcribe(
-                    path,
-                    model=self.model,
-                    language=language,
-                    language_detection_threshold=language_detection_threshold,
-                    language_detection_segments=language_detection_segments,
-                    language_fallback=language_fallback,
-                    task=task,
-                    initial_prompt=initial_prompt,
-                )
-                _send_json(
-                    conn,
-                    {
-                        "status": "ok",
-                        "text": result.text,
-                        "language": result.language,
-                        "segments": result.segments,
-                    },
-                )
-                return
-            except Exception as e:  # noqa: BLE001
-                if isinstance(e, _oom_type):
-                    print(
-                        f"[voicecli stt] OOM loading model, retry {attempt}/{max_retries}"
-                        f" in {delay}s...",
-                        file=sys.stderr,
-                    )
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    time.sleep(delay)
-                    delay *= 2
-                else:
-                    print(f"[stt] transcribe_file error: {e}", file=sys.stderr)
-                    _send_json(conn, {"status": "error", "message": str(e)})
-                    return
-
-        _send_json(conn, {"status": "error", "message": f"CUDA OOM after {max_retries} retries"})
-
-    def _handle_toggle(self, conn: socket.socket, mode: str | None = None) -> None:
-        with self._lock:
-            state = self._state
-        if state == State.IDLE:
-            self._start_recording(conn, mode=mode)
-        elif state == State.RECORDING:
-            # _stop_and_transcribe blocks until transcription is done, then sends
-            # the response via conn.  The caller (_handle) must NOT close conn
-            # afterwards — _stop_and_transcribe takes ownership.
-            self._stop_and_transcribe(conn)
-        elif state == State.TRANSCRIBING:
-            self._queue_recording(conn)
-        elif state == State.QUEUED:
-            _send_json(conn, {"status": "ok", "state": State.QUEUED.value})
-
-    # ── State transitions ─────────────────────────────────────────────────────
 
     def _start_parecord_recording(self, level_callback=None) -> None:
         """Start parecord subprocess recording. Must be called with self._lock held."""
@@ -614,153 +268,6 @@ class SttDaemon:
             daemon=True,
         ).start()
         _send_json(conn, {"status": "ok", "state": State.RECORDING.value})
-
-    def _stop_and_transcribe(self, conn: socket.socket) -> None:
-        with self._lock:
-            self._state = State.TRANSCRIBING
-            rt = self._recording_thread
-            self._recording_thread = None
-            parecord_stop_ev = self._parecord_stop_event
-            self._parecord_stop_event = None
-            current_mode = self._current_mode
-            self._current_mode = None
-
-        # Collect WAV bytes from whichever recording path was active
-        if rt is not None:
-            wav_bytes = rt.stop()
-        elif parecord_stop_ev is not None:
-            parecord_stop_ev.set()
-            parecord_thread = self._parecord_thread
-            wav_holder = self._parecord_wav_holder
-            if parecord_thread is not None:
-                parecord_thread.join(timeout=3.0)
-            wav_bytes = wav_holder[0] if wav_holder else b""
-        else:
-            wav_bytes = b""
-
-        # Resolve mode params (mode overrides daemon-level settings)
-        transcribe_language = self.language
-        transcribe_task = "transcribe"
-        transcribe_prompt: str | None = None
-        if current_mode is not None:
-            try:
-                from voicecli.core.config import load_config
-                from voicecli.core.stt_modes import get_mode
-
-                mode_cfg = get_mode(current_mode, load_config())
-                if "language" in mode_cfg:
-                    transcribe_language = mode_cfg["language"]
-                if "task" in mode_cfg:
-                    transcribe_task = mode_cfg["task"]
-                if "prompt" in mode_cfg:
-                    transcribe_prompt = mode_cfg["prompt"]
-            except Exception as e:
-                print(f"[stt] mode resolve error: {e}", file=sys.stderr)
-
-        # Prepend personal vocab to the mode prompt (loaded fresh — no restart needed)
-        try:
-            from voicecli.core.config import load_vocab, vocab_to_prompt
-
-            vocab_fragment = vocab_to_prompt(load_vocab())
-            if vocab_fragment:
-                transcribe_prompt = (
-                    vocab_fragment + " " + transcribe_prompt
-                    if transcribe_prompt
-                    else vocab_fragment
-                )
-        except Exception as e:
-            print(f"[stt] vocab load error: {e}", file=sys.stderr)
-
-        tmp_path = _write_tempfile(wav_bytes)
-        text: str = ""
-        language: str | None = None
-        try:
-            from voicecli.runtime.transcribe import transcribe
-
-            result = transcribe(
-                tmp_path,
-                model=self.model,
-                language=transcribe_language,
-                language_detection_threshold=self.language_detection_threshold,
-                language_detection_segments=self.language_detection_segments,
-                language_fallback=self.language_fallback,
-                task=transcribe_task,
-                initial_prompt=transcribe_prompt,
-            )
-            text = result.text
-            language = result.language
-            print(f"[stt] detected language: {language}", file=sys.stderr)
-        except Exception as e:
-            print(f"[stt] transcription error: {e}", file=sys.stderr)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-        try:
-            write_clipboard(text)
-        except Exception as e:
-            print(f"[stt] clipboard error: {e}", file=sys.stderr)
-
-        if text and self.auto_paste:
-            threading.Thread(target=auto_paste, daemon=True).start()
-
-        _save_recording(wav_bytes, text, language)
-
-        duration_s = wav_duration_s(wav_bytes)
-        append_history(text, language, current_mode, duration_s)
-
-        with self._lock:
-            queued = self._state == State.QUEUED
-            self._state = State.IDLE
-
-        _send_json(
-            conn, {"status": "ok", "state": State.IDLE.value, "text": text, "language": language}
-        )
-
-        if queued:
-            self._start_recording_async()
-
-    def _handle_cancel(self, conn: socket.socket) -> None:
-        with self._lock:
-            state = self._state
-            if state not in (State.RECORDING, State.QUEUED):
-                _send_json(conn, {"status": "ok", "state": State.IDLE.value})
-                return
-            self._state = State.IDLE
-            rt = self._recording_thread
-            self._recording_thread = None
-            stop_ev = self._parecord_stop_event
-            self._parecord_stop_event = None
-
-        if rt is not None:
-            threading.Thread(target=rt.stop, daemon=True).start()
-        if stop_ev is not None:
-            stop_ev.set()
-        _send_json(conn, {"status": "ok", "state": State.IDLE.value})
-
-    def _handle_next_mode(self, conn: socket.socket) -> None:
-        """Cycle to the next available mode and update default_mode."""
-        from voicecli.core.config import _find_config
-        from voicecli.core.stt_modes import load_modes
-
-        cfg_path = _find_config()
-        raw_cfg: dict = {}
-        if cfg_path:
-            import tomllib
-
-            with open(cfg_path, "rb") as f:
-                raw_cfg = tomllib.load(f)
-        modes = load_modes(raw_cfg)
-        mode_names = sorted(modes.keys())
-        current = self._current_mode or self.default_mode
-        if current in mode_names:
-            idx = (mode_names.index(current) + 1) % len(mode_names)
-        else:
-            idx = 0
-        next_mode = mode_names[idx]
-        self.default_mode = next_mode
-        self._current_mode = next_mode if self._state == State.RECORDING else None
-        desc = modes[next_mode].get("description", next_mode)
-        _send_json(conn, {"status": "ok", "mode": next_mode, "description": desc})
 
     def _queue_recording(self, conn: socket.socket) -> None:
         with self._lock:

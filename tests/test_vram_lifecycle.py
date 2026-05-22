@@ -15,6 +15,8 @@ import pytest
 
 pytest.importorskip("torch", reason="torch is opt-in via [stt]/[tts]/[all] extras")
 
+from voicecli.runtime.dictation import handle_transcribe_file
+
 
 class TestVramCleanup:
     def test_calls_gc_collect(self):
@@ -224,7 +226,7 @@ class TestSttOomRetry:
             req = {"action": "transcribe_file", "audio_path": str(audio_path)}
 
             # Act
-            daemon._handle_transcribe_file(fake_conn, req)
+            handle_transcribe_file(daemon, fake_conn, req)
 
         # Assert — exactly 2 transcribe calls (1 OOM + 1 success)
         assert call_count["n"] == 2
@@ -260,7 +262,7 @@ class TestSttOomRetry:
             req = {"action": "transcribe_file", "audio_path": str(audio_path)}
 
             # Act
-            daemon._handle_transcribe_file(fake_conn, req)
+            handle_transcribe_file(daemon, fake_conn, req)
 
         # Assert — daemon sends one final error response after exhausting retries
         assert fake_conn.sendall.call_count >= 1
@@ -298,7 +300,7 @@ class TestSttOomRetry:
             req = {"action": "transcribe_file", "audio_path": str(audio_path)}
 
             # Act
-            daemon._handle_transcribe_file(fake_conn, req)
+            handle_transcribe_file(daemon, fake_conn, req)
 
         # Assert — error returned immediately, no sleep/retry
         assert fake_conn.sendall.call_count >= 1
