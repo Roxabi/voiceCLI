@@ -1,45 +1,61 @@
 repos:
-  - repo: local
-    hooks:
-      - id: lint
-        name: lint
-        entry: uv run ruff check .
-        language: system
-        pass_filenames: false
-      - id: format
-        name: format
-        entry: uv run ruff format --check .
-        language: system
-        pass_filenames: false
-      - id: typecheck
-        name: typecheck
-        entry: uv run pyright
-        language: system
-        pass_filenames: false
-      - id: check-file-length
-        name: Check file length
-        language: script
-        entry: tools/check_file_length.sh
-        pass_filenames: false
-      - id: check-folder-size
-        name: Check folder size
-        language: script
-        entry: tools/check_folder_size.sh
-        pass_filenames: false
-      - id: import-layers
-        name: Import layer contracts
-        language: system
-        entry: uv run lint-imports
-        pass_filenames: false
-        stages: [pre-push]
-      - id: trufflehog
-        name: trufflehog secret scan
-        entry: trufflehog git file://. --only-verified --fail
-        language: system
-        pass_filenames: false
-      - id: license
-        name: license check
-        entry: uv run tools/license_check.py
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-yaml
+  - id: check-toml
+  - id: check-merge-conflict
+  - id: check-added-large-files
+    args: ['--maxkb=500']
+- repo: local
+  hooks:
+    - id: lint
+      name: lint
+      entry: uv run ruff check .
+      language: system
+      pass_filenames: false
+    - id: format
+      name: format
+      entry: uv run ruff format --check .
+      language: system
+      pass_filenames: false
+    - id: typecheck
+      name: typecheck
+      entry: uv run pyright
+      language: system
+      pass_filenames: false
+    - id: check-file-length
+      name: Check file length
+      language: script
+      entry: tools/check_file_length.sh
+      pass_filenames: false
+    - id: check-folder-size
+      name: Check folder size
+      language: script
+      entry: tools/check_folder_size.sh
+      pass_filenames: false
+    - id: check-duplicate-test-basenames
+      name: check-duplicate-test-basenames
+      entry: tools/check_duplicate_test_basenames.sh
+      language: system
+      pass_filenames: false
+    - id: import-layers
+      name: Import layer contracts
+      language: system
+      entry: uv run lint-imports
+      pass_filenames: false
+      stages: [pre-push]
+    - id: trufflehog
+      name: trufflehog secret scan
+      entry: trufflehog git file://. --only-verified --fail
+      language: system
+      pass_filenames: false
+      stages: [pre-push]
+    - id: license
+      name: license check
+      entry: uv run tools/license_check.py
+      language: system
+      pass_filenames: false
+      stages: [pre-push]
