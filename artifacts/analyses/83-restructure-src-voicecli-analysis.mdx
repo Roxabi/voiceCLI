@@ -1,0 +1,185 @@
+---
+title: "Restructure src/voicecli/ — module → layer mapping"
+description: "Map 37 top-level modules to ADR-003 layer-named sub-packages; pick a shape; surface the import-shim + exemption strategy before specing."
+---
+
+## Source
+
+> "`src/voicecli/` has **37 top-level `.py` files** (was 19 at issue creation — folder breach has grown, not shrunk) against a folder-size budget of 12. Restructure into sub-packages along the **layer axis** (ADR-003 primary axis = couche), so the top-level folder drops to ≤ 12 files."
+> — Issue #83
+
+> "**Axe primaire : `Couche`** (cli → api → ports → adapters → engine). Anti-pattern signal: `src/voicecli/**/[^/]*(tts|stt|sts)[^/]*\.py`."
+> — ADR-003
+
+## Problem
+
+The flat top-level mixes layers (cli, runtime, ports, adapters, ui) and modality-tagged files (`stt_client.py`, `stt_daemon.py`, `nats_stt_client.py`, `nats_recorder.py`) in one directory:
+
+- Folder-size gate breached: **37 files** vs budget **12**, with 2 exemption rows (`src/voicecli`, `src/voicecli/nats`) silently pointing to this very issue.
+- 2 file-length exemptions also pointing here (`daemon_protocol.py`, `transcribe.py`).
+- ADR-003 already declared the canonical layer set — but the codebase layout doesn't reflect it: `cli_*` sub-apps, `overlay_*` UI files, `stt_*` clients, and `daemon*` runtime modules all live as flat siblings.
+- `.importlinter` encodes the **target layer order** in prose form (one `voicecli.X | voicecli.Y | …` line per tier) but each module is still imported by its top-level path — moving modules into sub-packages means rewriting these lines AND any code import paths.
+
+The drift signature ADR-003 warns about (modality-prefixed files at sibling positions) is **already present**: `stt_daemon.py`, `stt_client.py`, `stt_modes.py`, `nats_stt_client.py`, `nats_recorder.py` at top level. None get flagged by `axial-adr-review` today because they predate the ADR, but they're the exact pattern the ADR was written to eliminate.
+
+## Outcome
+
+- `src/voicecli/` top-level ≤ 12 files (gate passes without exemption).
+- Every existing module lives in a **layer-named** sub-package (`cli/`, `api/`, `ports/`, `adapters/`, `engines/`, `runtime/`, `ui/`, `core/`, `assets/`) — ¬modality-named.
+- Public API (`voicecli.generate`, `voicecli.clone`, `voicecli.transcribe`, `voicecli.TTSDocument`, `voicecli.Segment`, `voicecli.TranscriptionResult`) remains importable from the same path.
+- `.importlinter` contracts updated to the new layer tree; no new `ignore_imports` introduced.
+- Exemption rows referencing #83 removed (`folder_exemptions.txt:4-5`, `file_exemptions.txt:8-9`).
+- CHANGELOG entry lists every `from voicecli.<module> import …` path that changed (for downstream consumers, esp. `lyra`).
+
+## Appetite
+
+**1 cycle** (one focused PR). Pure restructure — no behavior change. The work is bounded: ~37 files to relocate, imports to rewrite, `.importlinter` tiers to renumber. Tests should remain green throughout because behavior is unchanged.
+
+## Findings — current state
+
+### Layer tiers (from `.importlinter`)
+
+```
+Tier 1 (CLI/UI):  cli, cli_samples, cli_dictate, cli_doctor, cli_nats, nats, tg,
+                  listen, overlay, stt_client, overlay_audio, overlay_draw
+Tier 2 (API):     api
+Tier 3 (Adapters): adapters
+Tier 4 (Engine/Runtime): engine, transcribe, daemon, stt_daemon,
+                          model_registry, daemon_protocol
+Tier 5 (Core):    config, paths, utils, env, models, samples, translate, markdown,
+                  stt_modes, clipboard, history, ui_sounds, engine_caps,
+                  _markdown_directives
+Tier 6 (Types):   markdown_types
+```
+
+### Existing sub-packages
+
+| Dir | Files | Layer role | Action |
+|---|---|---|---|
+| `engines/` | 8 | Engine implementations | ✓ keep |
+| `nats/` | 12 | Transport adapter (TTS+STT) | move under `adapters/nats/` (transport-specific impl) |
+| `ports/` | 4 | Protocols | ✓ keep |
+| `adapters/` | 2 | Port impls + shared base | grow (absorb `nats/`, add daemon-runtime adapters) |
+| `assets/` | 0 | Static (WAV files) | ✓ keep |
+
+### Cross-cutting paths checked
+
+- `deploy/entrypoint.sh` → only `voicecli nats-serve {tts,stt}` — no internal module paths ✓
+- `deploy/quadlet.toml` → no internal paths ✓
+- `plugins/voice-cli/skills/voice/SKILL.md` → only references `voicecli.toml` config, no internal modules ✓
+- `tests/` → 43 test files; **11 import statements** reference top-level modules that will move:
+  - `voicecli.api`, `voicecli.api_chunked`, `voicecli.config`, `voicecli.daemon_protocol`, `voicecli.engine`, `voicecli.env`, `voicecli.markdown`, `voicecli.markdown_types`, `voicecli.overlay`, `voicecli.overlay_draw`, `voicecli.samples`, `voicecli.transcribe`, `voicecli.utils`
+
+### Re-export shim cost
+
+Any module moved out of top-level must be re-exported via the new sub-package's `__init__.py` to keep test imports green **without rewriting tests in this PR**. Two strategies:
+
+1. **Strict (rewrite tests):** update test imports to new paths (`voicecli.core.config` etc.). Pro: zero shim cruft, frame's failure mode avoided. Con: bigger diff; risk of merge conflicts with concurrent test work.
+2. **Shim (re-export from `voicecli/__init__.py`):** keep top-level imports working via `from voicecli.core.config import *` style re-exports at `voicecli/__init__.py`. Pro: smaller diff, downstream consumers (lyra) unaffected. Con: introduces exactly the shim cruft the frame's failure mode warns against (`from voicecli.X import …` still works after the move). **Net assessment:** acceptable iff shims are documented as deprecated + slated for removal in a follow-up; else rejected.
+
+→ **Recommendation:** Strict (rewrite tests in same PR). Tests are the only in-repo consumers of these paths; rewriting them is mechanical (sed-friendly) and matches the frame's success criterion ("no shim cruft after 6 months"). Public API (`voicecli.generate` etc.) is unaffected — those imports route through `voicecli/__init__.py` which keeps its current signature.
+
+## Shapes
+
+### Shape A — Strict 5-layer (ADR-003 minimal)
+
+Move only into the 5 ADR-003 canonical layer names: `cli/`, `api/`, `ports/`, `adapters/`, `engines/`. Everything else (config, utils, daemons, UI, transcribe, etc.) stays flat.
+
+**Trade-offs:**
+- Pro: pure ADR-003 fidelity; no new layer name needs justification.
+- Con: doesn't hit ≤12 — utility + runtime files still flood the top level (~22 remaining). **Fails the gate.**
+- Con: silently picks a winner in the modality-vs-layer fight by leaving `stt_*` flat files unmoved.
+
+**Rough scope:** S (just create 5 dirs, move ~12 obvious files, leave the rest)
+**Rejected:** does not meet the acceptance criterion.
+
+### Shape B — Pragmatic 9-package (ADR-003 + 3 layer-named extensions) — **recommended**
+
+Introduce 3 new layer-named sub-packages on top of the existing 5: `runtime/` (daemon-lifecycle layer), `ui/` (rendering/notify layer, sits above CLI), `core/` (config/utils/types primitives layer). Promote no modality name to a directory.
+
+```
+src/voicecli/
+├── __init__.py          # public API re-exports (unchanged contract)
+├── assets/              # WAV files (existing)
+├── cli/                 # cli, cli_samples, cli_dictate, cli_doctor, cli_nats (5)
+├── api/                 # api, api_chunked, markdown, markdown_types,
+│                        # _markdown_directives, translate, engine_caps (7)
+├── ports/               # synthesis, stt, tts (existing) (4)
+├── adapters/            # synthesis (existing) + nats/ subpackage absorbed (2 + nats/)
+│   └── nats/            # _audio_utils, config, queue_groups, stt_adapter,
+│                        # _stt_runner, tempdir, tts_adapter, _tts_runner,
+│                        # tts_wav_utils, _validate, _validation (12)
+├── engines/             # chatterbox, qwen, voxtral, etc. (8) (existing)
+├── runtime/             # daemon, stt_daemon, model_registry, transcribe,
+│                        # listen, wire_protocol (renamed from daemon_protocol
+│                        # per ADR-003 debt #4) (6)
+├── ui/                  # overlay, overlay_audio, overlay_draw, ui_sounds,
+│                        # stt_client, nats_recorder, clipboard, tg (8)
+└── core/                # config, paths, utils, env, models, samples,
+                          # stt_modes, history (8)
+```
+
+**Top-level count:** `__init__.py` + 9 directories = **10 entries** ✓ (≤12)
+
+**Per-package count:** all ≤12, leaving headroom in every package for one-or-two future additions before the gate would re-fire.
+
+**Modality-axis check:** files like `stt_client.py`, `stt_modes.py`, `stt_daemon.py`, `nats_stt_client.py`, `nats_recorder.py` keep their filenames (renaming them is out of scope and would mask history) but live inside their layer package — the `axial-adr-review` regex `src/voicecli/**/[^/]*(tts|stt|sts)[^/]*\.py` would still match them. **Mitigation:** the ADR's anti-pattern signal is meant to catch *new* drift; an `.axial-allowlist` (or equivalent allow-rule comment) for these pre-existing files is the honest answer — flagging them as known modality-tagged residuals rather than pretending they don't exist. Rename to layer-axis names is a follow-up (`stt_daemon` → `runtime/daemon_stt`, etc.) — out of scope here.
+
+**`daemon_protocol.py` → `wire_protocol.py`:** ADR-003 explicitly calls this out as debt #4. Rename happens in this PR; importlinter `ignore_imports` line collapses.
+
+**`nats/` → `adapters/nats/`:** matches ADR-003 ("NATS adapter dupliqué" example); the existing `nats/` is already a transport-specific adapter cluster. The move is a directory rename plus import-path update.
+
+**Trade-offs:**
+- Pro: hits ≤12; layer-named throughout; collapses 2 ADR-003 debts (daemon_protocol rename, nats placement).
+- Pro: leaves every package under its own budget, gives the gate room to bite again on future drift instead of being one-shot work.
+- Pro: matches the importlinter tier shape — `.importlinter` re-write is mostly substitution.
+- Con: introduces `runtime/`, `ui/`, `core/` — three layer names beyond ADR-003's 5 canonical names. Justification: ADR-003 listed cli/api/ports/adapters/engine as the **primary** axis; auxiliary layers (where utils, config, UI rendering, daemon lifecycle live) are real but un-named in the ADR. Adding them now is consistent with the ADR's spirit (layer axis is primary) without requiring an ADR amendment — but the spec MUST defend this in writing.
+- Con: `engine_caps.py` and `translate.py` live in `api/` (because they're document-model transformations), not in `engines/` (which holds backend impls). The naming overloads slightly. Acceptable iff the spec documents it.
+
+**Rough scope:** M — 37 files moved, ~50 import statements rewritten (code + tests), 1 `.importlinter` rewrite, 1 CHANGELOG entry, 4 exemption rows removed.
+
+### Shape C — Fewer, bigger packages (5 + 2 = 7)
+
+Same axis, but collapse aggressively: merge `runtime/` into `engines/`, `ui/` into `cli/`, and `core/` becomes the catch-all for everything below the layer stack.
+
+```
+cli/ (13), api/ (7), ports/ (4), adapters/ (incl. nats) (14), engines/ (incl. runtime) (14),
+core/ (8), assets/
+```
+
+**Trade-offs:**
+- Pro: 7 sub-packages — closer to ADR-003's named-layer count.
+- Pro: no "ui/" or "runtime/" justification debt — they fold into existing layers semantically.
+- Con: several packages immediately hit or exceed 12 files (`cli/` 13, `adapters/` 14, `engines/` 14). The gate would re-fire on every sub-package, requiring per-package exemptions or further splits — **defers the budget breach instead of solving it**.
+- Con: conflates the runtime (daemon lifecycle) with engine (model inference). They're different concerns even if both are below the API layer; merging blurs ADR-003's layer axis.
+
+**Rough scope:** M — similar effort to B, worse outcome.
+**Rejected:** trades sub-package count for per-package breach.
+
+## Fit Check
+
+| Constraint | A | B | C |
+|---|---|---|---|
+| Folder-size ≤12 at top | ❌ ~22 left flat | ✅ 10 | ✅ 7 |
+| Folder-size ≤12 per sub-package | ✅ | ✅ (max 12 incl `adapters/nats/`) | ❌ 13–14 in 3 packages |
+| Layer-named only (no modality dirs) | ✅ | ✅ | ✅ |
+| Resolves ADR-003 debt #4 (`wire_protocol`) | ❌ | ✅ | ✅ |
+| `.importlinter` re-write tractable | ✅ | ✅ | ✅ |
+| Public API stable | ✅ | ✅ | ✅ |
+| Exemption rows removable | ❌ (still breaches) | ✅ all 4 | ✅ all 4 (but new ones may appear) |
+| Mitigation for pre-existing `stt_*` filenames | n/a | ✅ allowlist + rename follow-up | ✅ allowlist + rename follow-up |
+
+**Recommended:** **Shape B**. Hits all acceptance criteria; collapses 2 ADR-003 debts in the same PR; gives each sub-package post-merge headroom so the gate stays useful instead of being one-shot work.
+
+## Risks + open questions for spec
+
+1. **`axial-adr-review` regex hits:** pre-existing files matching `[^/]*(stt|tts|sts)[^/]*\.py` (e.g. `stt_client.py`, `stt_daemon.py`, `nats_stt_client.py`, `stt_modes.py`, `nats_recorder.py`) will be flagged after the move. **Question for spec:** add an allowlist mechanism (file or regex exception) in the same PR, or accept the noise temporarily and rename in a follow-up issue? Recommendation: allowlist + open follow-up issue for rename.
+2. **`runtime/`, `ui/`, `core/` not in ADR-003:** the spec needs to defend these names as layer-axis extensions, not as new axes. A 2-line note in ADR-003 (status: living) ∨ the spec's own architecture section is sufficient.
+3. **`engine_caps.py` and `translate.py` placement:** these transform the TTS document model — they're API-layer logic, not engine-layer. The spec needs to assert this explicitly (and the importlinter tier should reflect it).
+4. **Test import rewrite:** strict (rewrite ~11 imports in tests) vs shim (`__init__.py` re-export). Recommendation: strict — confirmed in the Findings section.
+5. **CHANGELOG scope:** lyra is the only known external consumer; surfaces moved (`voicecli.config`, `voicecli.engine`, `voicecli.markdown`, `voicecli.transcribe`, etc.) MUST be listed. `voicecli` public API (`voicecli.generate`, `voicecli.clone`, `voicecli.transcribe`) stays.
+6. **PR size:** ~37 file moves + 50 import updates + `.importlinter` rewrite + 4 exemption removals = large diff. Mostly mechanical, but reviewable in chunks. The plan step should slice by sub-package (one slice per layer move) for atomic review even if shipped as one PR.
+
+## Next
+
+Approve this analysis → `/spec --issue 83` writes the acceptance criteria, slices the work by sub-package, and locks in Shape B.
