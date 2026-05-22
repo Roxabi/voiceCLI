@@ -137,10 +137,17 @@ def _strip_hallucinations(text: str) -> str:
 
 
 @dataclass
+class Segment:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass
 class TranscriptionResult:
     text: str
     language: str | None  # detected language code ("en", "fr", ...)
-    segments: list[dict]  # [{start, end, text}, ...]
+    segments: list[Segment]  # [{start, end, text}, ...]
 
 
 def _try_daemon(
@@ -195,10 +202,13 @@ def _try_daemon(
             sock.close()
 
         if resp.get("status") == "ok":
+            raw_segments = resp.get("segments") or []
             return TranscriptionResult(
                 text=resp.get("text", ""),
                 language=resp.get("language"),
-                segments=resp.get("segments", []),
+                segments=[
+                    Segment(start=s["start"], end=s["end"], text=s["text"]) for s in raw_segments
+                ],
             )
     except Exception:
         pass
@@ -289,13 +299,13 @@ def transcribe(
         seg_text = _strip_hallucinations(s.text.strip())
         if not seg_text:
             continue
-        seg_list.append({"start": s.start, "end": s.end, "text": seg_text})
+        seg_list.append(Segment(start=s.start, end=s.end, text=seg_text))
         duration = s.end - s.start
         print(
             f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {seg_text}",
             file=__import__("sys").stderr,
         )
-    full_text = _strip_hallucinations(" ".join(s["text"] for s in seg_list))
+    full_text = _strip_hallucinations(" ".join(s.text for s in seg_list))
     return TranscriptionResult(text=full_text, language=info.language, segments=seg_list)
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,7 +14,7 @@ from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
 from voicecli.adapters.nats._stt_runner import SttRunnerState, run_transcription
-from voicecli.adapters.nats._validation import validate_stt_request
+from voicecli.adapters.nats._validation import _REQUEST_ID_RE
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
 from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 
@@ -21,6 +22,91 @@ from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 # and avoid pulling torch/faster-whisper when only inspecting the adapter (e.g. --help).
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SttRequest:
+    """Typed STT request constructed from NATS payload dict."""
+
+    audio_b64: str
+    request_id: str
+    trace_id: str = ""
+    contract_version: str = ""
+    mime_type: str = ""
+    language: str | None = None
+    language_detection_threshold: float | None = None
+    language_detection_segments: int | None = None
+    language_fallback: str | None = None
+    initial_prompt: str | None = None
+    task: str | None = None
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "SttRequest":
+        """Construct from decoded JSON payload; raise ValueError on type mismatch."""
+        audio_b64 = payload.get("audio_b64")
+        if not isinstance(audio_b64, str) or not audio_b64:
+            raise ValueError("audio_b64 must be a non-empty str")
+
+        request_id = payload.get("request_id", "")
+        if not request_id:
+            raise ValueError("request_id is required")
+
+        language = payload.get("language")
+        if language is not None and not isinstance(language, str):
+            raise ValueError("language must be a str")
+
+        threshold = payload.get("language_detection_threshold")
+        if threshold is not None and not isinstance(threshold, (int, float)):
+            raise ValueError("language_detection_threshold must be int or float")
+
+        segments = payload.get("language_detection_segments")
+        if segments is not None:
+            if isinstance(segments, bool) or not isinstance(segments, int):
+                raise ValueError("language_detection_segments must be an int (not bool)")
+
+        fallback = payload.get("language_fallback")
+        if fallback is not None and not isinstance(fallback, str):
+            raise ValueError("language_fallback must be a str")
+
+        prompt = payload.get("initial_prompt")
+        if prompt is not None and not isinstance(prompt, str):
+            raise ValueError("initial_prompt must be a str")
+
+        task = payload.get("task")
+        if task is not None and task not in ("transcribe", "translate"):
+            raise ValueError("task must be 'transcribe' or 'translate'")
+
+        return cls(
+            audio_b64=audio_b64,
+            request_id=request_id,
+            trace_id=payload.get("trace_id") or "",
+            contract_version=payload.get("contract_version", ""),
+            mime_type=payload.get("mime_type", ""),
+            language=language,
+            language_detection_threshold=float(threshold) if threshold is not None else None,
+            language_detection_segments=segments,
+            language_fallback=fallback,
+            initial_prompt=prompt,
+            task=task,
+        )
+
+    def to_overrides(self) -> dict:
+        """Build kwargs dict for api.transcribe from non-None optional fields."""
+        overrides: dict = {}
+        if self.language is not None:
+            overrides["language"] = self.language
+        if self.language_detection_threshold is not None:
+            overrides["language_detection_threshold"] = self.language_detection_threshold
+        if self.language_detection_segments is not None:
+            overrides["language_detection_segments"] = self.language_detection_segments
+        if self.language_fallback is not None:
+            overrides["language_fallback"] = self.language_fallback
+        if self.initial_prompt is not None:
+            overrides["initial_prompt"] = self.initial_prompt
+        if self.task is not None:
+            overrides["task"] = self.task
+        return overrides
+
 
 SUBJECT = VOICE_SUBJECTS.stt_request
 HEARTBEAT_SUBJECT = VOICE_SUBJECTS.stt_heartbeat
@@ -41,6 +127,7 @@ __all__ = [
     "_MIME_TO_EXT",
     "_duration_from_segments",
     "_ext_from_mime",
+    "SttRequest",
     "SttNatsAdapter",
     "SUBJECT",
     "HEARTBEAT_SUBJECT",
@@ -124,30 +211,42 @@ class SttNatsAdapter(NatsAdapterBase):
             await self.reply(msg, _err_stt(trace_id, "", "malformed_request"))
             return
 
-        outcome = validate_stt_request(payload)
-        if outcome.error_code is not None:
-            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code))
+        try:
+            req = SttRequest.from_payload(payload)
+        except (ValueError, TypeError, KeyError):
+            await self.reply(msg, _err_stt(trace_id, request_id, "malformed_request"))
             return
-        audio_b64 = payload["audio_b64"]  # validated by validate_stt_request to be str
-        overrides = outcome.overrides or {}
+        if not _REQUEST_ID_RE.match(req.request_id):
+            await self.reply(msg, _err_stt(trace_id, req.request_id, "malformed_request"))
+            return
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked()
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(msg, _err_stt(trace_id, request_id, "capacity_exceeded"))
+                await self.reply(msg, _err_stt(trace_id, req.request_id, "capacity_exceeded"))
                 return
             try:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
+                    msg,
+                    payload,
+                    req.request_id,
+                    req.audio_b64,
+                    req.to_overrides(),
+                    trace_id=trace_id,
                 )
             finally:
                 self._sem.release()
         else:
             async with self._sem:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
+                    msg,
+                    payload,
+                    req.request_id,
+                    req.audio_b64,
+                    req.to_overrides(),
+                    trace_id=trace_id,
                 )
 
     async def _run_transcription(

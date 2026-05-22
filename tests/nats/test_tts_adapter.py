@@ -573,6 +573,42 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
 
+    def test_malformed_speed_type(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["speed"] = "fast"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_malformed_chunked_type(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["chunked"] = "yes"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
     def test_engine_env_var_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _require_imports()
         # Arrange

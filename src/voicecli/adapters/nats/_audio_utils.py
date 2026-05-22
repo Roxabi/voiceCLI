@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from voicecli.runtime.transcribe import Segment
+
 log = logging.getLogger(__name__)
 
 # 25 MB base64 → ~18.75 MB decoded audio (~10 min at 8 kHz, ~2 min at 64 kHz).
@@ -27,22 +29,11 @@ _MIME_TO_EXT: dict[str, str] = {
 }
 
 
-def _duration_from_segments(segments: list[dict]) -> float:
-    """End timestamp of the last whisper segment; 0.0 on missing/non-numeric `end`."""
+def _duration_from_segments(segments: list[Segment]) -> float:
+    """End timestamp of the last whisper segment; 0.0 on empty list."""
     if not segments:
         return 0.0
-    last = segments[-1]
-    if "end" not in last:
-        log.warning("segment_missing_end_key", extra={"segments_count": len(segments)})
-        return 0.0
-    try:
-        return float(last["end"])
-    except (TypeError, ValueError):
-        log.warning(
-            "segment_end_not_numeric",
-            extra={"segments_count": len(segments), "end_type": type(last["end"]).__name__},
-        )
-        return 0.0
+    return segments[-1].end
 
 
 def _ext_from_mime(mime_type: str | None) -> str:
