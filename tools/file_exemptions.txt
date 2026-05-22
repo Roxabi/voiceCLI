@@ -3,5 +3,5 @@
 # Each entry MUST reference a tracking issue so the exemption is recoverable.
 src/voicecli/cli.py https://github.com/Roxabi/voiceCLI/issues/80
 src/voicecli/api/api.py https://github.com/Roxabi/voiceCLI/issues/81
-src/voicecli/stt_daemon.py https://github.com/Roxabi/voiceCLI/issues/82
-src/voicecli/daemon_protocol.py https://github.com/Roxabi/voiceCLI/issues/83
+src/voicecli/runtime/stt_daemon.py https://github.com/Roxabi/voiceCLI/issues/82
+src/voicecli/runtime/wire_protocol.py https://github.com/Roxabi/voiceCLI/issues/83

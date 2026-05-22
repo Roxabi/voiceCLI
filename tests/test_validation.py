@@ -225,7 +225,7 @@ class TestCloneValidation:
 
 class TestDaemonSanitizeRequest:
     def test_strips_newlines_from_engine(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen\nevil", "text": "hello"}
         err = _sanitize_request(req)
@@ -233,7 +233,7 @@ class TestDaemonSanitizeRequest:
         assert req["engine"] == "qwenevil"
 
     def test_strips_newlines_from_text(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "line1\nline2"}
         err = _sanitize_request(req)
@@ -241,7 +241,7 @@ class TestDaemonSanitizeRequest:
         assert req["text"] == "line1 line2"
 
     def test_rejects_overlong_engine(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "x" * 65, "text": "hello"}
         err = _sanitize_request(req)
@@ -249,7 +249,7 @@ class TestDaemonSanitizeRequest:
         assert "maximum length" in err
 
     def test_rejects_overlong_text(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "x" * 100_001}
         err = _sanitize_request(req)
@@ -257,7 +257,7 @@ class TestDaemonSanitizeRequest:
         assert "maximum length" in err
 
     def test_rejects_nan_exaggeration(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "exaggeration": float("nan")}
         err = _sanitize_request(req)
@@ -265,7 +265,7 @@ class TestDaemonSanitizeRequest:
         assert "finite" in err
 
     def test_rejects_out_of_range_cfg_weight(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "cfg_weight": 5.0}
         err = _sanitize_request(req)
@@ -273,7 +273,7 @@ class TestDaemonSanitizeRequest:
         assert "between" in err
 
     def test_accepts_valid_request(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {
             "engine": "qwen",
@@ -286,7 +286,7 @@ class TestDaemonSanitizeRequest:
 
     def test_clamps_string_exaggeration(self):
         """Non-numeric exaggeration from JSON should be rejected."""
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "exaggeration": "high"}
         err = _sanitize_request(req)
@@ -294,7 +294,7 @@ class TestDaemonSanitizeRequest:
         assert "must be a number" in err
 
     def test_rejects_negative_segment_gap(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "segment_gap": -100}
         err = _sanitize_request(req)
@@ -302,7 +302,7 @@ class TestDaemonSanitizeRequest:
         assert "between" in err
 
     def test_rejects_too_large_crossfade(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "crossfade": 99999}
         err = _sanitize_request(req)
@@ -310,14 +310,14 @@ class TestDaemonSanitizeRequest:
         assert "between" in err
 
     def test_accepts_valid_segment_gap_and_crossfade(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {"engine": "qwen", "text": "hello", "segment_gap": 200, "crossfade": 50}
         err = _sanitize_request(req)
         assert err is None
 
     def test_sanitizes_segment_strings(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {
             "engine": "qwen",
@@ -330,7 +330,7 @@ class TestDaemonSanitizeRequest:
         assert req["segments"][0]["instruct"] == "loudevil"
 
     def test_rejects_overlong_segment_instruct(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {
             "engine": "qwen",
@@ -342,7 +342,7 @@ class TestDaemonSanitizeRequest:
         assert "segments[0].instruct" in err
 
     def test_rejects_segment_nan_exaggeration(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {
             "engine": "qwen",
@@ -354,7 +354,7 @@ class TestDaemonSanitizeRequest:
         assert "segments[0].exaggeration" in err
 
     def test_rejects_segment_out_of_range_crossfade(self):
-        from voicecli.daemon import _sanitize_request
+        from voicecli.runtime.daemon import _sanitize_request
 
         req = {
             "engine": "qwen",

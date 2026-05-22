@@ -398,7 +398,7 @@ def _wait_for_daemon_socket(timeout: float = _DAEMON_WAIT_SECS) -> bool:
     Prints a single warning on the first poll so the caller knows why it waits.
     Returns True if the socket is available, False if the timeout elapsed.
     """
-    from voicecli.daemon import SOCKET_PATH
+    from voicecli.runtime.daemon import SOCKET_PATH
 
     if SOCKET_PATH.exists():
         return True
@@ -416,7 +416,7 @@ def _wait_for_daemon_socket(timeout: float = _DAEMON_WAIT_SECS) -> bool:
 
 def _try_daemon(request: dict) -> Path | None:
     """Send request to daemon. Returns WAV path on success, None on failure."""
-    from voicecli.daemon import SOCKET_PATH, daemon_request
+    from voicecli.runtime.daemon import SOCKET_PATH, daemon_request
 
     if not SOCKET_PATH.exists():
         return None
@@ -772,7 +772,7 @@ def generate(
 
     # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
     if _skip_daemon:
-        from voicecli.model_registry import model_registry
+        from voicecli.runtime.model_registry import model_registry
 
         eng = model_registry.get(r_engine)
     else:
@@ -945,7 +945,7 @@ def clone(
 
     # Use model_registry for NATS satellite mode (_skip_daemon), else get_engine
     if _skip_daemon:
-        from voicecli.model_registry import model_registry
+        from voicecli.runtime.model_registry import model_registry
 
         eng = model_registry.get(r_engine)
     else:
@@ -1047,8 +1047,8 @@ def transcribe(
         FileNotFoundError: Audio file not found.
         ValueError: Invalid model name.
     """
-    from voicecli.transcribe import TranscriptionResult  # noqa: F811
-    from voicecli.transcribe import transcribe as _transcribe
+    from voicecli.runtime.transcribe import TranscriptionResult  # noqa: F811
+    from voicecli.runtime.transcribe import transcribe as _transcribe
 
     audio_path = Path(audio)
     if not audio_path.exists():
@@ -1102,7 +1102,7 @@ def warmup_model(model: str) -> None:
     Args:
         model: Model name accepted by faster-whisper (e.g. "large-v3-turbo").
     """
-    from voicecli.transcribe import _load_model
+    from voicecli.runtime.transcribe import _load_model
 
     _load_model(model)
 

@@ -170,7 +170,7 @@ def _spawn_overlay(
 
 
 def warmup(model: str) -> None:
-    from voicecli.transcribe import warmup as _warmup
+    from voicecli.runtime.transcribe import warmup as _warmup
 
     _warmup(model)
 
@@ -494,7 +494,7 @@ class SttDaemon:
         import gc
         import time
 
-        from voicecli.transcribe import transcribe
+        from voicecli.runtime.transcribe import transcribe
 
         try:
             import torch
@@ -667,7 +667,7 @@ class SttDaemon:
         text: str = ""
         language: str | None = None
         try:
-            from voicecli.transcribe import transcribe
+            from voicecli.runtime.transcribe import transcribe
 
             result = transcribe(
                 tmp_path,

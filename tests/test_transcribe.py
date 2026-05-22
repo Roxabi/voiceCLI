@@ -36,7 +36,7 @@ def _get_transcribe_mod():
     which shadows the submodule attribute on the voicecli package.  We must
     reach the module through sys.modules to bypass that shadowing.
     """
-    import voicecli.transcribe  # ensure the module is registered  # noqa: F401
+    import voicecli.runtime.transcribe  # ensure the module is registered  # noqa: F401
 
     return sys.modules["voicecli.transcribe"]
 

@@ -75,7 +75,7 @@ class TestModelRegistryCore:
     def test_get_returns_cached_on_second_call(self):
         """Second get() for same engine returns cached instance (no reload)."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
@@ -96,7 +96,7 @@ class TestModelRegistryCore:
     def test_get_raises_for_unknown_engine(self):
         """get() for unknown engine raises ValueError with list."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
@@ -107,7 +107,7 @@ class TestModelRegistryCore:
     def test_loaded_engines_returns_cached_names(self):
         """loaded_engines() returns list of cached engine names."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
@@ -130,7 +130,7 @@ class TestModelRegistryVRAM:
     def test_evict_removes_engine_from_cache(self):
         """evict() removes specified engine from cache."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
@@ -151,7 +151,7 @@ class TestModelRegistryVRAM:
     def test_evict_is_noop_for_uncached_engine(self):
         """evict() for non-cached engine is safe no-op."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
@@ -172,7 +172,7 @@ class TestModelRegistryVRAM:
     def test_ensure_vram_raises_when_cache_empty(self):
         """InsufficientVRAMError raised when cache empty and VRAM insufficient."""
         # Arrange
-        from voicecli.model_registry import InsufficientVRAMError, ModelRegistry
+        from voicecli.runtime.model_registry import InsufficientVRAMError, ModelRegistry
 
         registry = ModelRegistry()
 
@@ -192,7 +192,7 @@ class TestModelRegistryVRAM:
     def test_ensure_vram_evicts_until_sufficient(self):
         """_ensure_vram evicts LRU engines until VRAM sufficient."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine1 = MagicMock()
@@ -228,7 +228,7 @@ class TestModelRegistryThreadSafety:
     def test_concurrent_get_same_engine_loads_once(self):
         """Two concurrent get() for same engine load exactly one model."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         load_count = 0
@@ -267,7 +267,7 @@ class TestModelRegistryThreadSafety:
     def test_concurrent_get_different_engines(self):
         """Concurrent get() for different engines both succeed."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         results = {}
@@ -323,7 +323,7 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_ok_when_sufficient(self):
         """vram_status is 'ok' when > 4GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
@@ -342,7 +342,7 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_constrained_when_low(self):
         """vram_status is 'constrained' when 1-4GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
@@ -360,7 +360,7 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_critical_when_very_low(self):
         """vram_status is 'critical' when < 1GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 

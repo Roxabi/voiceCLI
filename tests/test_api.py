@@ -204,7 +204,7 @@ def test_transcribe_happy_path(tmp_path):
     mock_result = MagicMock()
     mock_result.text = "Hello world"
 
-    with patch("voicecli.transcribe.transcribe", return_value=mock_result):
+    with patch("voicecli.runtime.transcribe.transcribe", return_value=mock_result):
         result = transcribe(str(audio_file))
 
     assert result.text == "Hello world"
@@ -230,7 +230,7 @@ def test_transcribe_writes_output(tmp_path):
     mock_result.text = "Transcribed text"
 
     with (
-        patch("voicecli.transcribe.transcribe", return_value=mock_result),
+        patch("voicecli.runtime.transcribe.transcribe", return_value=mock_result),
     ):
         transcribe(str(audio_file), output=str(out_file), allowed_base=UNRESTRICTED)
 
