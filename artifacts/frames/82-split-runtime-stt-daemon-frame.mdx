@@ -1,0 +1,60 @@
+---
+title: "Split src/voicecli/runtime/stt_daemon.py (784 LOC) into focused modules"
+issue: 82
+status: approved
+tier: F-lite
+date: 2026-05-22
+---
+
+## Problem
+
+`src/voicecli/runtime/stt_daemon.py` is 784 LOC — 2.6x the file-length budget of 300 LOC. The file accumulated responsibility for:
+
+- Socket server bootstrap + accept loop + peer-auth (`SO_PEERCRED`)
+- Request dispatch (ping, status, toggle, cancel, next_mode, transcribe_file)
+- State machine (idle → recording → transcribing → queued)
+- Recording infrastructure (pyaudio path, parecord fallback, WAV framing)
+- Overlay spawning, UI sound triggers, clipboard write
+- Transcription orchestration (vocab prepend, mode resolution, error retry)
+
+Prior partial extractions (#133, #154, #170) already moved clipboard, history, sounds, wire protocol, and standalone listen/transcribe logic to their layer homes. The remaining 784 LOC is still too large and violates ADR-003’s layer-axis decomposition.
+
+## Who
+
+- **Primary:** voiceCLI maintainers editing STT daemon behavior
+- **Secondary:** downstream consumers of the `voicecli stt-serve` socket contract (dictate overlay, NATS toggle clients)
+
+## Constraints
+
+- `voicecli stt-serve` CLI surface must remain unchanged
+- AF_UNIX newline-delimited JSON socket contract must remain binary-compatible
+- No new modality-prefixed file names (`stt_*`) — use layer names (`recording.py`, `handlers.py`)
+- Must pass existing tests; no test rewrites beyond import-path updates
+- File-length gate: ≤ 300 LOC for `stt_daemon.py` after split
+
+## Out of Scope
+
+- Changing the transcription engine (still faster-whisper via `transcribe.py`)
+- Changing the NATS STT satellite (`adapters/nats/stt_adapter.py`)
+- New features (e.g., new actions, new recording modes)
+- TTS daemon split — that debt is tracked separately
+
+## Premise Validity
+
+**Success in 6 months:** `src/voicecli/runtime/stt_daemon.py` ≤ 300 LOC; socket contract (AF_UNIX JSON) unchanged; `voicecli stt-serve` CLI surface unchanged; tests green; file-length exemption removed from `tools/file_exemptions.txt`.
+
+**Failure in 6 months:** File still > 300 LOC after 2 sprint cycles, or socket contract breaks (client-daemon handshake fails), or new modality-prefixed files (`stt_*`) introduced contrary to ADR-003.
+
+**Simplest alternative:** Keep current 784 LOC file, update exemption path post-#170, defer split.
+
+**Why not simplest:** Violates ADR-003 layer axis; every future STT change requires editing a god object; prior TTS split (#133) already proved the model works; 784 LOC blocks other quality-gate cleanups.
+
+## Complexity
+
+**Tier: F-lite** — single domain (runtime layer split), clear boundaries, no new architecture. Partial extractions already proven by prior PRs.
+
+- Files touched: 4–6 (stt_daemon.py split + new modules + tests + exemption)
+- Technical risk: low (code moves, contracts preserved)
+- Architectural impact: single module → 3 focused modules
+- Unknowns: 1 (exact split line for recording vs handler vs bootstrap)
+- Domain breadth: 1 (runtime)
