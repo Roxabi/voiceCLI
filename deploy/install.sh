@@ -79,6 +79,23 @@ fi
 
 run mkdir -p "$QUADLET_DIR"
 run mkdir -p "${HOME}/.cache/huggingface" "${HOME}/.cache/voicecli"
+run mkdir -p "${HOME}/.roxabi/voicecli/env"
+
+# ── Env stubs (S6) ────────────────────────────────────────────────────────────
+for role in stt tts; do
+    env_file="${HOME}/.roxabi/voicecli/env/${role}.env"
+    if [[ ! -f "$env_file" ]]; then
+        run bash -c "cat > '${env_file}'" <<'EOF'
+# voiceCLI satellite env (S6)
+HF_HOME=/home/voicecli/.cache/huggingface
+EOF
+        echo "Created ${env_file}"
+    else
+        echo "Keep ${env_file} (exists)"
+    fi
+done
+
+# ── 3. Copy Quadlet units ─────────────────────────────────────────────────────
 
 for unit in voicecli-stt.container voicecli-tts.container; do
     src="${SCRIPT_DIR}/quadlet/${unit}"

@@ -12,7 +12,6 @@ ContainerName=voicecli-stt
 Network=roxabi.network
 Volume=%h/.cache/huggingface:/home/voicecli/.cache/huggingface
 Volume=%h/.cache/voicecli:/home/voicecli/.cache/voicecli
-Environment=HF_HOME=/home/voicecli/.cache/huggingface
 Exec=stt
 Secret=voicecli-nats-stt,type=mount,target=voicecli-nats-stt.seed,mode=0400,uid=1501,gid=1501
 AddDevice=nvidia.com/gpu=all

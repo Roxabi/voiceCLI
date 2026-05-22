@@ -5,9 +5,11 @@ uid = 1501
 [component.stt]
 container = "voicecli-stt.container"
 required_secrets = ["voicecli-nats-stt"]
+env_file = "~/.roxabi/voicecli/env/stt.env"
 host_roles = ["voice-worker"]
 
 [component.tts]
 container = "voicecli-tts.container"
 required_secrets = ["voicecli-nats-tts"]
+env_file = "~/.roxabi/voicecli/env/tts.env"
 host_roles = ["voice-worker"]
