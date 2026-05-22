@@ -6,11 +6,11 @@ import soundfile as sf
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voicecli.engine import TTSEngine, cuda_guard
-from voicecli.models import VOXTRAL_MODEL, warn_if_first_download
+from voicecli.engines.engine import TTSEngine, cuda_guard
+from voicecli.core.models import VOXTRAL_MODEL, warn_if_first_download
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 # Voxtral outputs 48 kHz after post-processing
 _SAMPLE_RATE = 48000
@@ -33,7 +33,7 @@ def _resolve_voice(voice: str | None, language: str | None) -> str:
     if voice:
         return voice
     if language:
-        from voicecli.utils import resolve_language
+        from voicecli.core.utils import resolve_language
 
         lang_code = resolve_language(language)
         prefix = _LANG_VOICE_PREFIX.get(lang_code)
@@ -52,7 +52,7 @@ class VoxtralEngine(TTSEngine):
 
     def _model_dir(self) -> Path:
         """Resolve HuggingFace cache path for Voxtral weights."""
-        from voicecli.models import _model_cache_path
+        from voicecli.core.models import _model_cache_path
 
         cache = _model_cache_path(VOXTRAL_MODEL)
         snapshots = cache / "snapshots"
@@ -118,7 +118,7 @@ class VoxtralEngine(TTSEngine):
         cfg_alpha: float = 1.2,
     ) -> np.ndarray:
         """Generate audio per-segment with per-segment voice/language overrides."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         all_wavs: list[np.ndarray] = []
         for i, seg in enumerate(segments):

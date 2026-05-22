@@ -16,8 +16,8 @@ sys.modules["gi.repository.GLib"] = MagicMock()
 sys.modules["gi.repository.Gtk"] = MagicMock()
 sys.modules["gi.repository.GtkLayerShell"] = MagicMock()
 
-from voicecli.overlay import _resolve_test_mode  # noqa: E402
-from voicecli.overlay_draw import hotkey_badge  # noqa: E402
+from voicecli.ui.overlay import _resolve_test_mode  # noqa: E402
+from voicecli.ui.overlay_draw import hotkey_badge  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

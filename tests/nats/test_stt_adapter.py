@@ -23,16 +23,16 @@ import pytest
 
 try:
     from voicecli.api import ParamValidationError
-    from voicecli.nats.config import DEFAULT_MODEL
-    from voicecli.nats.queue_groups import STT_WORKERS
-    from voicecli.nats.stt_adapter import (
+    from voicecli.adapters.nats.config import DEFAULT_MODEL
+    from voicecli.adapters.nats.queue_groups import STT_WORKERS
+    from voicecli.adapters.nats.stt_adapter import (
         HEARTBEAT_SUBJECT,
         SUBJECT,
         SttNatsAdapter,
         _duration_from_segments,
         _ext_from_mime,
     )
-    from voicecli.transcribe import TranscriptionResult
+    from voicecli.runtime.transcribe import TranscriptionResult
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
@@ -50,7 +50,9 @@ except ImportError as _e:
 
 def _require_imports() -> None:
     if _IMPORT_ERROR is not None:
-        pytest.fail(f"voicecli.nats.stt_adapter not yet implemented (RED): {_IMPORT_ERROR}")
+        pytest.fail(
+            f"voicecli.adapters.nats.stt_adapter not yet implemented (RED): {_IMPORT_ERROR}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +154,7 @@ def _patch_scoped_path(tmp_path: Path):
         p = tmp_path / f"{request_id}.{ext}"
         return p
 
-    return patch("voicecli.nats.stt_adapter.scoped_path", side_effect=_impl)
+    return patch("voicecli.adapters.nats.stt_adapter.scoped_path", side_effect=_impl)
 
 
 # ---------------------------------------------------------------------------
@@ -554,7 +556,7 @@ class TestSttNatsAdapter:
                 side_effect=_slow_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.stt_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     msg1, msg2 = MockMsg(), MockMsg()
@@ -751,7 +753,7 @@ class TestSttNatsAdapter:
                 side_effect=_gated_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.stt_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))

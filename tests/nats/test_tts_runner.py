@@ -1,4 +1,4 @@
-"""Unit tests for voicecli.nats._tts_runner (issue #147)."""
+"""Unit tests for voicecli.adapters.nats._tts_runner (issue #147)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from _fakes import SyncExecutor
 
-from voicecli.nats._tts_runner import (
+from voicecli.adapters.nats._tts_runner import (
     NAMED_KWARGS,
     OPTIONAL_KWARGS,
     TtsRunnerState,

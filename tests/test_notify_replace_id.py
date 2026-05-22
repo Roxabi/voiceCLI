@@ -18,7 +18,7 @@ import textwrap
 def test_replace_id_is_stable_across_processes() -> None:
     script = textwrap.dedent(
         """
-        from voicecli.stt_client import _NOTIFY_REPLACE_ID
+        from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID
         print(_NOTIFY_REPLACE_ID)
         """
     )
@@ -35,7 +35,7 @@ def test_replace_id_is_stable_across_processes() -> None:
 
 
 def test_replace_id_is_a_positive_integer_string() -> None:
-    from voicecli.stt_client import _NOTIFY_REPLACE_ID
+    from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID
 
     # notify-send -r requires an integer.
     n = int(_NOTIFY_REPLACE_ID)

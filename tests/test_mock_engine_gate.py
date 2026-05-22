@@ -10,16 +10,10 @@ These tests verify:
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 
-import voicecli.transcribe  # noqa: F401 — registers submodule in sys.modules
-from voicecli.engine import available_engines, get_engine
-
-# voicecli/__init__.py overwrites the `voicecli.transcribe` attribute with the
-# `transcribe` function, so resolve the actual module via sys.modules.
-_transcribe_mod = sys.modules["voicecli.transcribe"]
+import voicecli.runtime.transcribe as _transcribe_mod
+from voicecli.engines.engine import available_engines, get_engine
 
 
 def test_registry_excludes_mock_when_env_unset(monkeypatch):

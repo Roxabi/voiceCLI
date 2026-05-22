@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 Entries are generated automatically by `/promote` and committed to staging before the promotion PR.
 
+## [Unreleased]
+
+### Changed
+- Restructure `src/voicecli/` into layer sub-packages: `api/`, `cli/`, `core/`, `engines/`, `runtime/`, `ui/`, `adapters/`, `ports/` (issue #170)
+- `from voicecli.X import ...` paths updated — old top-level module paths no longer valid; use sub-package paths
+- `voicecli.daemon_protocol` renamed to `voicecli.runtime.wire_protocol`
+- `voicecli.ui_sounds` renamed to `voicecli.ui.sounds`
+- `voicecli.transcribe` submodule alias preserved for backward compat (lyra)
+- Public API (`from voicecli import generate, clone, transcribe, ...`) unchanged
+
 ## [0.3.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v0.3.0) (2026-04-27)
 
 ### Features

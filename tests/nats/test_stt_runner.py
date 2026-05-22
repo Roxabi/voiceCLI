@@ -1,4 +1,4 @@
-"""Unit tests for voicecli.nats._stt_runner (issue #147).
+"""Unit tests for voicecli.adapters.nats._stt_runner (issue #147).
 
 Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
 on-disk audio file. The runner writes the decoded bytes via scoped_path but
@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from _fakes import SyncExecutor
 
-from voicecli.nats._stt_runner import (
+from voicecli.adapters.nats._stt_runner import (
     SttRunnerState,
     run_transcription,
 )
@@ -43,7 +43,7 @@ class _FakeApi:
         if self._transcribe_behavior is not None:
             return self._transcribe_behavior(out_path, model=model, **overrides)
         # Default: minimal TranscriptionResult-shaped object
-        from voicecli.transcribe import TranscriptionResult
+        from voicecli.runtime.transcribe import TranscriptionResult
 
         return TranscriptionResult(text="hello", language="en", segments=[{"end": 1.5}])
 
@@ -112,7 +112,7 @@ def patch_scoped_path(tmp_path, monkeypatch):
     def _impl(request_id: str, ext: str) -> Path:
         return tmp_path / f"{request_id}.{ext}"
 
-    monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _impl)
+    monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _impl)
     return _impl
 
 
@@ -234,7 +234,7 @@ class TestRunTranscriptionHappyPath:
             observed_ext.append(ext)
             return tmp_path / f"{request_id}.{ext}"
 
-        monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _capturing_scoped_path)
+        monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _capturing_scoped_path)
 
         state = _make_state()
 
@@ -379,7 +379,7 @@ class TestRunTranscriptionModelLoad:
 
         def _fake_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             transcribe_calls.append(model)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="x", language="en", segments=[])
 
@@ -531,7 +531,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="bonjour", language="fr", segments=[{"end": 1.0}])
 
@@ -567,7 +567,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="hi", language="en", segments=[{"end": 0.5}])
 
@@ -604,7 +604,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="hallo", language="de", segments=[{"end": 2.0}])
 

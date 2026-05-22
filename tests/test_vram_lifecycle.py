@@ -1,7 +1,7 @@
 """Tests for _vram_cleanup in voicecli.daemon (issue #36, V1).
 
 Strategy:
-- Import the real _vram_cleanup function from voicecli.daemon.
+- Import the real _vram_cleanup function from voicecli.runtime.daemon.
 - Mock gc.collect and torch.cuda using unittest.mock.patch to avoid GPU
   dependency and to assert call behaviour.
 - Three scenarios: CUDA available, CUDA unavailable, torch import failure.
@@ -20,7 +20,7 @@ class TestVramCleanup:
     def test_calls_gc_collect(self):
         """_vram_cleanup always calls gc.collect()."""
         # Arrange
-        from voicecli.daemon import _vram_cleanup
+        from voicecli.runtime.daemon import _vram_cleanup
 
         mock_cuda = MagicMock()
         mock_cuda.is_available.return_value = True
@@ -38,7 +38,7 @@ class TestVramCleanup:
     def test_calls_empty_cache_when_cuda_available(self):
         """_vram_cleanup calls torch.cuda.empty_cache() when CUDA is available."""
         # Arrange
-        from voicecli.daemon import _vram_cleanup
+        from voicecli.runtime.daemon import _vram_cleanup
 
         mock_cuda = MagicMock()
         mock_cuda.is_available.return_value = True
@@ -57,7 +57,7 @@ class TestVramCleanup:
     def test_does_not_call_empty_cache_when_cuda_unavailable(self):
         """_vram_cleanup skips torch.cuda.empty_cache() when CUDA is unavailable."""
         # Arrange
-        from voicecli.daemon import _vram_cleanup
+        from voicecli.runtime.daemon import _vram_cleanup
 
         mock_cuda = MagicMock()
         mock_cuda.is_available.return_value = False
@@ -76,7 +76,7 @@ class TestVramCleanup:
     def test_does_not_crash_when_torch_unavailable(self):
         """_vram_cleanup does not raise if torch cannot be imported."""
         # Arrange
-        from voicecli.daemon import _vram_cleanup
+        from voicecli.runtime.daemon import _vram_cleanup
 
         # Simulate ImportError by making the import block raise
         import builtins
@@ -98,7 +98,7 @@ class TestVramCleanup:
     def test_does_not_crash_when_torch_raises_on_empty_cache(self):
         """_vram_cleanup suppresses exceptions raised by torch.cuda.empty_cache()."""
         # Arrange
-        from voicecli.daemon import _vram_cleanup
+        from voicecli.runtime.daemon import _vram_cleanup
 
         mock_cuda = MagicMock()
         mock_cuda.is_available.return_value = True
@@ -121,7 +121,7 @@ class TestSttLazyWarmup:
     def test_serve_does_not_call_warmup(self, tmp_path):
         """serve() should not eagerly call warmup() — model loads on first request."""
         # Arrange
-        from voicecli.stt_daemon import SttDaemon
+        from voicecli.runtime.stt_daemon import SttDaemon
 
         sock_path = tmp_path / "stt-lazy.sock"
         daemon = SttDaemon(socket_path=sock_path)
@@ -135,8 +135,8 @@ class TestSttLazyWarmup:
                 raise KeyboardInterrupt("break out of serve() for test")
 
         with (
-            patch("voicecli.stt_daemon.warmup") as mock_warmup,
-            patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.runtime.stt_daemon.warmup") as mock_warmup,
+            patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=False),
             patch("socket.socket", _BreakOnListen),
         ):
             # Act — serve() must exit cleanly via the KeyboardInterrupt path
@@ -170,7 +170,7 @@ class TestSttOomRetry:
         """Return a minimal (SttDaemon, audio_path, fake_conn) tuple for unit tests."""
         from unittest.mock import MagicMock
 
-        from voicecli.stt_daemon import SttDaemon
+        from voicecli.runtime.stt_daemon import SttDaemon
 
         audio_path = tmp_path / "audio.wav"
         audio_path.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt ")  # minimal WAV-ish header
@@ -214,8 +214,8 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
-            patch("voicecli.transcribe.transcribe", side_effect=_transcribe_side_effect),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe.transcribe", side_effect=_transcribe_side_effect),
             patch("time.sleep"),
             patch("gc.collect"),
             patch("torch.cuda", mock_cuda),
@@ -250,8 +250,8 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
-            patch("voicecli.transcribe.transcribe", side_effect=_always_oom),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe.transcribe", side_effect=_always_oom),
             patch("time.sleep") as mock_sleep,
             patch("gc.collect"),
             patch("torch.cuda", mock_cuda),
@@ -285,9 +285,9 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
             patch(
-                "voicecli.transcribe.transcribe",
+                "voicecli.runtime.transcribe.transcribe",
                 side_effect=ValueError("Unknown model 'bad'"),
             ),
             patch("time.sleep") as mock_sleep,

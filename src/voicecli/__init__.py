@@ -1,13 +1,28 @@
 """VoiceCLI — Unified voice generation CLI and library."""
 
-__version__ = "0.2.1"
+import sys as _sys
 
-# Import submodule-level types first (this registers voicecli.transcribe as a submodule)
-from voicecli.markdown import Segment, TTSDocument
-from voicecli.transcribe import TranscriptionResult
+# Import submodule-level types first
+from voicecli.api.markdown_types import Segment, TTSDocument
+from voicecli.runtime.transcribe import TranscriptionResult
 
-# Import API functions last — the `transcribe` function overwrites the submodule attribute
-from voicecli.api import (
+# Backward-compat shim: external consumers (e.g. lyra) may do:
+#   from voicecli.transcribe import TranscriptionResult
+# `voicecli.transcribe` no longer exists as a top-level module after the
+# runtime/ restructure.  Register the runtime module under the old name so
+# those imports keep working without changes on the caller side.
+# Consumer: lyra/voicecli_client.py (from voicecli.transcribe import TranscriptionResult)
+# Removal: safe once lyra updates its import to voicecli.runtime.transcribe
+# Tracking: #170 follow-up
+import voicecli.runtime.transcribe as _runtime_transcribe  # noqa: E402
+
+_sys.modules.setdefault("voicecli.transcribe", _runtime_transcribe)
+
+# INVARIANT: sys.modules shim above must be registered before this import runs.
+# `from voicecli.api import transcribe` overwrites the `voicecli.transcribe` attribute
+# with the callable, but sys.modules["voicecli.transcribe"] stays as the module so
+# `from voicecli.transcribe import X` keeps working. Do not move imports above the shim.
+from voicecli.api import (  # noqa: E402
     TTSResult,
     clone,
     clone_async,
@@ -18,6 +33,8 @@ from voicecli.api import (
     transcribe,
     transcribe_async,
 )
+
+__version__ = "0.2.1"
 
 __all__ = [
     "TTSResult",

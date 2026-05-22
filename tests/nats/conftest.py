@@ -38,7 +38,7 @@ def _isolate_nats_env_from_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
     ``[nats]`` section see the "missing NATS_URL" path silently skipped and
     the test ends up actually trying to connect to NATS.
     """
-    monkeypatch.setattr("voicecli.config.apply_nats_env_from_config", lambda: None)
+    monkeypatch.setattr("voicecli.core.config.apply_nats_env_from_config", lambda: None)
 
 
 @pytest.fixture(autouse=True)

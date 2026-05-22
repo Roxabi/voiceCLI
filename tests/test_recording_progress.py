@@ -12,7 +12,7 @@ import threading
 import time
 from unittest.mock import patch
 
-from voicecli import nats_recorder
+from voicecli.ui import nats_recorder
 
 
 def test_progress_loop_emits_elapsed_seconds(monkeypatch) -> None:
@@ -26,7 +26,7 @@ def test_progress_loop_emits_elapsed_seconds(monkeypatch) -> None:
     def fake_notify(body: str, timeout: int = 3000) -> None:
         captured.append(body)
 
-    with patch("voicecli.stt_client.notify", side_effect=fake_notify):
+    with patch("voicecli.ui.stt_client.notify", side_effect=fake_notify):
         t = threading.Thread(
             target=nats_recorder._progress_notify_loop,
             args=(stop_event, started),
@@ -56,7 +56,7 @@ def test_progress_loop_exits_immediately_when_already_stopped(monkeypatch) -> No
     def fake_notify(body: str, timeout: int = 3000) -> None:
         captured.append(body)
 
-    with patch("voicecli.stt_client.notify", side_effect=fake_notify):
+    with patch("voicecli.ui.stt_client.notify", side_effect=fake_notify):
         t = threading.Thread(
             target=nats_recorder._progress_notify_loop,
             args=(stop_event, started),

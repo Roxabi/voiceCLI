@@ -46,7 +46,7 @@ class TestLocalSynthesisAdapterGenerate:
         adapter = LocalSynthesisAdapter(registry)
         out = Path("/tmp/out.wav")
 
-        with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
+        with patch("voicecli.engines.engine.QWEN_ENGINES", {"qwen"}):
             adapter.generate("qwen", "hello", None, out, fast=True)
 
         engine.set_small_mode.assert_called_once()
@@ -58,7 +58,7 @@ class TestLocalSynthesisAdapterGenerate:
         adapter = LocalSynthesisAdapter(registry)
         out = Path("/tmp/out.wav")
 
-        with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
+        with patch("voicecli.engines.engine.QWEN_ENGINES", {"qwen"}):
             adapter.generate("qwen", "hello", None, out, fast=True)
 
         call_kwargs = engine.generate.call_args[1]
@@ -71,7 +71,7 @@ class TestLocalSynthesisAdapterGenerate:
         adapter = LocalSynthesisAdapter(registry)
         out = Path("/tmp/out.wav")
 
-        with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
+        with patch("voicecli.engines.engine.QWEN_ENGINES", {"qwen"}):
             adapter.generate("chatterbox", "hello", None, out, fast=True)
 
         assert not hasattr(engine, "_small") or engine._small is not True
@@ -100,7 +100,7 @@ class TestLocalSynthesisAdapterClone:
         ref = Path("/tmp/ref.wav")
         out = Path("/tmp/out.wav")
 
-        with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
+        with patch("voicecli.engines.engine.QWEN_ENGINES", {"qwen"}):
             adapter.clone("qwen", "hello", ref, out, fast=True)
 
         engine.set_small_mode.assert_called_once()
@@ -113,7 +113,7 @@ class TestLocalSynthesisAdapterClone:
         ref = Path("/tmp/ref.wav")
         out = Path("/tmp/out.wav")
 
-        with patch("voicecli.engine.QWEN_ENGINES", {"qwen"}):
+        with patch("voicecli.engines.engine.QWEN_ENGINES", {"qwen"}):
             adapter.clone("qwen", "hello", ref, out, fast=True)
 
         call_kwargs = engine.clone.call_args[1]
