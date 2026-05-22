@@ -1,0 +1,51 @@
+---
+title: "chore(refactor): split src/voicecli/api.py (1107 LOC) into focused modules"
+issue: 81
+status: approved
+tier: F-lite
+date: 2026-05-22
+---
+
+## Problem
+
+`src/voicecli/api/api.py` currently stands at **850 LOC** (down from 1107 at issue creation). It remains the largest file in the `api/` layer, well above the 300-line file-length gate defined in `.claude/stack.yml`. PR #170 restructured `src/voicecli/` into layer sub-packages (`api/`, `adapters/`, `ports/`, `runtime/`), but the core `api.py` inside the `api/` package was left intact and still carries the weight of three distinct pipelines (`generate`, `clone`, `transcribe`) plus config backfill, path helpers, and engine-glue logic.
+
+The oversized module makes the api layer harder to navigate, test, and extend. Every change to `generate()` requires reading through `clone()` and `transcribe()` logic. The file-length exemption in `tools/file_exemptions.txt` masks the debt rather than resolving it.
+
+## Who
+
+- **Primary:** voiceCLI maintainers — anyone touching the api layer (new engine wiring, config changes, pipeline tweaks).
+- **Secondary:** Downstream consumers — `lyra-stack` and `roxabi-vault` pin `voicecli` via GitHub tag and import `generate`, `clone`, `transcribe` from the top-level package.
+
+## Constraints
+
+- **Layer-axis split only** (per ADR-003 primary axis = couche). Modules must map to a single layer (`api`, `ports`, `adapters`, `engine`, `cli`). Modality-based splits (`api_tts.py`, `api_stt.py`) are explicitly forbidden.
+- **Public API stability:** `from voicecli import generate, clone, transcribe` must remain importable with unchanged signatures.
+- **File-length gate:** Each resulting module ≤ 300 LOC.
+- **Test coverage:** Existing tests must stay green; no regressions.
+
+## Out of Scope
+
+- Modality-based file splits (e.g. `tts_*.py`, `stt_*.py`).
+- Changes to engine internals (`engines/qwen.py`, `engines/chatterbox.py`, etc.).
+- CLI command restructuring (`cli.py` already split in PR #133).
+- New features or API surface changes.
+
+## Premise Validity
+
+**Success in 6 months:** `api/api.py` ≤ 300 LOC (or thin re-export shim), all extracted modules ≤ 300 LOC, tests green, `from voicecli import generate, clone, transcribe` works unchanged, exemption row removed from `file_exemptions.txt`.
+
+**Failure in 6 months:** `api/api.py` still > 300 LOC after 2 sprint cycles, OR downstream consumers report import breakage, OR CI file-length gate continues to fire.
+
+**Simplest alternative:** Bump `tools/file_exemptions.txt` limit for `api/api.py` from 300 to 850 LOC.
+**Why not simplest:** Would leave core architectural debt unaddressed; future refactors in the api layer become harder as the file grows.
+
+## Complexity
+
+**Tier: F-lite** — single domain (api layer), clear scope, no new patterns or unknowns. PR #170 already established the package structure; this issue completes the extraction within the existing layer boundary.
+
+- Files touched: 4–6 (extract 3–4 modules from `api.py` + `__init__.py` re-exports + `file_exemptions.txt`)
+- Technical risk: low — pure move-and-re-export refactor
+- Architectural impact: single module → 3–4 modules within same layer
+- Unknowns: none — boundaries already identified in issue body
+- Domain breadth: 1 (api layer)
