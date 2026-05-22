@@ -37,10 +37,10 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.cli._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
-            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts", "--engine", "qwen-fast"])
 
@@ -63,10 +63,10 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.cli._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
-            patch("voicecli.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts", "--engine", "qwen-fast"])
 

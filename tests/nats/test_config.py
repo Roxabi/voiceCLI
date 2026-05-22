@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    from voicecli.nats.config import (
+    from voicecli.adapters.nats.config import (
         DEFAULT_ENGINE,
         DEFAULT_MODEL,
         _resolve_engine,
@@ -30,7 +30,7 @@ except ImportError as _e:
 
 def _require_imports() -> None:
     if _IMPORT_ERROR is not None:
-        pytest.fail(f"voicecli.nats.config not yet implemented (RED): {_IMPORT_ERROR}")
+        pytest.fail(f"voicecli.adapters.nats.config not yet implemented (RED): {_IMPORT_ERROR}")
 
 
 class TestResolveEngine:

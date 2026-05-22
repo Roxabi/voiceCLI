@@ -22,9 +22,9 @@ import pytest
 # ---------------------------------------------------------------------------
 
 try:
-    from voicecli.nats.config import DEFAULT_MODEL
-    from voicecli.nats.queue_groups import STT_WORKERS
-    from voicecli.nats.stt_adapter import (
+    from voicecli.adapters.nats.config import DEFAULT_MODEL
+    from voicecli.adapters.nats.queue_groups import STT_WORKERS
+    from voicecli.adapters.nats.stt_adapter import (
         HEARTBEAT_SUBJECT,
         SUBJECT,
         SttNatsAdapter,
@@ -48,7 +48,9 @@ except ImportError as _e:
 
 def _require_imports() -> None:
     if _IMPORT_ERROR is not None:
-        pytest.fail(f"voicecli.nats.stt_adapter not yet implemented (RED): {_IMPORT_ERROR}")
+        pytest.fail(
+            f"voicecli.adapters.nats.stt_adapter not yet implemented (RED): {_IMPORT_ERROR}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -126,11 +128,11 @@ def _patch_transcribe(mock_result: "TranscriptionResult"):
     # The deferred `from voicecli import api` inside _run_transcription binds
     # `api` on the stt_adapter module namespace.  We force that binding here
     # so patch.object can reach it.
-    import voicecli.nats.stt_adapter as _mod
+    import voicecli.adapters.nats.stt_adapter as _mod
     import voicecli.api as _api  # noqa: F401 — materialises the attribute
 
     _mod.api = _api  # type: ignore[attr-defined]
-    return patch("voicecli.nats.stt_adapter.api.transcribe", return_value=mock_result)
+    return patch("voicecli.adapters.nats.stt_adapter.api.transcribe", return_value=mock_result)
 
 
 def _patch_scoped_path(tmp_path: Path):
@@ -140,7 +142,7 @@ def _patch_scoped_path(tmp_path: Path):
         p = tmp_path / f"{request_id}.{ext}"
         return p
 
-    return patch("voicecli.nats.stt_adapter.scoped_path", side_effect=_impl)
+    return patch("voicecli.adapters.nats.stt_adapter.scoped_path", side_effect=_impl)
 
 
 # ---------------------------------------------------------------------------
@@ -304,13 +306,13 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-boom")
 
-        import voicecli.nats.stt_adapter as _mod
+        import voicecli.adapters.nats.stt_adapter as _mod
         import voicecli.api as _api  # noqa: F401
 
         _mod.api = _api  # type: ignore[attr-defined]
 
         with patch(
-            "voicecli.nats.stt_adapter.api.transcribe",
+            "voicecli.adapters.nats.stt_adapter.api.transcribe",
             side_effect=RuntimeError("model OOM"),
         ):
             with _patch_scoped_path(tmp_path):
@@ -436,13 +438,13 @@ class TestSttNatsAdapter:
         payload2 = _valid_payload(request_id="req-no-overrides")
         # payload2 has NO override fields
 
-        import voicecli.nats.stt_adapter as _mod
+        import voicecli.adapters.nats.stt_adapter as _mod
         import voicecli.api as _api  # noqa: F401
 
         _mod.api = _api  # type: ignore[attr-defined]
 
         with patch(
-            "voicecli.nats.stt_adapter.api.transcribe",
+            "voicecli.adapters.nats.stt_adapter.api.transcribe",
             return_value=_fake_result(),
         ) as mock_transcribe:
             with _patch_scoped_path(tmp_path):
@@ -523,18 +525,18 @@ class TestSttNatsAdapter:
 
         adapter = _make_adapter(max_concurrent=1)
 
-        import voicecli.nats.stt_adapter as _mod
+        import voicecli.adapters.nats.stt_adapter as _mod
         import voicecli.api as _api  # noqa: F401
 
         _mod.api = _api  # type: ignore[attr-defined]
 
         async def _run() -> None:
             with patch(
-                "voicecli.nats.stt_adapter.api.transcribe",
+                "voicecli.adapters.nats.stt_adapter.api.transcribe",
                 side_effect=_slow_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.stt_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     msg1, msg2 = MockMsg(), MockMsg()
@@ -612,7 +614,7 @@ class TestSttNatsAdapter:
             return _fake_result()
 
         import voicecli.api as _api  # noqa: F401
-        import voicecli.nats.stt_adapter as _mod
+        import voicecli.adapters.nats.stt_adapter as _mod
 
         _mod.api = _api  # type: ignore[attr-defined]
 
@@ -626,7 +628,9 @@ class TestSttNatsAdapter:
             return result
 
         with (
-            patch("voicecli.nats.stt_adapter.api.transcribe", side_effect=_sniff_transcribe),
+            patch(
+                "voicecli.adapters.nats.stt_adapter.api.transcribe", side_effect=_sniff_transcribe
+            ),
             patch.object(Path, "write_bytes", _write_bytes_leak),
             _patch_scoped_path(tmp_path),
         ):
@@ -670,13 +674,13 @@ class TestSttNatsAdapter:
         payload = _valid_payload(request_id=request_id)
         temp_file = tmp_path / f"{request_id}.wav"
 
-        import voicecli.nats.stt_adapter as _mod
+        import voicecli.adapters.nats.stt_adapter as _mod
         import voicecli.api as _api  # noqa: F401
 
         _mod.api = _api  # type: ignore[attr-defined]
 
         with patch(
-            "voicecli.nats.stt_adapter.api.transcribe",
+            "voicecli.adapters.nats.stt_adapter.api.transcribe",
             side_effect=RuntimeError("kaboom"),
         ):
             with _patch_scoped_path(tmp_path):
@@ -736,17 +740,17 @@ class TestSttNatsAdapter:
                     segments=[{"start": 0.0, "end": 1.5, "text": "ok"}],
                 )
 
-            import voicecli.nats.stt_adapter as _mod
+            import voicecli.adapters.nats.stt_adapter as _mod
             import voicecli.api as _api  # noqa: F401
 
             _mod.api = _api  # type: ignore[attr-defined]
 
             with patch(
-                "voicecli.nats.stt_adapter.api.transcribe",
+                "voicecli.adapters.nats.stt_adapter.api.transcribe",
                 side_effect=_gated_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.stt_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))

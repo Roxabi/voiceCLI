@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from voicecli.nats.tempdir import cleanup, scoped_path
+from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 
 
 class TestScopedPath:
@@ -47,7 +47,7 @@ class TestScopedPathSecurity:
     def test_path_traversal_raises_value_error(
         self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
     ) -> None:
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root"):
@@ -56,7 +56,7 @@ class TestScopedPathSecurity:
     def test_dotdot_request_id_raises_value_error(
         self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
     ) -> None:
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root"):
@@ -71,7 +71,7 @@ class TestScopedPathSecurity:
         but scoped_path is the last line of defense and should reject absolute
         paths directly (joinpath with an absolute component replaces the base).
         """
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root"):
@@ -87,7 +87,7 @@ class TestScopedPathSecurity:
         ``embedded null character``. Pinning the message means a future
         refactor that silently strips the null byte would fail loudly.
         """
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         monkeypatch.setattr(tempdir_mod, "TEMP_ROOT", tmp_path / "voicecli-nats")
         with pytest.raises(ValueError, match="escapes temp root.*null byte"):
@@ -128,7 +128,7 @@ class TestTempRootMode:
         import os
         import stat
 
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         # Arrange — redirect TEMP_ROOT to an isolated tmp_path subdir that does NOT
         # yet exist, so scoped_path's mkdir actually runs
@@ -153,7 +153,7 @@ class TestTempRootMode:
         import os
         import stat
 
-        import voicecli.nats.tempdir as tempdir_mod
+        import voicecli.adapters.nats.tempdir as tempdir_mod
 
         # Arrange — pre-create the sandbox with world-readable perms. The
         # explicit chmod after mkdir is required because other tests in this

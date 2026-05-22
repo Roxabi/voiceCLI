@@ -14,9 +14,9 @@ from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
 from roxabi_nats._validate import validate_nats_token
-from voicecli.nats.queue_groups import TTS_WORKERS
-from voicecli.nats.tempdir import cleanup, scoped_path
-from voicecli.nats.tts_wav_utils import (
+from voicecli.adapters.nats.queue_groups import TTS_WORKERS
+from voicecli.adapters.nats.tempdir import cleanup, scoped_path
+from voicecli.adapters.nats.tts_wav_utils import (
     cleanup_chunks,
     collect_chunked_output,
     concat_wav_chunks,

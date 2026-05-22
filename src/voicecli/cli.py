@@ -1361,8 +1361,8 @@ def nats_serve_tts(
     import os
 
     from voicecli.config import load_nats_config
-    from voicecli.nats.config import _resolve_engine
-    from voicecli.nats.tts_adapter import TtsNatsAdapter
+    from voicecli.adapters.nats.config import _resolve_engine
+    from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.tts")
@@ -1434,8 +1434,8 @@ def nats_serve_stt(
     import logging
     import os
 
-    from voicecli.nats.config import _resolve_model
-    from voicecli.nats.stt_adapter import SttNatsAdapter
+    from voicecli.adapters.nats.config import _resolve_model
+    from voicecli.adapters.nats.stt_adapter import SttNatsAdapter
 
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("voicecli.nats-serve.stt")
