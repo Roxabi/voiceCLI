@@ -118,10 +118,10 @@ def handle_toggle(daemon: "SttDaemon", conn, mode: str | None = None) -> None:
     if state == State.IDLE:
         daemon._start_recording(conn, mode=mode)
     elif state == State.RECORDING:
-        # stop_and_transcribe blocks until transcription is done, then sends
-        # the response via conn.  The caller (_handle) must NOT close conn
-        # afterwards — stop_and_transcribe takes ownership.
-        stop_and_transcribe(daemon, conn)
+        # _stop_and_transcribe blocks until transcription is done, then sends
+        # the response via conn.  conn lifecycle remains managed by _handle's
+        # finally block.
+        _stop_and_transcribe(daemon, conn)
     elif state == State.TRANSCRIBING:
         daemon._queue_recording(conn)
     elif state == State.QUEUED:
@@ -168,14 +168,16 @@ def handle_next_mode(daemon: "SttDaemon", conn) -> None:
         idx = (mode_names.index(current) + 1) % len(mode_names)
     else:
         idx = 0
+    from voicecli.runtime.stt_daemon import State
+
     next_mode = mode_names[idx]
     daemon.default_mode = next_mode
-    daemon._current_mode = next_mode if daemon._state.value == "recording" else None
+    daemon._current_mode = next_mode if daemon._state == State.RECORDING else None
     desc = modes[next_mode].get("description", next_mode)
     _send_json(conn, {"status": "ok", "mode": next_mode, "description": desc})
 
 
-def stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
+def _stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
     from voicecli.runtime.stt_daemon import State
 
     with daemon._lock:

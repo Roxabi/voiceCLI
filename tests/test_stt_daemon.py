@@ -64,7 +64,7 @@ def daemon_send(tmp_path):
         patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
         patch("voicecli.ui.clipboard.write_clipboard", mock_write_clipboard),
         patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
-        # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
+        # dictation._stop_and_transcribe() imports transcribe via a deferred
         # `from voicecli.runtime.transcribe import transcribe` inside the function body.
         # Patching voicecli.transcribe.transcribe intercepts this import at call
         # time.  S4 tests use monkeypatch.setattr(transcribe_mod, "transcribe", …)

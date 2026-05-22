@@ -27,6 +27,15 @@ from voicecli.runtime.recording import (
     _probe_pyaudio,
     _record_parecord,
 )
+from voicecli.runtime.dictation import (
+    handle_cancel,
+    handle_next_mode,
+    handle_ping,
+    handle_status,
+    handle_toggle,
+    handle_transcribe_file,
+    handle_unknown,
+)
 
 MAX_MSG = 65536
 
@@ -190,16 +199,6 @@ class SttDaemon:
         except Exception:
             pass  # SO_PEERCRED unavailable (non-Linux) — skip check
         try:
-            from voicecli.runtime.dictation import (
-                handle_cancel,
-                handle_next_mode,
-                handle_ping,
-                handle_status,
-                handle_toggle,
-                handle_transcribe_file,
-                handle_unknown,
-            )
-
             req = _recv_json(conn)
             action = req.get("action")
             mode = req.get("mode") or None
