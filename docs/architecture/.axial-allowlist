@@ -1,0 +1,11 @@
+# Pre-existing modality-tagged filenames — accepted as historical residuals
+# matching the axial-adr-review anti-pattern regex
+# `src/voicecli/**/[^/]*(tts|stt|sts)[^/]*\.py`.
+# Rename to layer-axis names (e.g. `stt_daemon` → `daemon_stt`) tracked in issue #166.
+#
+# Format: one path per line, relative to repo root.
+src/voicecli/runtime/stt_daemon.py
+src/voicecli/core/stt_modes.py
+src/voicecli/ui/stt_client.py
+src/voicecli/adapters/nats/stt_adapter.py
+src/voicecli/adapters/nats/tts_adapter.py

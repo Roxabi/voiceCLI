@@ -9,35 +9,44 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.adapters.nats | voicecli.ui.tg | voicecli.runtime.listen | voicecli.ui.overlay
+    voicecli.cli
     voicecli.api
-    voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry
+    voicecli.ui
+    voicecli.adapters
+    voicecli.runtime
+    voicecli.engines
+    voicecli.ports
     voicecli.core
 ignore_imports =
-    # Transitional: voicecli.api.translate imports voicecli.core.utils for shared utilities — api → core cross-tier (top-down)
-    voicecli.api.translate -> voicecli.core.utils
-    # Transitional: engines import voicecli.api.markdown for Segment type — upward coupling pending Segment move to core in T6
+    # Tracked: engines import voicecli.api.markdown for Segment type — upward coupling.
+    # Fix: move Segment to voicecli.core. See #168.
     voicecli.engines.chatterbox -> voicecli.api.markdown
     voicecli.engines.chatterbox_turbo -> voicecli.api.markdown
     voicecli.engines.qwen -> voicecli.api.markdown
     voicecli.engines.qwen_fast -> voicecli.api.markdown
     voicecli.engines.voxtral -> voicecli.api.markdown
-    # Transitional: wire_protocol imports voicecli.api.markdown for Segment type — same upward coupling, resolved when Segment moves to core in T6
+    # Tracked: wire_protocol imports voicecli.api.markdown for Segment type. See #168.
     voicecli.runtime.wire_protocol -> voicecli.api.markdown
-    # Transitional: voicecli.cli imports voicecli.adapters.nats adapters inline for NATS subcommands — needs extraction to adapter layer
-    voicecli.cli -> voicecli.adapters.nats.tts_adapter
-    voicecli.cli -> voicecli.adapters.nats.config
-    voicecli.cli -> voicecli.adapters.nats.stt_adapter
-    # Transitional: voicecli.cli imports voicecli.runtime.listen for recording subcommand — needs extraction to adapter layer
-    voicecli.cli -> voicecli.runtime.listen
-    # Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-059)
-    voicecli.runtime.daemon -> voicecli.engines.engine
-    # Transitional: wire_protocol directly loads engines — covered by the same SynthesisPort ADR-059 wiring work as daemon
-    voicecli.runtime.wire_protocol -> voicecli.engines.engine
-    # Transitional: voicecli.runtime.stt_daemon imports voicecli.runtime.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-059)
-    voicecli.runtime.stt_daemon -> voicecli.runtime.transcribe
-    # Transitional: voicecli.runtime.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
-    voicecli.runtime.model_registry -> voicecli.engines.engine
-    # Transitional: voicecli.runtime.stt_daemon imports voicecli.ui.clipboard and voicecli.ui.sounds — cross-tier (runtime → ui); coupling pre-existed T5, resolved in T8 restructure
-    voicecli.runtime.stt_daemon -> voicecli.ui.clipboard
+    # Tracked: adapters import voicecli.api directly — should go via voicecli.ports. See #168.
+    voicecli.adapters.nats.tts_adapter -> voicecli.api
+    voicecli.adapters.nats.stt_adapter -> voicecli.api
+    # Tracked: stt_daemon plays sounds and copies to clipboard via ui layer. See #168.
     voicecli.runtime.stt_daemon -> voicecli.ui.sounds
+    voicecli.runtime.stt_daemon -> voicecli.ui.clipboard
+    # Tracked: ports.stt imports runtime.transcribe directly instead of via port abstraction. See #168.
+    voicecli.ports.stt -> voicecli.runtime.transcribe
+
+[importlinter:contract:api-no-direct-infra]
+name = api must not import runtime daemon or model_registry directly
+type = forbidden
+source_modules = voicecli.api
+forbidden_modules =
+    voicecli.runtime.daemon
+    voicecli.runtime.stt_daemon
+    voicecli.runtime.model_registry
+allow_indirect_imports = True
+ignore_imports =
+    # Tracked: api.api calls runtime.daemon socket for Qwen requests. See #168.
+    voicecli.api.api -> voicecli.runtime.daemon
+    # Tracked: api.api calls runtime.model_registry for VRAM management. See #168.
+    voicecli.api.api -> voicecli.runtime.model_registry

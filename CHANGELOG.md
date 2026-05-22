@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Entries are generated automatically by `/promote` and committed to staging before the promotion PR.
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING (internal layout):** Restructured `src/voicecli/` from 37 flat top-level
+  modules into 9 layer-named sub-packages (`cli/`, `api/`, `ui/`, `adapters/`,
+  `runtime/`, `engines/`, `ports/`, `core/`, `assets/`). Public API
+  (`from voicecli import generate, clone, transcribe, ...`) unchanged. Internal
+  callers importing from old top-level paths (e.g. `from voicecli.daemon import X`)
+  must update to the new layered paths (`from voicecli.runtime.daemon import X`).
+  `voicecli.transcribe` retained as a submodule alias for legacy callers. See #83.
+- Renamed `voicecli.daemon_protocol` → `voicecli.runtime.wire_protocol`.
+
 ## [0.3.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v0.3.0) (2026-04-27)
 
 ### Features

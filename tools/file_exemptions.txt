@@ -4,4 +4,4 @@
 src/voicecli/cli/main.py https://github.com/Roxabi/voiceCLI/issues/80
 src/voicecli/api/api.py https://github.com/Roxabi/voiceCLI/issues/81
 src/voicecli/runtime/stt_daemon.py https://github.com/Roxabi/voiceCLI/issues/82
-src/voicecli/runtime/wire_protocol.py https://github.com/Roxabi/voiceCLI/issues/83
+src/voicecli/runtime/wire_protocol.py https://github.com/Roxabi/voiceCLI/issues/167
