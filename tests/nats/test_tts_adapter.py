@@ -140,7 +140,8 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{request_id}.{ext}"
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
                 "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
@@ -173,7 +174,8 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{rid}.{ext}"
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
                 "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
@@ -193,7 +195,8 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(engine="ghost-engine")
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -214,7 +217,7 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{rid}.{ext}"
 
         with patch(
-            "voicecli.engine._get_registry",
+            "voicecli.engines.engine._get_registry",
             return_value={"mock": _stub_engine_factory(tmp_path, raises=RuntimeError("model OOM"))},
         ):
             with patch(
@@ -239,7 +242,8 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{rid}.{ext}"
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
                 "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
@@ -260,7 +264,8 @@ class TestTtsNatsAdapter:
         payload = {"text": "Hello", "engine": "mock"}
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -304,7 +309,8 @@ class TestTtsNatsAdapter:
                 adapter._sem.release()  # type: ignore[attr-defined]
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(_run())
 
@@ -388,7 +394,8 @@ class TestTtsNatsAdapter:
             return tmp_path / f"{rid}.{ext}"
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
                 "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
@@ -414,7 +421,7 @@ class TestTtsNatsAdapter:
             return p
 
         with patch(
-            "voicecli.engine._get_registry",
+            "voicecli.engines.engine._get_registry",
             return_value={"mock": _stub_engine_factory(tmp_path, raises=RuntimeError("kaboom"))},
         ):
             with patch(
@@ -478,7 +485,7 @@ class TestTtsNatsAdapter:
             adapter._nc.publish = _counting_publish  # type: ignore[union-attr, method-assign]
 
             with patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path, gate=gate)},
             ):
                 with patch(
@@ -513,7 +520,8 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(request_id="../escape")
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -531,7 +539,8 @@ class TestTtsNatsAdapter:
         payload = {"contract_version": "1", "request_id": "req-notext", "engine": "mock"}
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -554,7 +563,8 @@ class TestTtsNatsAdapter:
         }
 
         with patch(
-            "voicecli.engine._get_registry", return_value={"mock": _stub_engine_factory(tmp_path)}
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -590,7 +600,7 @@ class TestTtsNatsAdapter:
         with (
             patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
         ):
@@ -613,7 +623,7 @@ class TestTtsNatsAdapter:
         with (
             patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
         ):
@@ -636,7 +646,7 @@ class TestTtsNatsAdapter:
         with (
             patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
         ):
@@ -664,7 +674,7 @@ class TestTtsNatsAdapter:
         with (
             patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
         ):
@@ -688,7 +698,7 @@ class TestTtsNatsAdapter:
                 "voicecli.adapters.nats.tts_adapter._engine_available", return_value=False
             ) as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
         ):
@@ -717,7 +727,7 @@ class TestTtsNatsAdapter:
                 "voicecli.adapters.nats.tts_adapter._engine_available", return_value=True
             ) as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
             patch(
@@ -753,7 +763,7 @@ class TestTtsNatsAdapter:
                 "voicecli.adapters.nats.tts_adapter._engine_available", return_value=True
             ) as mock_avail,
             patch(
-                "voicecli.engine._get_registry",
+                "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
             patch(

@@ -240,7 +240,7 @@ async def _run_tts(payload: dict) -> bytes:
     msg = _FakeMsg()
     _setup_adapter(adapter, msg)
 
-    with patch("voicecli.engine._get_registry", return_value={"mock": object()}):
+    with patch("voicecli.engines.engine._get_registry", return_value={"mock": object()}):
         await adapter.handle(msg, payload)
 
     assert msg._published, "No reply published by TTS adapter"

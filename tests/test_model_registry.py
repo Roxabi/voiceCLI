@@ -19,7 +19,7 @@ class TestConfigLoading:
         # Arrange
         from voicecli.core.config import load_nats_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_nats_config()
@@ -60,7 +60,7 @@ class TestConfigLoading:
         # Arrange
         from voicecli.core.config import load_tts_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_tts_config()
@@ -81,7 +81,7 @@ class TestModelRegistryCore:
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -113,7 +113,7 @@ class TestModelRegistryCore:
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -136,7 +136,7 @@ class TestModelRegistryVRAM:
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -157,7 +157,7 @@ class TestModelRegistryVRAM:
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -177,7 +177,7 @@ class TestModelRegistryVRAM:
         registry = ModelRegistry()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=False),
             patch.object(
                 registry, "vram_free_mb", return_value=1000
@@ -199,7 +199,7 @@ class TestModelRegistryVRAM:
         mock_engine2 = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram") as mock_has_vram,
             patch.object(
                 registry, "vram_free_mb", return_value=1000
@@ -243,7 +243,7 @@ class TestModelRegistryThreadSafety:
 
         # Mock VRAM check to always return sufficient
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": make_engine}
@@ -273,7 +273,7 @@ class TestModelRegistryThreadSafety:
         results = {}
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {

@@ -135,8 +135,8 @@ class TestSttLazyWarmup:
                 raise KeyboardInterrupt("break out of serve() for test")
 
         with (
-            patch("voicecli.stt_daemon.warmup") as mock_warmup,
-            patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.runtime.stt_daemon.warmup") as mock_warmup,
+            patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=False),
             patch("socket.socket", _BreakOnListen),
         ):
             # Act — serve() must exit cleanly via the KeyboardInterrupt path
@@ -214,8 +214,8 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
-            patch("voicecli.transcribe.transcribe", side_effect=_transcribe_side_effect),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe.transcribe", side_effect=_transcribe_side_effect),
             patch("time.sleep"),
             patch("gc.collect"),
             patch("torch.cuda", mock_cuda),
@@ -250,8 +250,8 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
-            patch("voicecli.transcribe.transcribe", side_effect=_always_oom),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe.transcribe", side_effect=_always_oom),
             patch("time.sleep") as mock_sleep,
             patch("gc.collect"),
             patch("torch.cuda", mock_cuda),
@@ -285,9 +285,9 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
             patch(
-                "voicecli.transcribe.transcribe",
+                "voicecli.runtime.transcribe.transcribe",
                 side_effect=ValueError("Unknown model 'bad'"),
             ),
             patch("time.sleep") as mock_sleep,

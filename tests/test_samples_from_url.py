@@ -17,8 +17,8 @@ def samples_env(tmp_path, monkeypatch):
     """Set up a temporary samples directory and return (samples_dir, fake_run_factory)."""
     samples_dir = tmp_path / "samples"
     samples_dir.mkdir()
-    monkeypatch.setattr("voicecli.samples.SAMPLES_DIR", samples_dir)
-    monkeypatch.setattr("voicecli.samples.ACTIVE_FILE", samples_dir / ".active")
+    monkeypatch.setattr("voicecli.core.samples.SAMPLES_DIR", samples_dir)
+    monkeypatch.setattr("voicecli.core.samples.ACTIVE_FILE", samples_dir / ".active")
 
     def make_fake_run(*, also_write_dest: bool = False):
         """Return a fake subprocess.run that simulates yt-dlp creating a file."""
@@ -44,18 +44,18 @@ def samples_env(tmp_path, monkeypatch):
 class TestCheckTool:
     def test_found(self):
         # Arrange / Act / Assert
-        with patch("voicecli.samples.shutil.which", return_value="/usr/bin/git"):
+        with patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/git"):
             _check_tool("git")  # should not raise
 
     def test_not_found_yt_dlp(self):
         # Arrange / Act / Assert
-        with patch("voicecli.samples.shutil.which", return_value=None):
+        with patch("voicecli.core.samples.shutil.which", return_value=None):
             with pytest.raises(RuntimeError, match="yt-dlp.*not found"):
                 _check_tool("yt-dlp")
 
     def test_not_found_ffmpeg(self):
         # Arrange / Act / Assert
-        with patch("voicecli.samples.shutil.which", return_value=None):
+        with patch("voicecli.core.samples.shutil.which", return_value=None):
             with pytest.raises(RuntimeError, match="ffmpeg.*not found"):
                 _check_tool("ffmpeg")
 
@@ -64,8 +64,8 @@ class TestCheckTool:
 
 
 class TestFromUrl:
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_downloads_extracts_and_normalizes(self, _mock_which, mock_run, samples_env):
         # Arrange
         samples_dir, make_fake_run = samples_env
@@ -93,13 +93,13 @@ class TestFromUrl:
         assert ff_args[t_idx + 1] == "20.0"
         assert "24000" in ff_args
 
-    @patch("voicecli.samples.shutil.which", return_value=None)
+    @patch("voicecli.core.samples.shutil.which", return_value=None)
     def test_missing_yt_dlp(self, _mock_which):
         # Act / Assert
         with pytest.raises(RuntimeError, match="yt-dlp"):
             from_url("https://youtube.com/watch?v=test", "sample")
 
-    @patch("voicecli.samples.shutil.which")
+    @patch("voicecli.core.samples.shutil.which")
     def test_missing_ffmpeg_only(self, mock_which):
         # Arrange — yt-dlp found, ffmpeg not
         mock_which.side_effect = lambda name: "/usr/bin/yt-dlp" if name == "yt-dlp" else None
@@ -108,8 +108,8 @@ class TestFromUrl:
         with pytest.raises(RuntimeError, match="ffmpeg.*not found"):
             from_url("https://youtube.com/watch?v=test", "sample")
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_appends_wav_extension(self, _mock_which, mock_run, samples_env):
         # Arrange
         _samples_dir, make_fake_run = samples_env
@@ -121,8 +121,8 @@ class TestFromUrl:
         # Assert
         assert dest.name == "no_ext.wav"
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_no_output_from_ytdlp_raises(self, _mock_which, mock_run, samples_env):
         # Arrange — yt-dlp runs but creates no file
         mock_run.return_value = None
@@ -131,8 +131,8 @@ class TestFromUrl:
         with pytest.raises(RuntimeError, match="did not produce"):
             from_url("https://example.com/video", "sample")
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_ytdlp_failure_raises_runtime_error(self, _mock_which, mock_run, samples_env):
         # Arrange
         mock_run.side_effect = subprocess.CalledProcessError(1, "yt-dlp")
@@ -141,8 +141,8 @@ class TestFromUrl:
         with pytest.raises(RuntimeError, match="yt-dlp failed"):
             from_url("https://example.com/video", "sample")
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_ffmpeg_failure_raises_runtime_error(self, _mock_which, mock_run, samples_env):
         # Arrange — yt-dlp succeeds, ffmpeg fails
         _samples_dir, make_fake_run = samples_env
@@ -177,8 +177,8 @@ class TestFromUrl:
         with pytest.raises(ValueError, match="Only http/https"):
             from_url("file:///etc/passwd", "sample")
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_path_traversal_stripped(self, _mock_which, mock_run, samples_env):
         # Arrange
         samples_dir, make_fake_run = samples_env
@@ -191,8 +191,8 @@ class TestFromUrl:
         assert dest.parent == samples_dir
         assert dest.name == "evil.wav"
 
-    @patch("voicecli.samples.subprocess.run")
-    @patch("voicecli.samples.shutil.which", return_value="/usr/bin/ok")
+    @patch("voicecli.core.samples.subprocess.run")
+    @patch("voicecli.core.samples.shutil.which", return_value="/usr/bin/ok")
     def test_uses_default_start_and_duration(self, _mock_which, mock_run, samples_env):
         # Arrange
         _samples_dir, make_fake_run = samples_env
@@ -222,7 +222,7 @@ class TestSamplesFromUrlCommand:
         runner = CliRunner()
         fake_dest = Path("TTS/samples/myvoice.wav")
 
-        with patch("voicecli.samples.from_url", return_value=fake_dest) as mock_from_url:
+        with patch("voicecli.core.samples.from_url", return_value=fake_dest) as mock_from_url:
             # Act
             result = runner.invoke(app, ["samples", "from-url", "https://yt.com/v", "myvoice"])
 
@@ -243,8 +243,8 @@ class TestSamplesFromUrlCommand:
         fake_dest = Path("TTS/samples/myvoice.wav")
 
         with (
-            patch("voicecli.samples.from_url", return_value=fake_dest),
-            patch("voicecli.samples.set_active") as mock_set_active,
+            patch("voicecli.core.samples.from_url", return_value=fake_dest),
+            patch("voicecli.core.samples.set_active") as mock_set_active,
         ):
             # Act
             result = runner.invoke(
@@ -266,8 +266,8 @@ class TestSamplesFromUrlCommand:
         fake_dest = Path("TTS/samples/myvoice.wav")
 
         with (
-            patch("voicecli.samples.from_url", return_value=fake_dest),
-            patch("voicecli.samples.set_active") as mock_set_active,
+            patch("voicecli.core.samples.from_url", return_value=fake_dest),
+            patch("voicecli.core.samples.set_active") as mock_set_active,
         ):
             # Act
             result = runner.invoke(app, ["samples", "from-url", "https://yt.com/v", "myvoice"])
@@ -284,7 +284,7 @@ class TestSamplesFromUrlCommand:
         # Arrange
         runner = CliRunner()
 
-        with patch("voicecli.samples.from_url", side_effect=RuntimeError("yt-dlp not found")):
+        with patch("voicecli.core.samples.from_url", side_effect=RuntimeError("yt-dlp not found")):
             # Act
             result = runner.invoke(app, ["samples", "from-url", "https://yt.com/v", "myvoice"])
 
@@ -299,7 +299,9 @@ class TestSamplesFromUrlCommand:
         # Arrange
         runner = CliRunner()
 
-        with patch("voicecli.samples.from_url", side_effect=ValueError("Only http/https URLs")):
+        with patch(
+            "voicecli.core.samples.from_url", side_effect=ValueError("Only http/https URLs")
+        ):
             # Act
             result = runner.invoke(app, ["samples", "from-url", "file:///etc/passwd", "evil"])
 
@@ -315,7 +317,7 @@ class TestSamplesFromUrlCommand:
         runner = CliRunner()
         fake_dest = Path("TTS/samples/myvoice.wav")
 
-        with patch("voicecli.samples.from_url", return_value=fake_dest) as mock_from_url:
+        with patch("voicecli.core.samples.from_url", return_value=fake_dest) as mock_from_url:
             # Act
             result = runner.invoke(
                 app,

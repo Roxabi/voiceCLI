@@ -478,7 +478,7 @@ class TestLoadSttConfig:
         """Returns default hotkey dict when no voicecli.toml is found."""
         from voicecli.core.config import load_stt_config
 
-        with patch("voicecli.config._find_config", return_value=None):
+        with patch("voicecli.core.config._find_config", return_value=None):
             result = load_stt_config()
 
         assert result == {
@@ -543,7 +543,7 @@ class TestLoadSttConfig:
         toml_file = tmp_path / "custom.toml"
         toml_file.write_text('[stt]\nhotkey = "ctrl+space"\n')
 
-        with patch("voicecli.config._find_config") as mock_find:
+        with patch("voicecli.core.config._find_config") as mock_find:
             result = load_stt_config(config=toml_file)
 
         # _find_config should NOT be called when config= is provided
@@ -724,7 +724,7 @@ class TestDictateCLI:
         """dictate --listen → hotkey_loop called with hotkey from config and paste=False."""
         with (
             patch(
-                "voicecli.config.load_stt_config",
+                "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "alt+space"},
             ),
             patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,
@@ -740,7 +740,7 @@ class TestDictateCLI:
         """dictate --listen --paste → hotkey_loop called with paste=True."""
         with (
             patch(
-                "voicecli.config.load_stt_config",
+                "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "ctrl+shift+d"},
             ),
             patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,

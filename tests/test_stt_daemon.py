@@ -62,18 +62,18 @@ def daemon_send(tmp_path):
     mock_warmup = MagicMock()
 
     with (
-        patch("voicecli.stt_daemon._probe_pyaudio", return_value=True),
-        patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
-        patch("voicecli.stt_daemon.play_ui_sound", mock_play_ui_sound),
-        patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
-        patch("voicecli.stt_daemon.write_clipboard", mock_write_clipboard),
-        patch("voicecli.stt_daemon.warmup", mock_warmup),
+        patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=True),
+        patch("voicecli.runtime.stt_daemon.RecordingThread", mock_recording_thread_cls),
+        patch("voicecli.runtime.stt_daemon.play_ui_sound", mock_play_ui_sound),
+        patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
+        patch("voicecli.runtime.stt_daemon.write_clipboard", mock_write_clipboard),
+        patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
         # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
         # `from voicecli.runtime.transcribe import transcribe` inside the function body.
         # Patching voicecli.transcribe.transcribe intercepts this import at call
         # time.  S4 tests use monkeypatch.setattr(transcribe_mod, "transcribe", …)
         # which targets the same module attribute — both paths are consistent.
-        patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
+        patch("voicecli.runtime.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
     ):
         from voicecli.runtime.stt_daemon import SttDaemon, SOCKET_PATH as _DEFAULT_SOCKET_PATH
 
@@ -172,7 +172,7 @@ class TestRecordingAndChimes:
         overlay_called = threading.Event()
         mock_spawn.side_effect = lambda *a, **kw: overlay_called.set()
         # Arrange / Act
-        with patch("voicecli.stt_daemon._spawn_overlay", mock_spawn):
+        with patch("voicecli.runtime.stt_daemon._spawn_overlay", mock_spawn):
             resp = send("toggle")
         # Assert response
         assert resp["status"] == "ok"
@@ -254,7 +254,7 @@ class TestTranscriptionAndClipboard:
         created_paths: list[Path] = []
 
         # Wrap _write_tempfile to capture the path it creates.
-        import voicecli.stt_daemon as stt_mod
+        import voicecli.runtime.stt_daemon as stt_mod
 
         original_write_tempfile = stt_mod._write_tempfile
 
@@ -279,7 +279,7 @@ class TestTranscriptionAndClipboard:
         """Tempfile is deleted even when transcribe() raises an exception."""
         send, _, _ = daemon_send
 
-        import voicecli.stt_daemon as stt_mod
+        import voicecli.runtime.stt_daemon as stt_mod
         import sys
 
         transcribe_mod = sys.modules["voicecli.transcribe"]
@@ -318,7 +318,7 @@ class TestTranscriptionAndClipboard:
         # The fixture patches write_clipboard as a MagicMock no-op; monkeypatch
         # overlays that with a raising lambda for this test only.
         monkeypatch.setattr(
-            "voicecli.stt_daemon.write_clipboard",
+            "voicecli.runtime.stt_daemon.write_clipboard",
             lambda text: (_ for _ in ()).throw(OSError("no display")),
         )
         send("toggle")  # N3: start recording
@@ -475,7 +475,7 @@ class TestQueueSupport:
 
         # Cleanup: stop the auto-started recording
         # Use a new non-blocking transcribe for cleanup
-        import voicecli.stt_daemon as stt_mod
+        import voicecli.runtime.stt_daemon as stt_mod
 
         monkeypatch.setattr(transcribe_mod, "transcribe", lambda *a, **kw: _MOCK_TRANSCRIPTION)
         send("toggle")  # N4 on the auto-started recording
@@ -507,14 +507,14 @@ class TestPaRecordFallback:
         mock_warmup = MagicMock()
 
         with (
-            patch("voicecli.stt_daemon._probe_pyaudio", return_value=False),
-            patch("voicecli.stt_daemon._record_parecord", mock_record_parecord),
-            patch("voicecli.stt_daemon.RecordingThread", mock_recording_thread_cls),
-            patch("voicecli.stt_daemon.play_ui_sound", MagicMock()),
-            patch("voicecli.stt_daemon._spawn_overlay", MagicMock()),
-            patch("voicecli.stt_daemon.write_clipboard", mock_write_clipboard),
-            patch("voicecli.stt_daemon.warmup", mock_warmup),
-            patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
+            patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.runtime.stt_daemon._record_parecord", mock_record_parecord),
+            patch("voicecli.runtime.stt_daemon.RecordingThread", mock_recording_thread_cls),
+            patch("voicecli.runtime.stt_daemon.play_ui_sound", MagicMock()),
+            patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
+            patch("voicecli.runtime.stt_daemon.write_clipboard", mock_write_clipboard),
+            patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
+            patch("voicecli.runtime.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
         ):
             from voicecli.runtime.stt_daemon import SttDaemon
 

@@ -14,6 +14,10 @@ from voicecli.runtime.transcribe import TranscriptionResult
 import voicecli.runtime.transcribe as _runtime_transcribe  # noqa: E402
 
 _sys.modules.setdefault("voicecli.transcribe", _runtime_transcribe)
+# Expose the runtime module as `voicecli.transcribe` so that both
+# `import voicecli.transcribe` and `from voicecli import transcribe` return
+# the module (not the api function), satisfying SC-6.
+transcribe = _runtime_transcribe
 
 # Import API functions last.
 from voicecli.api import (  # noqa: E402
@@ -24,7 +28,6 @@ from voicecli.api import (  # noqa: E402
     generate_async,
     list_engines,
     list_voices,
-    transcribe,
     transcribe_async,
 )
 
