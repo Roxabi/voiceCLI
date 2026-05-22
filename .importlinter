@@ -9,7 +9,7 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.ui | voicecli.runtime.listen
+    voicecli.cli | voicecli.ui | voicecli.runtime.listen
     voicecli.api
     voicecli.adapters
     voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry | voicecli.runtime.wire_protocol
@@ -19,20 +19,15 @@ ignore_imports =
     voicecli.api.translate -> voicecli.api.markdown
     # Transitional: voicecli.api.translate imports voicecli.core.utils for shared utilities — cross-layer utility dependency
     voicecli.api.translate -> voicecli.core.utils
-    # Transitional: voicecli.cli assembler imports extracted sub-app modules — same top-tier peer dependencies (ADR-003 V9)
-    voicecli.cli -> voicecli.cli_samples
-    voicecli.cli -> voicecli.cli_dictate
-    voicecli.cli -> voicecli.cli_doctor
-    voicecli.cli -> voicecli.cli_nats
-    # Transitional: voicecli.cli_nats imports voicecli.adapters.nats adapters and config — same top-tier peer dependencies (ADR-003 V9)
-    voicecli.cli_nats -> voicecli.adapters.nats.config
-    voicecli.cli_nats -> voicecli.adapters.nats.tts_adapter
-    voicecli.cli_nats -> voicecli.adapters.nats.stt_adapter
-    # Transitional: voicecli.cli_nats configures model_registry at startup — pending ports-layer wiring (ADR-003)
-    voicecli.cli_nats -> voicecli.runtime.model_registry
+    # Transitional: voicecli.cli.nats imports voicecli.adapters.nats adapters and config — same top-tier peer dependencies (ADR-003 V9)
+    voicecli.cli.nats -> voicecli.adapters.nats.config
+    voicecli.cli.nats -> voicecli.adapters.nats.tts_adapter
+    voicecli.cli.nats -> voicecli.adapters.nats.stt_adapter
+    # Transitional: voicecli.cli.nats configures model_registry at startup — pending ports-layer wiring (ADR-003)
+    voicecli.cli.nats -> voicecli.runtime.model_registry
     # Transitional: voicecli.cli imports voicecli.runtime.listen for recording subcommand — needs extraction to adapter layer
-    voicecli.cli -> voicecli.runtime.listen
-    # Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
+    voicecli.cli.main -> voicecli.runtime.listen
+# Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
     voicecli.runtime.daemon -> voicecli.engines.engine
     # Transitional: wire_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
     voicecli.runtime.daemon -> voicecli.runtime.wire_protocol
@@ -48,11 +43,11 @@ ignore_imports =
     voicecli.ui.overlay -> voicecli.ui.overlay_audio
     voicecli.ui.overlay -> voicecli.ui.overlay_draw
     voicecli.ui.overlay -> voicecli.ui.stt_client
-    # ADR-003 V11: cli_dictate uses stt_client for dictate flow — cross-layer (cli → ui)
-    voicecli.cli_dictate -> voicecli.ui.stt_client
-    voicecli.cli_dictate -> voicecli.ui.clipboard
-    voicecli.cli_dictate -> voicecli.ui.nats_recorder
-    voicecli.cli_dictate -> voicecli.ui.sounds
+    # ADR-003 V11: cli.dictate uses stt_client for dictate flow — cross-layer (cli → ui)
+    voicecli.cli.dictate -> voicecli.ui.stt_client
+    voicecli.cli.dictate -> voicecli.ui.clipboard
+    voicecli.cli.dictate -> voicecli.ui.nats_recorder
+    voicecli.cli.dictate -> voicecli.ui.sounds
     # ADR-003 V11: nats_recorder reuses notify() from stt_client (same ui package peer)
     voicecli.ui.nats_recorder -> voicecli.ui.stt_client
     # ADR-003 V11: runtime.stt_daemon uses clipboard and ui_sounds — cross-layer (runtime → ui)

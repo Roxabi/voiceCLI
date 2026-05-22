@@ -21,7 +21,7 @@
     "src/voicecli/core/models.py",
     "src/voicecli/runtime/stt_daemon.py",
     "src/voicecli/runtime/transcribe.py",
-    "src/voicecli/cli_doctor.py"
+    "src/voicecli/cli/doctor.py"
   ],
   "reportMissingImports": "error",
   "reportMissingModuleSource": "none"

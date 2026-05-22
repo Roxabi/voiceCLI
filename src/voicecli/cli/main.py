@@ -4,10 +4,10 @@ from typing import Annotated, Optional
 import typer
 
 from voicecli import __version__
-from voicecli.cli_dictate import dictate_app
-from voicecli.cli_doctor import doctor
-from voicecli.cli_nats import nats_app
-from voicecli.cli_samples import samples_app
+from voicecli.cli.dictate import dictate_app
+from voicecli.cli.doctor import doctor
+from voicecli.cli.nats import nats_app
+from voicecli.cli.samples import samples_app
 from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
 from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
