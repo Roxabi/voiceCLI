@@ -1,0 +1,42 @@
+---
+title: refactor(nats): typed adapter ingress — SttRequest + TtsRequest + Segment dataclasses
+issue: 53
+status: approved
+tier: F-lite
+date: 2026-05-22
+---
+
+## Problem
+
+The NATS adapter layer forwards raw `dict` payloads from the wire directly to the API layer without any type validation. A malformed field like `{"language_detection_threshold": "high"}` travels 5 call layers deep before faster-whisper raises an opaque error, which the adapter then miscategorises as `transcription_failed` instead of `malformed_request`. Debugging requires tracing the payload backwards from the Whisper exception to the ingress point.
+
+`TranscriptionResult.segments` is declared as `list[dict]`, but two independent constructors populate it: the daemon JSON deserialisation path and the local faster-whisper `Segment` iteration path. They may drift on keys (e.g. one uses `"end"`, another `"end_time"`) and the only defence is a `.get("end", 0.0)` fallback in `_duration_from_segments`. The TTS adapter has the symmetric gap for its own payload schema.
+
+## Who
+
+- **Primary:** maintainers of the NATS adapter layer (`adapters/nats/stt_adapter.py`, `adapters/nats/tts_adapter.py`) who debug request/response contract mismatches.
+- **Secondary:** operators of `voicecli nats-serve` who currently receive `transcription_failed` for what is actually a client-side type error.
+
+## Constraints
+
+- ADR-044 JSON schema is frozen in lyra#688 — the wire contract cannot change; our side must adapt to it.
+- Stay with stdlib `dataclasses.dataclass`; do not introduce Pydantic.
+- PR #51 added short-term `isinstance` guards as a patch; this issue supersedes and removes them.
+
+## Out of Scope
+
+- Changing ADR-044 JSON schema upstream.
+- Moving the entire project to Pydantic or another validation framework.
+
+## Premise Validity
+
+**Success in 6 months:** Type mismatches at NATS adapter ingress are caught at the boundary and replied with `malformed_request`. `TranscriptionResult.segments` is `list[Segment]` with a guaranteed shape (`start: float`, `end: float`, `text: str`). Segment-handling code uses attribute access without `.get()` fallbacks.
+
+**Failure in 6 months:** Type errors still surface in faster-whisper as `transcription_failed` within 3 months of shipping. Segment shape drifts between the daemon JSON path and the local Whisper path.
+
+**Simplest alternative:** Keep the PR #51 `isinstance` guards and continue using `list[dict]` segments.
+**Why not simplest:** Every new engine parameter requires a new ad-hoc guard. Segment dicts can silently drift on keys, and `.get()` fallbacks hide real bugs by substituting default values.
+
+## Complexity
+
+**Tier: F-lite** — clear scope (~4 files), single domain (typing the contract boundary), no new architecture patterns.
