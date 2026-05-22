@@ -16,6 +16,42 @@ Entries are generated automatically by `/promote` and committed to staging befor
   `voicecli.transcribe` retained as a submodule alias for legacy callers. See #83.
 - Renamed `voicecli.daemon_protocol` → `voicecli.runtime.wire_protocol`.
 
+### Changed — internal module paths
+
+For consumers importing from internal paths, the move map (alphabetical by old path):
+
+| Old path | New path |
+|---|---|
+| `voicecli.api` (module) | `voicecli.api.api` (package re-exports public API at `voicecli.api`) |
+| `voicecli.clipboard` | `voicecli.ui.clipboard` |
+| `voicecli.config` | `voicecli.core.config` |
+| `voicecli.daemon` | `voicecli.runtime.daemon` |
+| `voicecli.daemon_protocol` | `voicecli.runtime.wire_protocol` (renamed) |
+| `voicecli.engine` | `voicecli.engines.engine` |
+| `voicecli.engine_caps` | `voicecli.api.engine_caps` |
+| `voicecli.env` | `voicecli.core.env` |
+| `voicecli.history` | `voicecli.core.history` |
+| `voicecli.listen` | `voicecli.runtime.listen` |
+| `voicecli.markdown` | `voicecli.api.markdown` |
+| `voicecli._markdown_directives` | `voicecli.api._markdown_directives` |
+| `voicecli.model_registry` | `voicecli.runtime.model_registry` |
+| `voicecli.models` | `voicecli.core.models` |
+| `voicecli.nats` | `voicecli.adapters.nats` |
+| `voicecli.overlay` | `voicecli.ui.overlay` |
+| `voicecli.overlay_audio` | `voicecli.ui.overlay_audio` |
+| `voicecli.overlay_draw` | `voicecli.ui.overlay_draw` |
+| `voicecli.paths` | `voicecli.core.paths` |
+| `voicecli.samples` | `voicecli.core.samples` |
+| `voicecli.stt_client` | `voicecli.ui.stt_client` |
+| `voicecli.stt_daemon` | `voicecli.runtime.stt_daemon` |
+| `voicecli.stt_modes` | `voicecli.core.stt_modes` |
+| `voicecli.tg` | `voicecli.ui.tg` |
+| `voicecli.transcribe` | `voicecli.runtime.transcribe` (legacy alias retained via submodule attribute) |
+| `voicecli.translate` | `voicecli.api.translate` |
+| `voicecli.ui_sounds` | `voicecli.ui.sounds` (renamed, drops `ui_` prefix) |
+| `voicecli.utils` | `voicecli.core.utils` |
+| `voicecli.cli` (module) | `voicecli.cli.main` (package re-exports `app` at `voicecli.cli`) |
+
 ## [0.3.0](https://github.com/Roxabi/voiceCLI/compare/voicecli/v0.2.1...voicecli/v0.3.0) (2026-04-27)
 
 ### Features
