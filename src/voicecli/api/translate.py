@@ -19,7 +19,7 @@ __all__ = ["ENGINE_CAPS", "translate_for_engine", "_strip_tags"]
 
 def _resolve_tag_pool(pool_name: str, language: str | None) -> dict:
     """Resolve a tag data pool by name and language, falling back to English."""
-    from voicecli.utils import resolve_language
+    from voicecli.core.utils import resolve_language
 
     lang_code = resolve_language(language) if language else "en"
     lang_data = TAG_DATA_BY_LANG.get(lang_code, TAG_DATA_EN)

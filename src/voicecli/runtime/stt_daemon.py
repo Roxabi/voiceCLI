@@ -23,11 +23,11 @@ from pathlib import Path
 from roxabi_nats import sanitize_for_wire
 
 from voicecli.ui.clipboard import auto_paste, write_clipboard
-from voicecli.config import load_stt_config
+from voicecli.core.config import load_stt_config
 from voicecli.runtime.wire_protocol import recv_json
 from voicecli.runtime.wire_protocol import send_json as _send_json
-from voicecli.history import append_history, wav_duration_s
-from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
+from voicecli.core.history import append_history, wav_duration_s
+from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
 from voicecli.ui.sounds import play_ui_sound
 
 MAX_MSG = 65536
@@ -122,7 +122,7 @@ def _save_recording(wav_bytes: bytes, text: str, language: str | None) -> None:
         return
     from datetime import datetime
 
-    from voicecli.config import VOICECLI_DIR
+    from voicecli.core.config import VOICECLI_DIR
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     lang_tag = f"_{language}" if language else ""
@@ -644,8 +644,8 @@ class SttDaemon:
         transcribe_prompt: str | None = None
         if current_mode is not None:
             try:
-                from voicecli.config import load_config
-                from voicecli.stt_modes import get_mode
+                from voicecli.core.config import load_config
+                from voicecli.core.stt_modes import get_mode
 
                 mode_cfg = get_mode(current_mode, load_config())
                 if "language" in mode_cfg:
@@ -659,7 +659,7 @@ class SttDaemon:
 
         # Prepend personal vocab to the mode prompt (loaded fresh — no restart needed)
         try:
-            from voicecli.config import load_vocab, vocab_to_prompt
+            from voicecli.core.config import load_vocab, vocab_to_prompt
 
             vocab_fragment = vocab_to_prompt(load_vocab())
             if vocab_fragment:
@@ -739,8 +739,8 @@ class SttDaemon:
 
     def _handle_next_mode(self, conn: socket.socket) -> None:
         """Cycle to the next available mode and update default_mode."""
-        from voicecli.config import _find_config
-        from voicecli.stt_modes import load_modes
+        from voicecli.core.config import _find_config
+        from voicecli.core.stt_modes import load_modes
 
         cfg_path = _find_config()
         raw_cfg: dict = {}

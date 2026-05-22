@@ -9,7 +9,7 @@ from voicecli.cli_doctor import doctor
 from voicecli.cli_nats import nats_app
 from voicecli.cli_samples import samples_app
 from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
-from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
+from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
 
 def _version_callback(value: bool) -> None:
@@ -341,7 +341,7 @@ def transcribe(
         typer.echo(f"Error: file not found: {audio}", err=True)
         raise typer.Exit(1)
 
-    from voicecli.config import load_vocab, vocab_to_prompt
+    from voicecli.core.config import load_vocab, vocab_to_prompt
 
     initial_prompt = vocab_to_prompt(load_vocab())
     result = do_transcribe(audio, model=model, language=language, initial_prompt=initial_prompt)
@@ -359,7 +359,7 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from voicecli.utils import default_output_path
+        from voicecli.core.utils import default_output_path
 
         ext = "json" if json_output else "txt"
         output = default_output_path(
@@ -389,7 +389,7 @@ def mp3(
     bitrate: Annotated[int, typer.Option("--bitrate", "-b", help="MP3 bitrate in kbps")] = 192,
 ):
     """Convert a WAV file to MP3."""
-    from voicecli.utils import wav_to_mp3
+    from voicecli.core.utils import wav_to_mp3
 
     if not file.exists():
         typer.echo(f"Error: file not found: {file}", err=True)
@@ -422,7 +422,7 @@ def init(
     ] = False,
 ):
     """Create a voicecli.toml config file (interactive wizard or -y for defaults)."""
-    from voicecli.config import VOICECLI_DIR
+    from voicecli.core.config import VOICECLI_DIR
 
     VOICECLI_DIR.mkdir(parents=True, exist_ok=True)
     config_path = VOICECLI_DIR / "voicecli.toml"
@@ -475,7 +475,7 @@ def init(
 
     # 2. Language (skip for chatterbox-turbo — English only)
     if engine != "chatterbox-turbo":
-        from voicecli.utils import LANG_MAP
+        from voicecli.core.utils import LANG_MAP
 
         lang_names = sorted({k.title() for k in LANG_MAP if k.isascii()})
         typer.echo(f"  Supported languages: {', '.join(lang_names)}")
@@ -721,7 +721,7 @@ def stt_serve(
     autorestart=true
     stdout_logfile=/var/log/voicecli_stt.log
     """
-    from voicecli.config import load_config
+    from voicecli.core.config import load_config
     from voicecli.runtime.stt_daemon import SttDaemon
 
     cfg = load_config()

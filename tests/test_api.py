@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.utils import UNRESTRICTED
+from voicecli.core.utils import UNRESTRICTED
 
 
 def test_import_lightweight():

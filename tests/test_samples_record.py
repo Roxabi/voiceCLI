@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.samples import _check_tool, record_sample
+from voicecli.core.samples import _check_tool, record_sample
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────

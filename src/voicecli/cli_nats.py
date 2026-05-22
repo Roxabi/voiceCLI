@@ -49,7 +49,7 @@ def nats_serve_tts(
     """Subscribe to the TTS request subject and reply with synthesized audio."""
     import asyncio
 
-    from voicecli.config import apply_nats_env_from_config, load_nats_config
+    from voicecli.core.config import apply_nats_env_from_config, load_nats_config
     from voicecli.runtime.model_registry import model_registry
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
     from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
@@ -118,7 +118,7 @@ def nats_serve_stt(
     """Subscribe to the STT request subject and reply with transcription."""
     import asyncio
 
-    from voicecli.config import apply_nats_env_from_config
+    from voicecli.core.config import apply_nats_env_from_config
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.adapters.nats.stt_adapter import SttNatsAdapter
 

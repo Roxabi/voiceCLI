@@ -13,12 +13,12 @@ layers =
     voicecli.api
     voicecli.adapters
     voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry | voicecli.runtime.wire_protocol
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes | voicecli.history
+    voicecli.core
 ignore_imports =
     # Transitional: voicecli.api.translate imports voicecli.api.markdown for MD rendering — same api package peer dependency
     voicecli.api.translate -> voicecli.api.markdown
-    # Transitional: voicecli.api.translate imports voicecli.utils for shared utilities — cross-layer utility dependency
-    voicecli.api.translate -> voicecli.utils
+    # Transitional: voicecli.api.translate imports voicecli.core.utils for shared utilities — cross-layer utility dependency
+    voicecli.api.translate -> voicecli.core.utils
     # Transitional: voicecli.cli assembler imports extracted sub-app modules — same top-tier peer dependencies (ADR-003 V9)
     voicecli.cli -> voicecli.cli_samples
     voicecli.cli -> voicecli.cli_dictate
@@ -61,7 +61,7 @@ ignore_imports =
     # ADR-003 V10: same api package peer dependencies
     voicecli.api.translate -> voicecli.api.engine_caps
     voicecli.api.markdown -> voicecli.api._markdown_directives
-    voicecli.history -> voicecli.paths
+    voicecli.core.history -> voicecli.core.paths
     # Transitional: engines import Segment/TTSDocument from voicecli.api.markdown — pure data types, moving to
     # a shared primitives layer is tracked by ADR-003; engines need Segment for type-hinted segment iteration
     voicecli.engines.chatterbox -> voicecli.api.markdown

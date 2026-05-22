@@ -37,7 +37,7 @@ def emit_chunk(
                 **kwargs,
             )
     if mp3:
-        from voicecli.utils import wav_to_mp3
+        from voicecli.core.utils import wav_to_mp3
 
         wav_to_mp3(chunk_path)
     return chunk_path
@@ -63,7 +63,7 @@ def generate_chunked(
     daemon_fn=None,
 ) -> list[Path]:
     """Generate speech in chunks. Returns list of chunk paths."""
-    from voicecli.utils import smart_chunk
+    from voicecli.core.utils import smart_chunk
 
     paths: list[Path] = []
 
@@ -141,7 +141,7 @@ def clone_chunked(
     daemon_fn=None,
 ) -> list[Path]:
     """Clone voice in chunks. Returns list of chunk paths."""
-    from voicecli.utils import smart_chunk
+    from voicecli.core.utils import smart_chunk
 
     paths: list[Path] = []
 

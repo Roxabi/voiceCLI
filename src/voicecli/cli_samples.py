@@ -9,7 +9,7 @@ samples_app = typer.Typer(help="Manage voice samples")
 @samples_app.command("list")
 def samples_list():
     """List all samples in the TTS/samples/ directory."""
-    from voicecli.samples import list_samples
+    from voicecli.core.samples import list_samples
 
     items = list_samples()
     if not items:
@@ -24,7 +24,7 @@ def samples_add(
     file: Annotated[Path, typer.Argument(help="Path to a .wav file to import")],
 ):
     """Copy a local WAV file into the samples directory."""
-    from voicecli.samples import add_sample
+    from voicecli.core.samples import add_sample
 
     try:
         dest = add_sample(file)
@@ -42,7 +42,7 @@ def samples_record(
     ] = 10.0,
 ):
     """Record audio from microphone and save as a sample."""
-    from voicecli.samples import record_sample
+    from voicecli.core.samples import record_sample
 
     try:
         dest = record_sample(name, duration=duration)
@@ -57,7 +57,7 @@ def samples_use(
     name: Annotated[str, typer.Argument(help="Sample filename to set as active")],
 ):
     """Set a sample as the active reference for voice cloning."""
-    from voicecli.samples import set_active
+    from voicecli.core.samples import set_active
 
     try:
         set_active(name)
@@ -70,7 +70,7 @@ def samples_use(
 @samples_app.command("active")
 def samples_active():
     """Show the currently active sample."""
-    from voicecli.samples import get_active
+    from voicecli.core.samples import get_active
 
     name = get_active()
     if name:
@@ -84,7 +84,7 @@ def samples_remove(
     name: Annotated[str, typer.Argument(help="Sample filename to remove")],
 ):
     """Remove a sample from the samples directory."""
-    from voicecli.samples import remove_sample
+    from voicecli.core.samples import remove_sample
 
     try:
         remove_sample(name)
@@ -105,7 +105,7 @@ def samples_from_url(
     use: Annotated[bool, typer.Option("--use", help="Set as active sample after download")] = False,
 ):
     """Download audio from a URL, extract and normalize a voice sample."""
-    from voicecli.samples import from_url, set_active
+    from voicecli.core.samples import from_url, set_active
 
     try:
         dest = from_url(url, name, start=start, duration=duration)

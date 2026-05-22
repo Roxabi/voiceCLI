@@ -160,7 +160,7 @@ def dictate(
         return
 
     if listen:
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
         from voicecli.ui.stt_client import hotkey_loop
 
         stt_cfg = load_stt_config()
@@ -253,8 +253,8 @@ def dictate_cancel() -> None:
 @dictate_app.command("modes")
 def dictate_modes() -> None:
     """List all available STT modes with descriptions."""
-    from voicecli.config import load_config
-    from voicecli.stt_modes import load_modes
+    from voicecli.core.config import load_config
+    from voicecli.core.stt_modes import load_modes
 
     cfg = load_config()
     modes = load_modes(cfg)
@@ -288,7 +288,7 @@ def dictate_history(
     import json as _json
 
     from voicecli.ui.clipboard import write_clipboard
-    from voicecli.history import HISTORY_PATH
+    from voicecli.core.history import HISTORY_PATH
 
     if not HISTORY_PATH.exists():
         typer.echo("No history yet.")
@@ -347,7 +347,7 @@ def dictate_nats_host() -> None:
     import os
     from urllib.parse import urlparse
 
-    from voicecli.config import apply_nats_env_from_config
+    from voicecli.core.config import apply_nats_env_from_config
 
     apply_nats_env_from_config()
     url = os.environ.get("NATS_URL", "").strip()
@@ -391,7 +391,7 @@ def dictate_nats(
     import asyncio
 
     from voicecli.ui.clipboard import write_clipboard
-    from voicecli.config import (
+    from voicecli.core.config import (
         apply_nats_env_from_config,
         load_config,
         load_vocab,
@@ -400,7 +400,7 @@ def dictate_nats(
     from voicecli.ui.nats_recorder import is_recording, start_recording, stop_recording
     from voicecli.nats_stt_client import transcribe_via_nats
     from voicecli.ui.stt_client import notify
-    from voicecli.stt_modes import get_mode
+    from voicecli.core.stt_modes import get_mode
     from voicecli.ui.sounds import play_ui_sound
 
     apply_nats_env_from_config()

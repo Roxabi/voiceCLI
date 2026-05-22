@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from voicecli.samples import _check_tool, from_url
+from voicecli.core.samples import _check_tool, from_url
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────

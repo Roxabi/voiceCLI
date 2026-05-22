@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from voicecli.env import coerce_bool_env
+from voicecli.core.env import coerce_bool_env
 
 
 class TestCoerceBoolEnv:

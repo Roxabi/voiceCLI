@@ -9,7 +9,12 @@ def doctor():
     import shutil
     import sys
 
-    from voicecli.models import MODEL_REGISTRY, cached_model_size_gb, hf_cache_dir, is_model_cached
+    from voicecli.core.models import (
+        MODEL_REGISTRY,
+        cached_model_size_gb,
+        hf_cache_dir,
+        is_model_cached,
+    )
 
     def ok(msg: str) -> None:
         typer.echo(typer.style("  ✓ ", fg=typer.colors.GREEN, bold=True) + msg)
@@ -73,7 +78,7 @@ def doctor():
 
     # Directory structure
     typer.echo(typer.style("\nDirectories", bold=True))
-    from voicecli.config import VOICECLI_DIR
+    from voicecli.core.config import VOICECLI_DIR
 
     for rel in ["TTS/voices_out", "TTS/samples", "TTS/texts_in", "STT/audio_in", "STT/texts_out"]:
         try:
@@ -88,7 +93,7 @@ def doctor():
     # User config
     typer.echo(typer.style("\nConfig", bold=True))
     try:
-        from voicecli.config import load_defaults
+        from voicecli.core.config import load_defaults
 
         cfg = load_defaults()
         if cfg:
@@ -105,7 +110,7 @@ def doctor():
     # Active voice sample
     typer.echo(typer.style("\nVoice Sample", bold=True))
     try:
-        from voicecli.samples import get_active
+        from voicecli.core.samples import get_active
 
         active = get_active()
         if active:

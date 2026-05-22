@@ -22,7 +22,7 @@ def _resolve_engine(cli_value: str | None = None) -> str:
         if v:
             return v
     try:
-        from voicecli.config import load_tts_config
+        from voicecli.core.config import load_tts_config
 
         cfg = load_tts_config()
         toml_engine = cfg.get("default_engine")
@@ -44,7 +44,7 @@ def _resolve_model(cli_value: str | None = None) -> str:
     if v:
         return v
     try:
-        from voicecli.config import load_config
+        from voicecli.core.config import load_config
 
         cfg = load_config()
         toml_model = cfg.get("stt", {}).get("model")

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from voicecli.ports.synthesis import SynthesisPort
 
 from voicecli.api.chunked import clone_chunked, generate_chunked
-from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
+from voicecli.core.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
 log = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ def _resolve_config(
 
     Returns a dict with all resolved values.
     """
-    from voicecli.config import load_defaults
+    from voicecli.core.config import load_defaults
 
     cfg = load_defaults(config)
     kw: dict = extra_kwargs.copy() if extra_kwargs else {}
@@ -384,7 +384,7 @@ def _resolve_ref(ref: Path | str | None) -> Path:
             raise FileNotFoundError(f"Reference audio not found: {ref}")
         return ref
 
-    from voicecli.samples import get_active_path
+    from voicecli.core.samples import get_active_path
 
     active = get_active_path()
     if active is None:
@@ -465,7 +465,7 @@ def generate(
     )
 
     from voicecli.engines.engine import QWEN_ENGINES
-    from voicecli.utils import build_output_prefix, default_output_path
+    from voicecli.core.utils import build_output_prefix, default_output_path
 
     if _synthesis is None:
         from voicecli.adapters.synthesis import DaemonSynthesisAdapter  # type: ignore[import-not-found]
@@ -555,7 +555,7 @@ def generate(
         out = result
         mp3_path = None
         if r_mp3:
-            from voicecli.utils import wav_to_mp3
+            from voicecli.core.utils import wav_to_mp3
 
             mp3_path = wav_to_mp3(out)
         return TTSResult(wav_path=out, mp3_path=mp3_path)
@@ -631,7 +631,7 @@ def clone(
     _check_str("ref_text", ref_text)
 
     from voicecli.engines.engine import QWEN_ENGINES
-    from voicecli.utils import build_output_prefix, default_output_path
+    from voicecli.core.utils import build_output_prefix, default_output_path
 
     if _synthesis is None:
         from voicecli.adapters.synthesis import DaemonSynthesisAdapter  # type: ignore[import-not-found]
@@ -722,7 +722,7 @@ def clone(
         out = result
         mp3_path = None
         if r_mp3:
-            from voicecli.utils import wav_to_mp3
+            from voicecli.core.utils import wav_to_mp3
 
             mp3_path = wav_to_mp3(out)
         return TTSResult(wav_path=out, mp3_path=mp3_path)
