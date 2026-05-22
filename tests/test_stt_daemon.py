@@ -293,10 +293,12 @@ class TestTranscriptionAndClipboard:
             return p
 
         monkeypatch.setattr(stt_mod, "_write_tempfile", tracking_write_tempfile)
+        from unittest.mock import MagicMock
+
         monkeypatch.setattr(
             transcribe_mod,
             "transcribe",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
+            MagicMock(side_effect=RuntimeError("boom")),
         )
 
         # Arrange
@@ -317,9 +319,11 @@ class TestTranscriptionAndClipboard:
         # Arrange: make clipboard raise so the daemon must survive it.
         # The fixture patches write_clipboard as a MagicMock no-op; monkeypatch
         # overlays that with a raising lambda for this test only.
+        from unittest.mock import MagicMock
+
         monkeypatch.setattr(
             "voicecli.runtime.stt_daemon.write_clipboard",
-            lambda text: (_ for _ in ()).throw(OSError("no display")),
+            MagicMock(side_effect=OSError("no display")),
         )
         send("toggle")  # N3: start recording
         # Act

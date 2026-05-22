@@ -9,8 +9,8 @@ type = layers
 layers =
     voicecli.cli
     voicecli.ui
-    voicecli.adapters
     voicecli.api
+    voicecli.adapters
     voicecli.runtime
     voicecli.engines
     voicecli.ports
@@ -29,9 +29,10 @@ ignore_imports =
     voicecli.engines.voxtral -> voicecli.api.markdown
     # Transitional: wire_protocol imports Segment from voicecli.api.markdown for protocol encoding
     voicecli.runtime.wire_protocol -> voicecli.api.markdown
-    # Transitional: voicecli.api.api calls adapters.synthesis for daemon-backed synthesis — cross-layer
-    # coupling from pre-layering; to be resolved via SynthesisPort wiring (ADR-003)
-    voicecli.api.api -> voicecli.adapters.synthesis
+    # Transitional: NATS runners call voicecli.api for warmup/model loading — adapters below api;
+    # to be resolved via warmup port or dependency injection (ADR-003)
+    voicecli.adapters.nats._tts_runner -> voicecli.api
+    voicecli.adapters.nats._stt_runner -> voicecli.api
     # Transitional: voicecli.ports.stt imports runtime.transcribe directly — needs indirection via port interface (ADR-003)
     voicecli.ports.stt -> voicecli.runtime.transcribe
 

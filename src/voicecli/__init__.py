@@ -15,9 +15,10 @@ import voicecli.runtime.transcribe as _runtime_transcribe  # noqa: E402
 
 _sys.modules.setdefault("voicecli.transcribe", _runtime_transcribe)
 
-# Import API functions last — `transcribe` overwrites the module attribute with the
-# callable function (matching staging's pattern), while sys.modules keeps the module
-# registered so `from voicecli.transcribe import X` still resolves correctly.
+# INVARIANT: sys.modules shim above must be registered before this import runs.
+# `from voicecli.api import transcribe` overwrites the `voicecli.transcribe` attribute
+# with the callable, but sys.modules["voicecli.transcribe"] stays as the module so
+# `from voicecli.transcribe import X` keeps working. Do not move imports above the shim.
 from voicecli.api import (  # noqa: E402
     TTSResult,
     clone,
