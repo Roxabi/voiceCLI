@@ -1152,7 +1152,7 @@ def doctor():
 
     # CUDA availability
     try:
-        import torch
+        import torch  # type: ignore[import-untyped]
 
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
