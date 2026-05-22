@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.api import _validate_output_path, clone, generate
+from voicecli.api import clone, generate
+from voicecli.api.api import _validate_output_path
 from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
 
 
@@ -77,7 +78,7 @@ class TestValidateOutputPath:
         # Redirect OUTPUT_DIR → tmp_path so the test is hermetic.
         fake_base = tmp_path / "voices_out"
         fake_base.mkdir()
-        monkeypatch.setattr("voicecli.api.OUTPUT_DIR", fake_base)
+        monkeypatch.setattr("voicecli.api.api.OUTPUT_DIR", fake_base)
         inside = fake_base / "x.wav"
         result = _validate_output_path(inside, allowed_base=fake_base)
         assert result == inside.resolve()

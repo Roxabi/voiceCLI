@@ -9,7 +9,7 @@ Private module — import via voicecli.markdown, not directly.
 import re
 from pathlib import Path
 
-from voicecli.markdown import (
+from voicecli.api.markdown import (
     TTSDocument,
     Segment,
     _INSTRUCT_PARTS,

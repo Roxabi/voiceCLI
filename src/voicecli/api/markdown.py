@@ -130,20 +130,20 @@ def parse_md_file(path: Path) -> TTSDocument:
     # _markdown_directives imports from this module at its module level,
     # which is safe here because markdown.py is fully initialised before
     # parse_md_file() is ever called.
-    from voicecli._markdown_directives import parse_md_file as _parse  # type: ignore[import-not-found]
+    from voicecli.api._markdown_directives import parse_md_file as _parse  # type: ignore[import-not-found]
 
     return _parse(path)
 
 
 def _parse_comment_kvs(content: str) -> dict[str, str]:
     """Re-export from _markdown_directives (used by tests and any external callers)."""
-    from voicecli._markdown_directives import _parse_comment_kvs as _fn  # type: ignore[import-not-found]
+    from voicecli.api._markdown_directives import _parse_comment_kvs as _fn  # type: ignore[import-not-found]
 
     return _fn(content)
 
 
 def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     """Re-export from _markdown_directives (used by tests and any external callers)."""
-    from voicecli._markdown_directives import _parse_segments as _fn  # type: ignore[import-not-found]
+    from voicecli.api._markdown_directives import _parse_segments as _fn  # type: ignore[import-not-found]
 
     return _fn(body, defaults)

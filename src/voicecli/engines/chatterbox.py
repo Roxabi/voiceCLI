@@ -11,7 +11,7 @@ from voicecli.models import CHATTERBOX_MODEL, warn_if_first_download
 from voicecli.utils import resolve_language as _resolve_language, split_sentences
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 
 class ChatterboxEngine(TTSEngine):

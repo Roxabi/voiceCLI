@@ -3,13 +3,13 @@
 import random
 from copy import deepcopy
 
-from voicecli.engine_caps import (
+from voicecli.api.engine_caps import (
     ENGINE_CAPS,
     TAG_DATA_BY_LANG,
     TAG_DATA_EN,
     TAG_RE,
 )
-from voicecli.markdown import Segment, TTSDocument
+from voicecli.api.markdown import Segment, TTSDocument
 
 __all__ = ["ENGINE_CAPS", "translate_for_engine", "_strip_tags"]
 

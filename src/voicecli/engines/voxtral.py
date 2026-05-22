@@ -10,7 +10,7 @@ from voicecli.engine import TTSEngine, cuda_guard
 from voicecli.models import VOXTRAL_MODEL, warn_if_first_download
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 # Voxtral outputs 48 kHz after post-processing
 _SAMPLE_RATE = 48000

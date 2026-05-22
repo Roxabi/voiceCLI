@@ -3,7 +3,7 @@
 __version__ = "0.2.1"
 
 # Import submodule-level types first (this registers voicecli.transcribe as a submodule)
-from voicecli.markdown import Segment, TTSDocument
+from voicecli.api.markdown import Segment, TTSDocument
 from voicecli.transcribe import TranscriptionResult
 
 # Import API functions last — the `transcribe` function overwrites the submodule attribute

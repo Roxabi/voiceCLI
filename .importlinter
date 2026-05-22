@@ -12,12 +12,16 @@ layers =
     voicecli.cli | voicecli.adapters.nats | voicecli.tg | voicecli.listen | voicecli.overlay
     voicecli.api
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes
 ignore_imports =
-    # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
-    voicecli.translate -> voicecli.markdown
-    # Transitional: voicecli.translate imports voicecli.utils for shared utilities — same layer peer dependency
-    voicecli.translate -> voicecli.utils
+    # Transitional: voicecli.api.translate imports voicecli.utils for shared utilities — api → core cross-tier (top-down)
+    voicecli.api.translate -> voicecli.utils
+    # Transitional: engines import voicecli.api.markdown for Segment type — upward coupling pending Segment move to core in T6
+    voicecli.engines.chatterbox -> voicecli.api.markdown
+    voicecli.engines.chatterbox_turbo -> voicecli.api.markdown
+    voicecli.engines.qwen -> voicecli.api.markdown
+    voicecli.engines.qwen_fast -> voicecli.api.markdown
+    voicecli.engines.voxtral -> voicecli.api.markdown
     # Transitional: voicecli.cli imports voicecli.adapters.nats adapters inline for NATS subcommands — needs extraction to adapter layer
     voicecli.cli -> voicecli.adapters.nats.tts_adapter
     voicecli.cli -> voicecli.adapters.nats.config

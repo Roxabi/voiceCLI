@@ -268,7 +268,7 @@ def handle_job(
         voice = req.get("voice")
         language = req.get("language")
 
-        from voicecli.markdown import Segment
+        from voicecli.api.markdown import Segment
 
         segments_data = req.get("segments") or []
         segments = [Segment(**s) for s in segments_data]
