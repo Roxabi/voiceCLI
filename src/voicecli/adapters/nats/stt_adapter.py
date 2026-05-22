@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
@@ -123,14 +122,6 @@ class SttNatsAdapter(NatsAdapterBase):
         request_id = payload.get("request_id", "")
         if not request_id:
             await self.reply(msg, _err_stt(trace_id, "", "malformed_request"))
-            return
-
-        # Reject path-traversal or oversized request IDs at ingestion
-        if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
-            await self.reply(
-                msg,
-                _err_stt(trace_id, request_id[:64] if request_id else "", "malformed_request"),
-            )
             return
 
         outcome = validate_stt_request(payload)

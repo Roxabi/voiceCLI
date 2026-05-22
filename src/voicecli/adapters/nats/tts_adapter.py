@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64  # noqa: F401 — test patch anchor for voicecli.adapters.nats.tts_adapter.base64.b64encode
 import logging
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
@@ -124,14 +123,6 @@ class TtsNatsAdapter(NatsAdapterBase):
         request_id = payload.get("request_id", "")
         if not request_id:
             await self.reply(msg, _err_tts(trace_id, "", "malformed_request"))
-            return
-
-        # Reject path-traversal or oversized request IDs at ingestion (Fix 2)
-        if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
-            await self.reply(
-                msg,
-                _err_tts(trace_id, request_id[:64] if request_id else "", "malformed_request"),
-            )
             return
 
         outcome = validate_tts_request(

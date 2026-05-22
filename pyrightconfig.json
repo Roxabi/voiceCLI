@@ -11,7 +11,6 @@
     "src/voicecli/ui/overlay.py",
     "src/voicecli/ui/overlay_draw.py",
     "src/voicecli/ui/overlay_audio.py",
-    "src/voicecli/nats",
     "src/voicecli/adapters/nats",
     "src/voicecli/runtime/wire_protocol.py",
     "src/voicecli/adapters/nats/stt_client.py",

@@ -280,9 +280,7 @@ class TestTranscriptionAndClipboard:
         send, _, _ = daemon_send
 
         import voicecli.runtime.stt_daemon as stt_mod
-        import sys
-
-        transcribe_mod = sys.modules["voicecli.transcribe"]
+        import voicecli.runtime.transcribe as transcribe_mod
 
         created_paths: list[Path] = []
         original_write_tempfile = stt_mod._write_tempfile
@@ -312,6 +310,9 @@ class TestTranscriptionAndClipboard:
         )
         # The daemon should respond gracefully (not crash)
         assert "status" in resp
+        # Daemon must still be alive and accepting requests after the error
+        ping_resp = send("ping")
+        assert ping_resp == {"status": "ok"}
 
     def test_clipboard_failure_does_not_crash_daemon(self, daemon_send, monkeypatch):
         """Clipboard failure is logged but daemon continues; text still in response."""
@@ -365,9 +366,7 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import sys
-
-        transcribe_mod = sys.modules["voicecli.transcribe"]
+        import voicecli.runtime.transcribe as transcribe_mod
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 
@@ -406,9 +405,7 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import sys
-
-        transcribe_mod = sys.modules["voicecli.transcribe"]
+        import voicecli.runtime.transcribe as transcribe_mod
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 
@@ -438,9 +435,7 @@ class TestQueueSupport:
 
         blocking_transcribe, unblock, call_started = self._make_blocking_transcribe()
 
-        import sys
-
-        transcribe_mod = sys.modules["voicecli.transcribe"]
+        import voicecli.runtime.transcribe as transcribe_mod
 
         monkeypatch.setattr(transcribe_mod, "transcribe", blocking_transcribe)
 

@@ -221,7 +221,7 @@ def dictate_test_overlay() -> None:
     # Patch overlay to stay open regardless of daemon state
     env["VOICECLI_OVERLAY_TEST"] = "1"
     typer.echo("Showing overlay for 5 seconds — look at the top of your screen...")
-    subprocess.run([_sys.executable, "-m", "voicecli.overlay", "--test"], env=env)
+    subprocess.run([_sys.executable, "-m", "voicecli.ui.overlay", "--test"], env=env)
 
 
 @dictate_app.command("next-mode")

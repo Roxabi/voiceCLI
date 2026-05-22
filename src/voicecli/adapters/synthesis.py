@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 log = logging.getLogger(__name__)
 
@@ -296,3 +297,10 @@ class LocalSynthesisAdapter:
             segments=segments,
             **kwargs,
         )
+
+
+if TYPE_CHECKING:
+    from voicecli.ports.synthesis import SynthesisPort
+
+    _: SynthesisPort = DaemonSynthesisAdapter()  # type: ignore[assignment]
+    __: SynthesisPort = LocalSynthesisAdapter(None)  # type: ignore[assignment]

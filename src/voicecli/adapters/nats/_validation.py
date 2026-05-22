@@ -113,7 +113,7 @@ def validate_tts_request(
         return _MALFORMED
 
     # 2. request_id format
-    if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
+    if not _REQUEST_ID_RE.match(request_id):
         return _MALFORMED
 
     # 3. text presence and type
@@ -211,7 +211,7 @@ def validate_stt_request(payload: dict) -> SttValidationOutcome:
         return _STT_MALFORMED
 
     # 2. request_id format
-    if not re.match(r"^[A-Za-z0-9_-]{1,128}$", request_id):
+    if not _REQUEST_ID_RE.match(request_id):
         return _STT_MALFORMED
 
     # 3. audio_b64 presence and type

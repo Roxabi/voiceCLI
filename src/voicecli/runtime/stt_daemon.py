@@ -164,7 +164,7 @@ def _spawn_overlay(
     log = Path(os.environ.get("TMPDIR", "/tmp")) / "voicecli_overlay.log"
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "voicecli.overlay"],
+            [sys.executable, "-m", "voicecli.ui.overlay"],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=open(log, "w"),

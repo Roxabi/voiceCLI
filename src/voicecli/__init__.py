@@ -11,6 +11,9 @@ from voicecli.runtime.transcribe import TranscriptionResult
 # `voicecli.transcribe` no longer exists as a top-level module after the
 # runtime/ restructure.  Register the runtime module under the old name so
 # those imports keep working without changes on the caller side.
+# Consumer: lyra/voicecli_client.py (from voicecli.transcribe import TranscriptionResult)
+# Removal: safe once lyra updates its import to voicecli.runtime.transcribe
+# Tracking: #170 follow-up
 import voicecli.runtime.transcribe as _runtime_transcribe  # noqa: E402
 
 _sys.modules.setdefault("voicecli.transcribe", _runtime_transcribe)

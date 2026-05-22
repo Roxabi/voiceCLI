@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from voicecli.adapters.nats.tts_wav_utils import (
+from voicecli.adapters.nats.wav_utils import (
     cleanup_chunks,
     collect_chunked_output,
     concat_wav_chunks,
