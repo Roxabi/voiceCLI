@@ -106,7 +106,7 @@ async def run_synthesis(
             # All heavy imports deferred — keeps startup fast and avoids
             # pulling torch when only inspecting the adapter (e.g. --help).
             from voicecli.adapters.synthesis import LocalSynthesisAdapter  # noqa: PLC0415
-            from voicecli.model_registry import model_registry  # noqa: PLC0415
+            from voicecli.runtime.model_registry import model_registry  # noqa: PLC0415
             from voicecli.utils import UNRESTRICTED  # noqa: PLC0415
 
             kw = dict(optional_kwargs)

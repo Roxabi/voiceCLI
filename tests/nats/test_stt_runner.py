@@ -43,7 +43,7 @@ class _FakeApi:
         if self._transcribe_behavior is not None:
             return self._transcribe_behavior(out_path, model=model, **overrides)
         # Default: minimal TranscriptionResult-shaped object
-        from voicecli.transcribe import TranscriptionResult
+        from voicecli.runtime.transcribe import TranscriptionResult
 
         return TranscriptionResult(text="hello", language="en", segments=[{"end": 1.5}])
 
@@ -379,7 +379,7 @@ class TestRunTranscriptionModelLoad:
 
         def _fake_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             transcribe_calls.append(model)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="x", language="en", segments=[])
 
@@ -531,7 +531,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="bonjour", language="fr", segments=[{"end": 1.0}])
 
@@ -567,7 +567,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="hi", language="en", segments=[{"end": 0.5}])
 
@@ -604,7 +604,7 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
+            from voicecli.runtime.transcribe import TranscriptionResult
 
             return TranscriptionResult(text="hallo", language="de", segments=[{"end": 2.0}])
 

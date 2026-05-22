@@ -32,7 +32,7 @@ try:
         _duration_from_segments,
         _ext_from_mime,
     )
-    from voicecli.transcribe import TranscriptionResult
+    from voicecli.runtime.transcribe import TranscriptionResult
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:

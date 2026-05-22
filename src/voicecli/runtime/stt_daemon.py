@@ -24,8 +24,8 @@ from roxabi_nats import sanitize_for_wire
 
 from voicecli.clipboard import auto_paste, write_clipboard
 from voicecli.config import load_stt_config
-from voicecli.daemon_protocol import recv_json
-from voicecli.daemon_protocol import send_json as _send_json
+from voicecli.runtime.wire_protocol import recv_json
+from voicecli.runtime.wire_protocol import send_json as _send_json
 from voicecli.history import append_history, wav_duration_s
 from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
 from voicecli.ui_sounds import play_ui_sound
@@ -178,7 +178,7 @@ def _spawn_overlay(
 
 
 def warmup(model: str) -> None:
-    from voicecli.transcribe import warmup as _warmup
+    from voicecli.runtime.transcribe import warmup as _warmup
 
     _warmup(model)
 
@@ -502,7 +502,7 @@ class SttDaemon:
         import gc
         import time
 
-        from voicecli.transcribe import transcribe
+        from voicecli.runtime.transcribe import transcribe
 
         try:
             import torch
@@ -675,7 +675,7 @@ class SttDaemon:
         text: str = ""
         language: str | None = None
         try:
-            from voicecli.transcribe import transcribe
+            from voicecli.runtime.transcribe import transcribe
 
             result = transcribe(
                 tmp_path,

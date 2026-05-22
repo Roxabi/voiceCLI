@@ -50,7 +50,7 @@ def nats_serve_tts(
     import asyncio
 
     from voicecli.config import apply_nats_env_from_config, load_nats_config
-    from voicecli.model_registry import model_registry
+    from voicecli.runtime.model_registry import model_registry
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
     from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
 

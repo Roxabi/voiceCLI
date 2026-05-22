@@ -1,13 +1,22 @@
 """VoiceCLI — Unified voice generation CLI and library."""
 
-__version__ = "0.2.1"
+import sys as _sys
 
-# Import submodule-level types first (this registers voicecli.transcribe as a submodule)
+# Import submodule-level types first
 from voicecli.api.markdown import Segment, TTSDocument
-from voicecli.transcribe import TranscriptionResult
+from voicecli.runtime.transcribe import TranscriptionResult
 
-# Import API functions last — the `transcribe` function overwrites the submodule attribute
-from voicecli.api import (
+# Backward-compat shim: external consumers (e.g. lyra) may do:
+#   from voicecli.transcribe import TranscriptionResult
+# `voicecli.transcribe` no longer exists as a top-level module after the
+# runtime/ restructure.  Register the runtime module under the old name so
+# those imports keep working without changes on the caller side.
+import voicecli.runtime.transcribe as _runtime_transcribe  # noqa: E402
+
+_sys.modules.setdefault("voicecli.transcribe", _runtime_transcribe)
+
+# Import API functions last.
+from voicecli.api import (  # noqa: E402
     TTSResult,
     clone,
     clone_async,
@@ -18,6 +27,8 @@ from voicecli.api import (
     transcribe,
     transcribe_async,
 )
+
+__version__ = "0.2.1"
 
 __all__ = [
     "TTSResult",

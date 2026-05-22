@@ -335,7 +335,7 @@ def transcribe(
     ] = False,
 ):
     """Transcribe speech from an audio file to text."""
-    from voicecli.transcribe import transcribe as do_transcribe
+    from voicecli.runtime.transcribe import transcribe as do_transcribe
 
     if not audio.exists():
         typer.echo(f"Error: file not found: {audio}", err=True)
@@ -375,7 +375,7 @@ def listen(
     model: Annotated[str, typer.Option("--model", "-m", help="Kyutai model: 1b or 2.6b")] = "1b",
 ):
     """Live speech-to-text from microphone (Kyutai STT)."""
-    from voicecli.listen import MODELS, listen_loop
+    from voicecli.runtime.listen import MODELS, listen_loop
 
     if model not in MODELS:
         typer.echo(f"Error: unknown model '{model}'. Choose from: {', '.join(MODELS)}", err=True)
@@ -692,7 +692,7 @@ def serve(
     autorestart=true
     stdout_logfile=/var/log/voicecli_daemon.log
     """
-    from voicecli.daemon import daemon_main
+    from voicecli.runtime.daemon import daemon_main
 
     daemon_main(preload=engine, fast=fast)
 
@@ -722,7 +722,7 @@ def stt_serve(
     stdout_logfile=/var/log/voicecli_stt.log
     """
     from voicecli.config import load_config
-    from voicecli.stt_daemon import SttDaemon
+    from voicecli.runtime.stt_daemon import SttDaemon
 
     cfg = load_config()
     stt_cfg = cfg.get("stt", {}) if cfg else {}

@@ -770,8 +770,8 @@ def transcribe(
         FileNotFoundError: Audio file not found.
         ValueError: Invalid model name.
     """
-    from voicecli.transcribe import TranscriptionResult  # noqa: F811
-    from voicecli.transcribe import transcribe as _transcribe
+    from voicecli.runtime.transcribe import TranscriptionResult  # noqa: F811
+    from voicecli.runtime.transcribe import transcribe as _transcribe
 
     audio_path = Path(audio)
     if not audio_path.exists():
@@ -827,7 +827,7 @@ def warmup_model(model: str) -> None:
     Args:
         model: Model name accepted by faster-whisper (e.g. "large-v3-turbo").
     """
-    from voicecli.transcribe import _load_model
+    from voicecli.runtime.transcribe import _load_model
 
     _load_model(model)
 

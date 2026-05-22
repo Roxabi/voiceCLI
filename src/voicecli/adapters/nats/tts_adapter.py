@@ -89,7 +89,7 @@ class TtsNatsAdapter(NatsAdapterBase):
         )
 
     def heartbeat_payload(self) -> dict:
-        from voicecli.model_registry import model_registry
+        from voicecli.runtime.model_registry import model_registry
 
         payload = super().heartbeat_payload()
         payload["model_loaded"] = model_registry.loaded_engines()
@@ -112,7 +112,7 @@ class TtsNatsAdapter(NatsAdapterBase):
         loop = asyncio.get_running_loop()
         log.info("TTS pre-warm: loading engine=%s", self.default_engine)
         try:
-            from voicecli.model_registry import model_registry
+            from voicecli.runtime.model_registry import model_registry
 
             await loop.run_in_executor(self._executor, model_registry.get, self.default_engine)
             log.info("TTS pre-warm complete: engine=%s loaded", self.default_engine)

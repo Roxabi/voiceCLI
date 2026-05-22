@@ -9,10 +9,10 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.tg | voicecli.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
+    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.tg | voicecli.runtime.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
     voicecli.api
     voicecli.adapters
-    voicecli.engines.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
+    voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry | voicecli.runtime.wire_protocol
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds
 ignore_imports =
     # Transitional: voicecli.api.translate imports voicecli.api.markdown for MD rendering — same api package peer dependency
@@ -29,21 +29,21 @@ ignore_imports =
     voicecli.cli_nats -> voicecli.adapters.nats.tts_adapter
     voicecli.cli_nats -> voicecli.adapters.nats.stt_adapter
     # Transitional: voicecli.cli_nats configures model_registry at startup — pending ports-layer wiring (ADR-003)
-    voicecli.cli_nats -> voicecli.model_registry
-    # Transitional: voicecli.cli imports voicecli.listen for recording subcommand — needs extraction to adapter layer
-    voicecli.cli -> voicecli.listen
-    # Transitional: voicecli.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
-    voicecli.daemon -> voicecli.engines.engine
-    # Transitional: daemon_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
-    voicecli.daemon -> voicecli.daemon_protocol
-    # Transitional: daemon_protocol directly loads engines — covered by the same SynthesisPort ADR-003 wiring work as daemon
-    voicecli.daemon_protocol -> voicecli.engines.engine
-    # Transitional: daemon_protocol is shared wire-encoding between TTS/STT daemons (audit #162). Per ADR-003 debt #4, extract to voicecli.wire_protocol under the ports layer once layered axis materializes.
-    voicecli.stt_daemon -> voicecli.daemon_protocol
-    # Transitional: voicecli.stt_daemon imports voicecli.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-003)
-    voicecli.stt_daemon -> voicecli.transcribe
-    # Transitional: voicecli.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-003)
-    voicecli.model_registry -> voicecli.engines.engine
+    voicecli.cli_nats -> voicecli.runtime.model_registry
+    # Transitional: voicecli.cli imports voicecli.runtime.listen for recording subcommand — needs extraction to adapter layer
+    voicecli.cli -> voicecli.runtime.listen
+    # Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
+    voicecli.runtime.daemon -> voicecli.engines.engine
+    # Transitional: wire_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
+    voicecli.runtime.daemon -> voicecli.runtime.wire_protocol
+    # Transitional: wire_protocol directly loads engines — covered by the same SynthesisPort ADR-003 wiring work as daemon
+    voicecli.runtime.wire_protocol -> voicecli.engines.engine
+    # Transitional: wire_protocol is shared wire-encoding between TTS/STT daemons (audit #162). Per ADR-003 debt #4, extract to voicecli.wire_protocol under the ports layer once layered axis materializes.
+    voicecli.runtime.stt_daemon -> voicecli.runtime.wire_protocol
+    # Transitional: voicecli.runtime.stt_daemon imports voicecli.runtime.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-003)
+    voicecli.runtime.stt_daemon -> voicecli.runtime.transcribe
+    # Transitional: voicecli.runtime.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-003)
+    voicecli.runtime.model_registry -> voicecli.engines.engine
     # ADR-003 V10: same top-tier peer dependencies — overlay assembler imports extracted sub-modules
     voicecli.overlay -> voicecli.overlay_audio
     voicecli.overlay -> voicecli.overlay_draw
@@ -65,8 +65,8 @@ ignore_imports =
     voicecli.engines.qwen -> voicecli.api.markdown
     voicecli.engines.qwen_fast -> voicecli.api.markdown
     voicecli.engines.voxtral -> voicecli.api.markdown
-    # Transitional: daemon_protocol imports Segment from voicecli.api.markdown for protocol encoding
-    voicecli.daemon_protocol -> voicecli.api.markdown
+    # Transitional: wire_protocol imports Segment from voicecli.api.markdown for protocol encoding
+    voicecli.runtime.wire_protocol -> voicecli.api.markdown
     # Transitional: adapters.nats runners call voicecli.api for synthesis/transcription — deferred imports
     # (PLC0415), coupling existed when nats/ was top-tier; to be resolved via ports wiring (ADR-003)
     voicecli.adapters.nats._tts_runner -> voicecli.api
@@ -78,6 +78,6 @@ type = forbidden
 source_modules =
     voicecli.api.api
 forbidden_modules =
-    voicecli.daemon
-    voicecli.model_registry
+    voicecli.runtime.daemon
+    voicecli.runtime.model_registry
 allow_indirect_imports = True

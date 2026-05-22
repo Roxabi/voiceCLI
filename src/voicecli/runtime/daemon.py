@@ -19,7 +19,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from voicecli.daemon_protocol import (
+from voicecli.runtime.wire_protocol import (
     handle_job,
     recv_json,
     sanitize_request as _sanitize_request,  # noqa: F401

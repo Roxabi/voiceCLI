@@ -192,7 +192,7 @@ def stop_recording() -> bytes:
 def _record_until_signal(stop_event: threading.Event) -> bytes:
     """Record from mic until stop_event is set. Return WAV bytes."""
     # Try pyaudio first, fall back to parecord
-    from voicecli.stt_daemon import _probe_pyaudio, _record_parecord, RecordingThread
+    from voicecli.runtime.stt_daemon import _probe_pyaudio, _record_parecord, RecordingThread
 
     if _probe_pyaudio():
         rt = RecordingThread()

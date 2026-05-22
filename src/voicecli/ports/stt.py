@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from voicecli.transcribe import TranscriptionResult
+from voicecli.runtime.transcribe import TranscriptionResult
 
 
 @runtime_checkable

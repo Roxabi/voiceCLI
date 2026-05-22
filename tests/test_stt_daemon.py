@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from voicecli.transcribe import TranscriptionResult
+from voicecli.runtime.transcribe import TranscriptionResult
 
 
 # ---------------------------------------------------------------------------
@@ -69,13 +69,13 @@ def daemon_send(tmp_path):
         patch("voicecli.stt_daemon.write_clipboard", mock_write_clipboard),
         patch("voicecli.stt_daemon.warmup", mock_warmup),
         # stt_daemon._stop_and_transcribe() imports transcribe via a deferred
-        # `from voicecli.transcribe import transcribe` inside the function body.
+        # `from voicecli.runtime.transcribe import transcribe` inside the function body.
         # Patching voicecli.transcribe.transcribe intercepts this import at call
         # time.  S4 tests use monkeypatch.setattr(transcribe_mod, "transcribe", …)
         # which targets the same module attribute — both paths are consistent.
         patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
     ):
-        from voicecli.stt_daemon import SttDaemon, SOCKET_PATH as _DEFAULT_SOCKET_PATH
+        from voicecli.runtime.stt_daemon import SttDaemon, SOCKET_PATH as _DEFAULT_SOCKET_PATH
 
         daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
         t = threading.Thread(target=daemon.serve, daemon=True)
@@ -516,7 +516,7 @@ class TestPaRecordFallback:
             patch("voicecli.stt_daemon.warmup", mock_warmup),
             patch("voicecli.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
         ):
-            from voicecli.stt_daemon import SttDaemon
+            from voicecli.runtime.stt_daemon import SttDaemon
 
             daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
             t = threading.Thread(target=daemon.serve, daemon=True)

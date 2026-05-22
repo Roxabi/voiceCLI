@@ -27,7 +27,7 @@ class DaemonSynthesisAdapter:
 
     def is_available(self) -> bool:
         """Return True if the daemon socket path exists."""
-        from voicecli.daemon import SOCKET_PATH
+        from voicecli.runtime.daemon import SOCKET_PATH
 
         return SOCKET_PATH.exists()
 
@@ -35,7 +35,7 @@ class DaemonSynthesisAdapter:
 
     def _wait_for_socket(self, timeout: float = _DAEMON_WAIT_SECS) -> bool:
         """Block until daemon socket appears or timeout expires."""
-        from voicecli.daemon import SOCKET_PATH
+        from voicecli.runtime.daemon import SOCKET_PATH
 
         if SOCKET_PATH.exists():
             return True
@@ -52,7 +52,7 @@ class DaemonSynthesisAdapter:
 
     def _try_socket(self, request: dict) -> Path | None:
         """Send request to daemon. Returns WAV path on success, None on failure."""
-        from voicecli.daemon import SOCKET_PATH, daemon_request
+        from voicecli.runtime.daemon import SOCKET_PATH, daemon_request
 
         if not SOCKET_PATH.exists():
             return None
