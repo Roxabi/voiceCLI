@@ -13,13 +13,12 @@ layers =
     voicecli.api
     voicecli.adapters
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.translate | voicecli.markdown | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds | voicecli.engine_caps | voicecli._markdown_directives
-    voicecli.markdown_types
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds
 ignore_imports =
-    # Transitional: voicecli.translate imports voicecli.markdown for MD rendering — same layer peer dependency
-    voicecli.translate -> voicecli.markdown
-    # Transitional: voicecli.translate imports voicecli.utils for shared utilities — same layer peer dependency
-    voicecli.translate -> voicecli.utils
+    # Transitional: voicecli.api.translate imports voicecli.api.markdown for MD rendering — same api package peer dependency
+    voicecli.api.translate -> voicecli.api.markdown
+    # Transitional: voicecli.api.translate imports voicecli.utils for shared utilities — cross-layer utility dependency
+    voicecli.api.translate -> voicecli.utils
     # Transitional: voicecli.cli assembler imports extracted sub-app modules — same top-tier peer dependencies (ADR-003 V9)
     voicecli.cli -> voicecli.cli_samples
     voicecli.cli -> voicecli.cli_dictate
@@ -54,10 +53,20 @@ ignore_imports =
     # ADR-003 V10: same top-tier peer dependency — nats_recorder reuses notify() from stt_client for the
     # progressive "Recording... Ns" bubble emitted from the recorder subprocess.
     voicecli.nats_recorder -> voicecli.stt_client
-    # ADR-003 V10: same config/utils layer peer dependencies
-    voicecli.translate -> voicecli.engine_caps
-    voicecli.markdown -> voicecli._markdown_directives
+    # ADR-003 V10: same api package peer dependencies
+    voicecli.api.translate -> voicecli.api.engine_caps
+    voicecli.api.markdown -> voicecli.api._markdown_directives
     voicecli.history -> voicecli.paths
+    # Transitional: engines import Segment/TTSDocument from voicecli.api.markdown — pure data types, moving to
+    # a shared primitives layer is tracked by ADR-003; engines need Segment for type-hinted segment iteration
+    voicecli.engines.chatterbox -> voicecli.api.markdown
+    voicecli.engines.chatterbox_turbo -> voicecli.api.markdown
+    voicecli.engines._chatterbox_base -> voicecli.api.markdown
+    voicecli.engines.qwen -> voicecli.api.markdown
+    voicecli.engines.qwen_fast -> voicecli.api.markdown
+    voicecli.engines.voxtral -> voicecli.api.markdown
+    # Transitional: daemon_protocol imports Segment from voicecli.api.markdown for protocol encoding
+    voicecli.daemon_protocol -> voicecli.api.markdown
     # Transitional: adapters.nats runners call voicecli.api for synthesis/transcription — deferred imports
     # (PLC0415), coupling existed when nats/ was top-tier; to be resolved via ports wiring (ADR-003)
     voicecli.adapters.nats._tts_runner -> voicecli.api
@@ -67,7 +76,7 @@ ignore_imports =
 name = api must not import daemon or model_registry directly
 type = forbidden
 source_modules =
-    voicecli.api
+    voicecli.api.api
 forbidden_modules =
     voicecli.daemon
     voicecli.model_registry

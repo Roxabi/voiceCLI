@@ -10,7 +10,7 @@ from voicecli.engines._chatterbox_base import ChatterboxBase
 from voicecli.models import CHATTERBOX_MODEL, warn_if_first_download
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 
 class ChatterboxTurboEngine(ChatterboxBase):

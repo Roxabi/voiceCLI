@@ -7,7 +7,7 @@ implementation. Existing call sites continue to import names from this module.
 
 from pathlib import Path
 
-from voicecli.markdown_types import (
+from voicecli.api.markdown_types import (
     Segment,
     TTSDocument,
     compose_instruct,
@@ -32,20 +32,20 @@ def parse_md_file(path: Path) -> TTSDocument:
     # Deferred import keeps voicecli.markdown free of any back-reference at
     # module load time; voicecli._markdown_directives now depends only on
     # voicecli.markdown_types, so the historical cycle is gone.
-    from voicecli._markdown_directives import parse_md_file as _parse
+    from voicecli.api._markdown_directives import parse_md_file as _parse
 
     return _parse(path)
 
 
 def _parse_comment_kvs(content: str) -> dict[str, str]:
     """Re-export from _markdown_directives (used by tests and any external callers)."""
-    from voicecli._markdown_directives import _parse_comment_kvs as _fn
+    from voicecli.api._markdown_directives import _parse_comment_kvs as _fn
 
     return _fn(content)
 
 
 def _parse_segments(body: str, defaults: dict) -> list[Segment]:
     """Re-export from _markdown_directives (used by tests and any external callers)."""
-    from voicecli._markdown_directives import _parse_segments as _fn
+    from voicecli.api._markdown_directives import _parse_segments as _fn
 
     return _fn(body, defaults)

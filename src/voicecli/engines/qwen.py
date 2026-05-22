@@ -18,7 +18,7 @@ from voicecli.models import (
 )
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 SPEAKERS = [
     "Vivian",

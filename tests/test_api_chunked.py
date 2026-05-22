@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from voicecli.api_chunked import clone_chunked, generate_chunked, write_done
+from voicecli.api.chunked import clone_chunked, generate_chunked, write_done
 
 
 def test_generate_chunked_returns_three_chunk_paths(tmp_path):

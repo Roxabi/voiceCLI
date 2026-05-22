@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from voicecli.ports.synthesis import SynthesisPort
 
-from voicecli.api_chunked import clone_chunked, generate_chunked
+from voicecli.api.chunked import clone_chunked, generate_chunked
 from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
 
 log = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ def _resolve_config(
         if "instruct" in cfg:
             kw["instruct"] = cfg["instruct"]
         else:
-            from voicecli.markdown import compose_instruct
+            from voicecli.api.markdown import compose_instruct
 
             composed = compose_instruct(
                 kw.get("accent") or cfg.get("accent"),
@@ -246,7 +246,7 @@ def _resolve_config(
 
 def _apply_config_defaults(doc, cfg: dict) -> None:
     """Backfill structured instruct parts from voicecli.toml into doc/segments."""
-    from voicecli.markdown import compose_instruct
+    from voicecli.api.markdown import compose_instruct
 
     PARTS = ("accent", "personality", "speed", "emotion")
     cfg_parts = {p: cfg.get(p) for p in PARTS if cfg.get(p)}
@@ -277,7 +277,7 @@ def _apply_config_defaults(doc, cfg: dict) -> None:
 
 def _flatten_doc(doc) -> None:
     """Strip [tags] and merge all segments into one, ignoring per-section directives."""
-    from voicecli.translate import _strip_tags
+    from voicecli.api.translate import _strip_tags
 
     if doc.segments:
         texts = [_strip_tags(seg.text) for seg in doc.segments]
@@ -310,8 +310,8 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
         script_stem = text_path.stem
         text = text_path.read_text(encoding="utf-8")
     elif text_path.suffix == ".md" and text_path.exists():
-        from voicecli.markdown import parse_md_file
-        from voicecli.translate import translate_for_engine
+        from voicecli.api.markdown import parse_md_file
+        from voicecli.api.translate import translate_for_engine
 
         script_stem = text_path.stem
         doc = parse_md_file(text_path)
@@ -351,7 +351,7 @@ def _resolve_input(text: str | Path, resolved: dict) -> dict:
         if resolved.get("_crossfade_from_caller") is None and doc.crossfade is not None:
             xfade_ms = doc.crossfade
     elif plain:
-        from voicecli.translate import _strip_tags
+        from voicecli.api.translate import _strip_tags
 
         text = _strip_tags(str(text))
     else:

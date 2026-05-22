@@ -18,7 +18,7 @@ from voicecli.engine import TTSEngine
 from voicecli.utils import split_sentences
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 
 class ChatterboxBase(TTSEngine):
