@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from voicecli import nats_recorder
+from voicecli.ui import nats_recorder
 
 
 def test_start_recording_error_includes_log_path(tmp_path: Path) -> None:

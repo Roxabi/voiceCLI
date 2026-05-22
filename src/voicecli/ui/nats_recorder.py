@@ -222,7 +222,7 @@ def _progress_notify_loop(stop_event: threading.Event, started_at: float) -> Non
     "Recording... 3s" → "Recording... 5s" updates while speaking, instead of
     a static "Recording..." until they stop. Exits when ``stop_event`` is set.
     """
-    from voicecli.stt_client import notify
+    from voicecli.ui.stt_client import notify
 
     while not stop_event.wait(PROGRESS_TICK_SECONDS):
         elapsed = int(time.monotonic() - started_at)

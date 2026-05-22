@@ -9,11 +9,11 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.tg | voicecli.runtime.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
+    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.ui | voicecli.runtime.listen
     voicecli.api
     voicecli.adapters
     voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry | voicecli.runtime.wire_protocol
-    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes | voicecli.clipboard | voicecli.history | voicecli.ui_sounds
+    voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes | voicecli.history
 ignore_imports =
     # Transitional: voicecli.api.translate imports voicecli.api.markdown for MD rendering — same api package peer dependency
     voicecli.api.translate -> voicecli.api.markdown
@@ -44,15 +44,20 @@ ignore_imports =
     voicecli.runtime.stt_daemon -> voicecli.runtime.transcribe
     # Transitional: voicecli.runtime.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-003)
     voicecli.runtime.model_registry -> voicecli.engines.engine
-    # ADR-003 V10: same top-tier peer dependencies — overlay assembler imports extracted sub-modules
-    voicecli.overlay -> voicecli.overlay_audio
-    voicecli.overlay -> voicecli.overlay_draw
-    voicecli.overlay -> voicecli.stt_client
-    # ADR-003 V10: same top-tier peer dependency — cli_dictate uses stt_client for dictate flow
-    voicecli.cli_dictate -> voicecli.stt_client
-    # ADR-003 V10: same top-tier peer dependency — nats_recorder reuses notify() from stt_client for the
-    # progressive "Recording... Ns" bubble emitted from the recorder subprocess.
-    voicecli.nats_recorder -> voicecli.stt_client
+    # ADR-003 V11: ui/ sub-package — overlay assembler imports extracted sub-modules (same ui package peers)
+    voicecli.ui.overlay -> voicecli.ui.overlay_audio
+    voicecli.ui.overlay -> voicecli.ui.overlay_draw
+    voicecli.ui.overlay -> voicecli.ui.stt_client
+    # ADR-003 V11: cli_dictate uses stt_client for dictate flow — cross-layer (cli → ui)
+    voicecli.cli_dictate -> voicecli.ui.stt_client
+    voicecli.cli_dictate -> voicecli.ui.clipboard
+    voicecli.cli_dictate -> voicecli.ui.nats_recorder
+    voicecli.cli_dictate -> voicecli.ui.sounds
+    # ADR-003 V11: nats_recorder reuses notify() from stt_client (same ui package peer)
+    voicecli.ui.nats_recorder -> voicecli.ui.stt_client
+    # ADR-003 V11: runtime.stt_daemon uses clipboard and ui_sounds — cross-layer (runtime → ui)
+    voicecli.runtime.stt_daemon -> voicecli.ui.clipboard
+    voicecli.runtime.stt_daemon -> voicecli.ui.sounds
     # ADR-003 V10: same api package peer dependencies
     voicecli.api.translate -> voicecli.api.engine_caps
     voicecli.api.markdown -> voicecli.api._markdown_directives

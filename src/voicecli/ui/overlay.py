@@ -35,8 +35,8 @@ except (ValueError, ImportError):
     HAS_LAYER_SHELL = False
 
 from voicecli.env import coerce_bool_env  # noqa: E402
-from voicecli.overlay_audio import LEVEL_PEAK, SND_STOP, play, read_level  # noqa: E402
-from voicecli.overlay_draw import (  # noqa: E402
+from voicecli.ui.overlay_audio import LEVEL_PEAK, SND_STOP, play, read_level  # noqa: E402
+from voicecli.ui.overlay_draw import (  # noqa: E402
     ANIM_MS,
     BAR_COUNT,
     WATCHDOG_S,
@@ -45,7 +45,7 @@ from voicecli.overlay_draw import (  # noqa: E402
     draw_frame,
     hotkey_badge,
 )
-from voicecli.stt_client import SOCKET_PATH, send_status  # noqa: E402
+from voicecli.ui.stt_client import SOCKET_PATH, send_status  # noqa: E402
 from voicecli.runtime.stt_daemon import LEVEL_FILE  # noqa: E402
 
 
