@@ -8,7 +8,7 @@ from voicecli.cli_dictate import dictate_app
 from voicecli.cli_doctor import doctor
 from voicecli.cli_nats import nats_app
 from voicecli.cli_samples import samples_app
-from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
+from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
 from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
 
 

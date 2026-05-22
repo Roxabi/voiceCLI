@@ -16,7 +16,6 @@
     "src/voicecli/daemon_protocol.py",
     "src/voicecli/nats_stt_client.py",
     "src/voicecli/daemon.py",
-    "src/voicecli/engine.py",
     "src/voicecli/listen.py",
     "src/voicecli/model_registry.py",
     "src/voicecli/models.py",

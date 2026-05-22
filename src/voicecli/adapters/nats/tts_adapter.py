@@ -30,7 +30,7 @@ HEARTBEAT_SUBJECT = VOICE_SUBJECTS.tts_heartbeat
 
 
 def _engine_available(engine: str) -> bool:
-    from voicecli.engine import _get_registry
+    from voicecli.engines.engine import _get_registry
 
     return engine in _get_registry()
 

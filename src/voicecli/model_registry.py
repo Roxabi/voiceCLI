@@ -14,7 +14,7 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from voicecli.engine import TTSEngine
+    from voicecli.engines.engine import TTSEngine
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class ModelRegistry:
                     return self._cache[name]
 
             # Cache miss - validate engine exists
-            from voicecli.engine import _get_registry
+            from voicecli.engines.engine import _get_registry
 
             engines = _get_registry()
             if name not in engines:
@@ -182,7 +182,7 @@ class ModelRegistry:
         Raises:
             InsufficientVRAMError: Not enough VRAM even after full eviction.
         """
-        from voicecli.engine import VRAM_REQUIRED_GB, VRAM_REQUIRED_GB_DEFAULT
+        from voicecli.engines.engine import VRAM_REQUIRED_GB, VRAM_REQUIRED_GB_DEFAULT
 
         required_gb = VRAM_REQUIRED_GB.get(required, VRAM_REQUIRED_GB_DEFAULT)
 

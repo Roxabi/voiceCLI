@@ -150,7 +150,7 @@ def test_list_voices_invalid_raises_valueerror(mock_engine):
 
 def test_cuda_guard_raises_runtimeerror():
     """cuda_guard should raise RuntimeError, not SystemExit."""
-    from voicecli.engine import cuda_guard
+    from voicecli.engines.engine import cuda_guard
 
     with pytest.raises(RuntimeError, match="CUDA error"):
         with cuda_guard("test"):
@@ -159,7 +159,7 @@ def test_cuda_guard_raises_runtimeerror():
 
 def test_cuda_guard_passes_non_cuda_errors():
     """cuda_guard should not catch non-CUDA RuntimeErrors."""
-    from voicecli.engine import cuda_guard
+    from voicecli.engines.engine import cuda_guard
 
     with pytest.raises(RuntimeError, match="some other error"):
         with cuda_guard("test"):

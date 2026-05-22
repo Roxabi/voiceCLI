@@ -9,7 +9,7 @@ import torch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voicecli.engine import cuda_guard
+from voicecli.engines.engine import cuda_guard
 from voicecli.engines.qwen import QwenEngine
 from voicecli.models import (
     QWEN_CLONE_MODEL,

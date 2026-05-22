@@ -6,7 +6,7 @@ import soundfile as sf
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voicecli.engine import TTSEngine, cuda_guard
+from voicecli.engines.engine import TTSEngine, cuda_guard
 from voicecli.models import VOXTRAL_MODEL, warn_if_first_download
 
 if TYPE_CHECKING:

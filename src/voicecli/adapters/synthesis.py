@@ -114,7 +114,7 @@ class DaemonSynthesisAdapter:
         **kwargs,
     ) -> Path | None:
         """Generate speech via the daemon socket, fallback to local engine on miss."""
-        from voicecli.engine import QWEN_ENGINES, get_engine
+        from voicecli.engines.engine import QWEN_ENGINES, get_engine
 
         # Try socket first for Qwen engines
         if engine in QWEN_ENGINES and self._wait_for_socket():
@@ -172,7 +172,7 @@ class DaemonSynthesisAdapter:
         **kwargs,
     ) -> Path | None:
         """Clone voice via the daemon socket, fallback to local engine on miss."""
-        from voicecli.engine import QWEN_ENGINES, get_engine
+        from voicecli.engines.engine import QWEN_ENGINES, get_engine
 
         # Try socket first for Qwen engines
         if engine in QWEN_ENGINES and self._wait_for_socket():
@@ -242,7 +242,7 @@ class LocalSynthesisAdapter:
         **kwargs,
     ) -> Path | None:
         """Generate speech using a registry-cached local engine."""
-        from voicecli.engine import QWEN_ENGINES
+        from voicecli.engines.engine import QWEN_ENGINES
 
         eng = self._registry.get(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:
@@ -278,7 +278,7 @@ class LocalSynthesisAdapter:
         **kwargs,
     ) -> Path | None:
         """Clone voice using a registry-cached local engine."""
-        from voicecli.engine import QWEN_ENGINES
+        from voicecli.engines.engine import QWEN_ENGINES
 
         eng = self._registry.get(engine)
         if kwargs.pop("fast", False) and engine in QWEN_ENGINES:

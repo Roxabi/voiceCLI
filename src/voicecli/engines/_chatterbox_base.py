@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voicecli.engine import TTSEngine
+from voicecli.engines.engine import TTSEngine
 from voicecli.utils import split_sentences
 
 if TYPE_CHECKING:
