@@ -726,7 +726,7 @@ def generate(
         extra_kwargs=kwargs,
     )
 
-    from voicecli.engine import QWEN_ENGINES, get_engine
+    from voicecli.engines.engine import QWEN_ENGINES, get_engine
     from voicecli.utils import build_output_prefix, default_output_path
 
     config_path = Path(config) if config is not None else None
@@ -900,7 +900,7 @@ def clone(
     )
     _check_str("ref_text", ref_text)
 
-    from voicecli.engine import QWEN_ENGINES, get_engine
+    from voicecli.engines.engine import QWEN_ENGINES, get_engine
     from voicecli.utils import build_output_prefix, default_output_path
 
     ref_path = _resolve_ref(ref)
@@ -1073,7 +1073,7 @@ def transcribe(
 
 def list_engines() -> list[str]:
     """Return available TTS engine names."""
-    from voicecli.engine import available_engines
+    from voicecli.engines.engine import available_engines
 
     return available_engines()
 
@@ -1084,7 +1084,7 @@ def list_voices(engine: str) -> list[str]:
     Raises:
         ValueError: If engine name is unknown.
     """
-    from voicecli.engine import get_engine
+    from voicecli.engines.engine import get_engine
 
     try:
         eng = get_engine(engine)

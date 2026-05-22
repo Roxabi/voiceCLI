@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Optional
 import typer
 
 from voicecli import __version__
-from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
+from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
 from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
 
 

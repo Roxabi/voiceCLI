@@ -11,7 +11,7 @@ type = layers
 layers =
     voicecli.cli | voicecli.adapters.nats | voicecli.tg | voicecli.listen | voicecli.overlay
     voicecli.api
-    voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
+    voicecli.engines.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes
 ignore_imports =
     # Transitional: voicecli.api.translate imports voicecli.utils for shared utilities — api → core cross-tier (top-down)
@@ -28,13 +28,13 @@ ignore_imports =
     voicecli.cli -> voicecli.adapters.nats.stt_adapter
     # Transitional: voicecli.cli imports voicecli.listen for recording subcommand — needs extraction to adapter layer
     voicecli.cli -> voicecli.listen
-    # Transitional: voicecli.daemon imports voicecli.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-059)
-    voicecli.daemon -> voicecli.engine
+    # Transitional: voicecli.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-059)
+    voicecli.daemon -> voicecli.engines.engine
     # Transitional: daemon_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
     voicecli.daemon -> voicecli.daemon_protocol
     # Transitional: daemon_protocol directly loads engines — covered by the same SynthesisPort ADR-059 wiring work as daemon
-    voicecli.daemon_protocol -> voicecli.engine
+    voicecli.daemon_protocol -> voicecli.engines.engine
     # Transitional: voicecli.stt_daemon imports voicecli.transcribe to run STT — coupling is expected but needs STTEnginePort wiring (ADR-059)
     voicecli.stt_daemon -> voicecli.transcribe
-    # Transitional: voicecli.model_registry imports voicecli.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
-    voicecli.model_registry -> voicecli.engine
+    # Transitional: voicecli.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
+    voicecli.model_registry -> voicecli.engines.engine

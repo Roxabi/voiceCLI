@@ -15,7 +15,7 @@ import sys
 import pytest
 
 import voicecli.transcribe  # noqa: F401 — registers submodule in sys.modules
-from voicecli.engine import available_engines, get_engine
+from voicecli.engines.engine import available_engines, get_engine
 
 # voicecli/__init__.py overwrites the `voicecli.transcribe` attribute with the
 # `transcribe` function, so resolve the actual module via sys.modules.

@@ -9,7 +9,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from voicecli.engine import TTSEngine
+from voicecli.engines.engine import TTSEngine
 
 
 def _silent_wav_bytes() -> bytes:

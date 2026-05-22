@@ -25,7 +25,7 @@ from voicecli.daemon_protocol import (
     sanitize_request as _sanitize_request,  # noqa: F401
     send_json,
 )
-from voicecli.engine import QWEN_ENGINES
+from voicecli.engines.engine import QWEN_ENGINES
 from voicecli.paths import TTS_SOCKET_PATH as SOCKET_PATH
 
 _OUTPUT_BASE = Path.home()  # output_path must resolve within this directory (patchable in tests)
@@ -104,7 +104,7 @@ def daemon_main(preload: str | None = None, fast: bool = False) -> None:
 
 
 def _load_engine(name: str, fast: bool = False):
-    from voicecli.engine import get_engine
+    from voicecli.engines.engine import get_engine
 
     eng = get_engine(name)
     if fast and name in QWEN_ENGINES:
@@ -114,7 +114,7 @@ def _load_engine(name: str, fast: bool = False):
 
 def _has_vram(eng_name: str) -> bool:
     """Return True if enough free VRAM is available to load the engine."""
-    from voicecli.engine import check_vram
+    from voicecli.engines.engine import check_vram
 
     try:
         check_vram(eng_name)
