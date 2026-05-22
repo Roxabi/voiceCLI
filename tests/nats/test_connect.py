@@ -35,7 +35,7 @@ class TestNkeyEnvVarResolution:
         monkeypatch.setenv("NATS_NKEY_SEED_PATH", str(seed_file))
 
         with (
-            patch("voicecli.cli._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.cli.main._probe_socket_daemon", return_value="absent"),
             patch(
                 "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
@@ -61,7 +61,7 @@ class TestNkeyEnvVarResolution:
         monkeypatch.delenv("NATS_NKEY_SEED_PATH", raising=False)
 
         with (
-            patch("voicecli.cli._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.cli.main._probe_socket_daemon", return_value="absent"),
             patch(
                 "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
