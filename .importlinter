@@ -3,16 +3,17 @@ root_packages =
     voicecli
 include_external_packages = False
 
-# ── Contracts ────────────────────────────────────────────────────────────────
-
 [importlinter:contract:layer-boundaries]
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.ui | voicecli.runtime.listen
-    voicecli.api
+    voicecli.cli
+    voicecli.ui
     voicecli.adapters
-    voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry | voicecli.runtime.wire_protocol
+    voicecli.api
+    voicecli.runtime
+    voicecli.engines
+    voicecli.ports
     voicecli.core
 ignore_imports =
     # Transitional: voicecli.api.translate imports voicecli.api.markdown for MD rendering — same api package peer dependency
@@ -27,7 +28,7 @@ ignore_imports =
     voicecli.cli.nats -> voicecli.runtime.model_registry
     # Transitional: voicecli.cli imports voicecli.runtime.listen for recording subcommand — needs extraction to adapter layer
     voicecli.cli.main -> voicecli.runtime.listen
-# Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
+    # Transitional: voicecli.runtime.daemon imports voicecli.engines.engine to load TTS engines — daemon is an infrastructure adapter, coupling is expected but needs SynthesisPort wiring (ADR-003)
     voicecli.runtime.daemon -> voicecli.engines.engine
     # Transitional: wire_protocol is a private helper of daemon — same infrastructure layer, peer import acceptable
     voicecli.runtime.daemon -> voicecli.runtime.wire_protocol
@@ -71,13 +72,18 @@ ignore_imports =
     # (PLC0415), coupling existed when nats/ was top-tier; to be resolved via ports wiring (ADR-003)
     voicecli.adapters.nats._tts_runner -> voicecli.api
     voicecli.adapters.nats._stt_runner -> voicecli.api
+    # Transitional: voicecli.api.api calls adapters.synthesis for daemon-backed synthesis — cross-layer
+    # coupling from pre-layering; to be resolved via SynthesisPort wiring (ADR-003)
+    voicecli.api.api -> voicecli.adapters.synthesis
+    # Transitional: voicecli.ports.stt imports runtime.transcribe directly — needs indirection via port interface (ADR-003)
+    voicecli.ports.stt -> voicecli.runtime.transcribe
 
 [importlinter:contract:api-no-direct-infra]
-name = api must not import daemon or model_registry directly
+name = api must not import runtime daemon or model_registry directly
 type = forbidden
-source_modules =
-    voicecli.api.api
+source_modules = voicecli.api
 forbidden_modules =
     voicecli.runtime.daemon
+    voicecli.runtime.stt_daemon
     voicecli.runtime.model_registry
 allow_indirect_imports = True
