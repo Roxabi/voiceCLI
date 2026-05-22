@@ -312,13 +312,13 @@ def dictate(
 
     if listen:
         from voicecli.config import load_stt_config
-        from voicecli.stt_client import hotkey_loop
+        from voicecli.ui.stt_client import hotkey_loop
 
         stt_cfg = load_stt_config()
         hotkey_loop(stt_cfg["hotkey"], paste=paste)
         return
 
-    from voicecli.stt_client import auto_paste, notify, send_toggle
+    from voicecli.ui.stt_client import auto_paste, notify, send_toggle
 
     resp = send_toggle(mode=mode)
 
@@ -351,7 +351,7 @@ def dictate(
 @dictate_app.command("status")
 def dictate_status() -> None:
     """Show current STT daemon state."""
-    from voicecli.stt_client import send_status
+    from voicecli.ui.stt_client import send_status
 
     resp = send_status()
     if resp.get("status") == "error":
@@ -378,7 +378,7 @@ def dictate_test_overlay() -> None:
 @dictate_app.command("next-mode")
 def dictate_next_mode() -> None:
     """Cycle to the next STT mode (becomes the new default)."""
-    from voicecli.stt_client import notify, send_next_mode
+    from voicecli.ui.stt_client import notify, send_next_mode
 
     resp = send_next_mode()
     if resp.get("status") == "error":
@@ -393,7 +393,7 @@ def dictate_next_mode() -> None:
 @dictate_app.command("cancel")
 def dictate_cancel() -> None:
     """Cancel the current STT recording without transcribing."""
-    from voicecli.stt_client import send_cancel
+    from voicecli.ui.stt_client import send_cancel
 
     resp = send_cancel()
     if resp.get("status") == "error":
@@ -438,7 +438,7 @@ def dictate_history(
     """Show the last 20 dictation history entries."""
     import json as _json
 
-    from voicecli.clipboard import write_clipboard
+    from voicecli.ui.clipboard import write_clipboard
     from voicecli.history import HISTORY_PATH
 
     if not HISTORY_PATH.exists():

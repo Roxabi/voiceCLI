@@ -9,7 +9,7 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.adapters.nats | voicecli.tg | voicecli.runtime.listen | voicecli.overlay
+    voicecli.cli | voicecli.adapters.nats | voicecli.ui.tg | voicecli.runtime.listen | voicecli.ui.overlay
     voicecli.api
     voicecli.engines.engine | voicecli.runtime.transcribe | voicecli.runtime.daemon | voicecli.runtime.stt_daemon | voicecli.runtime.model_registry
     voicecli.config | voicecli.paths | voicecli.utils | voicecli.env | voicecli.models | voicecli.samples | voicecli.stt_modes
@@ -38,3 +38,6 @@ ignore_imports =
     voicecli.runtime.stt_daemon -> voicecli.runtime.transcribe
     # Transitional: voicecli.runtime.model_registry imports voicecli.engines.engine to manage engine instances — needs decoupling via ports layer (ADR-059)
     voicecli.runtime.model_registry -> voicecli.engines.engine
+    # Transitional: voicecli.runtime.stt_daemon imports voicecli.ui.clipboard and voicecli.ui.sounds — cross-tier (runtime → ui); coupling pre-existed T5, resolved in T8 restructure
+    voicecli.runtime.stt_daemon -> voicecli.ui.clipboard
+    voicecli.runtime.stt_daemon -> voicecli.ui.sounds

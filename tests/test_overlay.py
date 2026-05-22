@@ -1,4 +1,4 @@
-"""Tests for voicecli.overlay._hotkey_badge and _resolve_test_mode."""
+"""Tests for voicecli.ui.overlay_draw.hotkey_badge and voicecli.ui.overlay._resolve_test_mode."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ sys.modules["gi.repository.GLib"] = MagicMock()
 sys.modules["gi.repository.Gtk"] = MagicMock()
 sys.modules["gi.repository.GtkLayerShell"] = MagicMock()
 
-from voicecli.overlay import _hotkey_badge, _resolve_test_mode  # noqa: E402
+from voicecli.ui.overlay import _resolve_test_mode  # noqa: E402
+from voicecli.ui.overlay_draw import hotkey_badge as _hotkey_badge  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

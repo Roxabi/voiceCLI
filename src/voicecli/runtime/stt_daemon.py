@@ -21,11 +21,11 @@ import threading
 from enum import Enum
 from pathlib import Path
 
-from voicecli.clipboard import auto_paste, write_clipboard
+from voicecli.ui.clipboard import auto_paste, write_clipboard
 from voicecli.config import load_stt_config
 from voicecli.history import append_history, wav_duration_s
 from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
-from voicecli.ui_sounds import play_ui_sound
+from voicecli.ui.sounds import play_ui_sound
 
 MAX_MSG = 65536
 
