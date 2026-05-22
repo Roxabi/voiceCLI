@@ -62,6 +62,7 @@ class TtsValidationOutcome:
     error_code: str | None
     cleaned_text: str | None = None
     engine: str | None = None
+    request: TtsRequest | None = None
 
 
 @dataclass(frozen=True)
@@ -153,7 +154,7 @@ def validate_tts_request(
     if not engine_available(engine):
         return TtsValidationOutcome(error_code="engine_unavailable")
 
-    return TtsValidationOutcome(error_code=None, cleaned_text=text, engine=engine)
+    return TtsValidationOutcome(error_code=None, cleaned_text=text, engine=engine, request=req)
 
 
 # ---------------------------------------------------------------------------

@@ -142,6 +142,10 @@ class Segment:
     end: float
     text: str
 
+    def __post_init__(self) -> None:
+        self.start = float(self.start)
+        self.end = float(self.end)
+
 
 @dataclass
 class TranscriptionResult:

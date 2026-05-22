@@ -117,7 +117,7 @@ class TtsRequest:
     request_id: str
     trace_id: str = ""
     contract_version: str = ""
-    engine: str = ""
+    engine: str | None = None
     language: str | None = None
     voice: str | None = None
     speed: float | None = None
