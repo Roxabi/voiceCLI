@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.api import _validate_output_path, clone, generate
+from voicecli.api import clone, generate
+from voicecli.api.api import _validate_output_path
 from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
 

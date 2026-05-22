@@ -398,7 +398,7 @@ def dictate_nats(
         vocab_to_prompt,
     )
     from voicecli.ui.nats_recorder import is_recording, start_recording, stop_recording
-    from voicecli.nats_stt_client import transcribe_via_nats
+    from voicecli.adapters.nats.stt_client import transcribe_via_nats
     from voicecli.ui.stt_client import notify
     from voicecli.core.stt_modes import get_mode
     from voicecli.ui.sounds import play_ui_sound

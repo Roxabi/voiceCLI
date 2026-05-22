@@ -3,7 +3,7 @@
 import sys as _sys
 
 # Import submodule-level types first
-from voicecli.api.markdown import Segment, TTSDocument
+from voicecli.api.markdown_types import Segment, TTSDocument
 from voicecli.runtime.transcribe import TranscriptionResult
 
 # Backward-compat shim: external consumers (e.g. lyra) may do:

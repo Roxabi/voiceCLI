@@ -9,3 +9,5 @@ from voicecli.engines.engine import (  # noqa: F401
     cuda_guard,
     get_engine,
 )
+
+__all__ = ["get_engine", "available_engines", "QWEN_ENGINES"]

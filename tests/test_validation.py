@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from voicecli.api import _validate_tts_params
+from voicecli.api.api import _validate_tts_params
 
 
 # ── String field validation ──────────────────────────────────────────────────

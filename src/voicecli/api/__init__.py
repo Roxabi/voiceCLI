@@ -3,8 +3,6 @@
 from voicecli.api.api import (
     ParamValidationError,
     TTSResult,
-    _validate_output_path,
-    _validate_tts_params,
     clone,
     clone_async,
     generate,
@@ -21,8 +19,6 @@ __all__ = [
     # api.api
     "ParamValidationError",
     "TTSResult",
-    "_validate_output_path",
-    "_validate_tts_params",
     "clone",
     "clone_async",
     "generate",
