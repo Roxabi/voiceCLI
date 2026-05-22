@@ -73,7 +73,7 @@ Quand on étend le système :
 - **6 fichiers exemptés >300 LOC** (`cli.py` 821, `api.py` 850, `stt_daemon.py` 784, `cli_dictate.py` 486, `transcribe.py` 344, `daemon_protocol.py` 326) — l'ADR ne les fait pas disparaître. — Mitigation : issues #81/82/83/129 ; split par couche quand chantier ouvert
 - **`daemon_protocol.py` peer-import "Permanent"** entre `daemon`/`stt_daemon` contradictoire avec doctrine ports. — Mitigation : reclasser "Transitional, à extraire en `wire_protocol/` sous couche ports" lors du refactor daemon
 - **`voicecli.adapters.nats._tts_runner -> voicecli.api`** — NATS TTS runner appelle `voicecli.api.generate` / `warmup_model` pour la synthèse ; adapters ¬censés remonter vers api. — Mitigation : résoudre via port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
-- **`voicecli.adapters.nats._stt_runner -> voicecli.api.api`** — NATS STT runner appelle `voicecli.api.api.warmup_model` pour charger le modèle ; même résolution que ci-dessus. — Mitigation : port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
+- **`voicecli.adapters.nats._stt_runner -> voicecli.api`** — NATS STT runner appelle `voicecli.api.warmup_model` (import différé, dans le corps de fonction) pour charger le modèle ; même résolution que ci-dessus. — Mitigation : port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
 - **STS = pipeline STT→TTS** composé via 2 adapters explicitement → coût d'assemblage visible, pas de méga-adapter monolithique. — Mitigation : accepté comme coût normal de composition ; documenter le wiring dans la couche `api.py`
 
 ### Anti-pattern signal

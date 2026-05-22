@@ -32,7 +32,7 @@ ignore_imports =
     # Transitional: NATS runners call voicecli.api for warmup/model loading — adapters below api;
     # to be resolved via warmup port or dependency injection (ADR-003)
     voicecli.adapters.nats._tts_runner -> voicecli.api
-    voicecli.adapters.nats._stt_runner -> voicecli.api.api
+    voicecli.adapters.nats._stt_runner -> voicecli.api
     # Transitional: voicecli.ports.stt imports runtime.transcribe directly — needs indirection via port interface (ADR-003)
     voicecli.ports.stt -> voicecli.runtime.transcribe
 
