@@ -7,7 +7,7 @@ import pytest
 
 from voicecli.api import clone, generate
 from voicecli.api.api import _validate_output_path
-from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
+from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
 
 class TestValidateOutputPath:
@@ -98,7 +98,7 @@ class TestGenerateOutputValidation:
 
         # Act + Assert
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", side_effect=Exception("should not reach")),
             pytest.raises(ValueError, match="outside"),
         ):
@@ -114,7 +114,7 @@ class TestGenerateOutputValidation:
 
         # Act
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", return_value=mock_engine),
         ):
             result = generate(
@@ -139,7 +139,7 @@ class TestCloneOutputValidation:
 
         # Act + Assert
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", side_effect=Exception("should not reach")),
             pytest.raises(ValueError, match="outside"),
         ):
@@ -157,7 +157,7 @@ class TestCloneOutputValidation:
 
         # Act
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             patch("voicecli.engine.get_engine", return_value=mock_engine),
         ):
             result = clone(

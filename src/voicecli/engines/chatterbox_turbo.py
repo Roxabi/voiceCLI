@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from voicecli.engines.engine import TTSEngine, cuda_guard
-from voicecli.models import CHATTERBOX_MODEL, warn_if_first_download
-from voicecli.utils import split_sentences
+from voicecli.core.models import CHATTERBOX_MODEL, warn_if_first_download
+from voicecli.core.utils import split_sentences
 
 if TYPE_CHECKING:
     from voicecli.api.markdown import Segment
@@ -51,7 +51,7 @@ class ChatterboxTurboEngine(TTSEngine):
         default_crossfade: int = 0,
     ) -> np.ndarray:
         """Generate audio per-segment with individual overrides, then concatenate."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         all_wavs: list[np.ndarray] = []
         for i, seg in enumerate(segments):

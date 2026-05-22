@@ -1,4 +1,4 @@
-"""Tests for config loading functions in voicecli.config.
+"""Tests for config loading functions in voicecli.core.config.
 
 Tests for load_nats_config and load_tts_config default values and clamping.
 """
@@ -17,9 +17,9 @@ class TestConfigLoading:
     def test_load_nats_config_defaults(self, tmp_path, monkeypatch):
         """load_nats_config returns defaults when no config."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_nats_config()
@@ -30,7 +30,7 @@ class TestConfigLoading:
     def test_load_nats_config_clamps_high(self, tmp_path):
         """max_cached_engines clamped to 5 when set higher."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
         cfg = tmp_path / "voicecli.toml"
         cfg.write_text("[nats]\nmax_cached_engines = 100\n")
@@ -44,7 +44,7 @@ class TestConfigLoading:
     def test_load_nats_config_clamps_low(self, tmp_path):
         """max_cached_engines clamped to 1 when set lower."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
         cfg = tmp_path / "voicecli.toml"
         cfg.write_text("[nats]\nmax_cached_engines = 0\n")
@@ -58,9 +58,9 @@ class TestConfigLoading:
     def test_load_tts_config_defaults(self, tmp_path, monkeypatch):
         """load_tts_config returns None for default_engine when no config."""
         # Arrange
-        from voicecli.config import load_tts_config
+        from voicecli.core.config import load_tts_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_tts_config()

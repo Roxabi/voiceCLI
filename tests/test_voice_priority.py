@@ -71,7 +71,7 @@ class TestVoicePriority:
 
         runner = CliRunner()
         toml_cfg = {"voice": "Ono_Anna"}
-        with patch("voicecli.config.load_defaults", return_value=toml_cfg):
+        with patch("voicecli.core.config.load_defaults", return_value=toml_cfg):
             result = runner.invoke(app, ["generate", str(md_with_voice)])
 
         assert result.exit_code == 0, result.output
@@ -84,7 +84,7 @@ class TestVoicePriority:
 
         runner = CliRunner()
         toml_cfg = {"voice": "Ono_Anna"}
-        with patch("voicecli.config.load_defaults", return_value=toml_cfg):
+        with patch("voicecli.core.config.load_defaults", return_value=toml_cfg):
             result = runner.invoke(app, ["generate", "--voice", "Ryan", str(md_with_voice)])
 
         assert result.exit_code == 0, result.output
@@ -97,7 +97,7 @@ class TestVoicePriority:
 
         runner = CliRunner()
         toml_cfg = {"voice": "Ono_Anna"}
-        with patch("voicecli.config.load_defaults", return_value=toml_cfg):
+        with patch("voicecli.core.config.load_defaults", return_value=toml_cfg):
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output
@@ -109,7 +109,7 @@ class TestVoicePriority:
         from typer.testing import CliRunner
 
         runner = CliRunner()
-        with patch("voicecli.config.load_defaults", return_value={}):
+        with patch("voicecli.core.config.load_defaults", return_value={}):
             result = runner.invoke(app, ["generate", str(md_without_voice)])
 
         assert result.exit_code == 0, result.output

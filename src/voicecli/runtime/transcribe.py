@@ -60,7 +60,7 @@ def _try_daemon(
     initial_prompt: str | None,
 ) -> TranscriptionResult | None:
     """Try the STT daemon for transcription. Returns None to fall back locally."""
-    from voicecli.paths import STT_SOCKET_PATH as SOCKET_PATH
+    from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
 
     if not SOCKET_PATH.exists():
         return None
@@ -124,7 +124,7 @@ def transcribe(
     initial_prompt: str | None = None,
     _skip_daemon: bool = False,
 ) -> TranscriptionResult:
-    from voicecli.env import coerce_bool_env
+    from voicecli.core.env import coerce_bool_env
 
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         return TranscriptionResult(text="", language="en", segments=[])
@@ -231,7 +231,7 @@ def _load_model(model: str) -> WhisperModel | None:
     Returns None when the mock env gate is set — mirrors the short-circuit at
     the top of transcribe(), so adapter warmup paths stay engine-agnostic.
     """
-    from voicecli.env import coerce_bool_env
+    from voicecli.core.env import coerce_bool_env
 
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         return None

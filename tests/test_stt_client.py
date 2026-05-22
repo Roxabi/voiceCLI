@@ -1,4 +1,4 @@
-"""Tests for voicecli.stt_client and load_stt_config from voicecli.config."""
+"""Tests for voicecli.stt_client and load_stt_config from voicecli.core.config."""
 
 from __future__ import annotations
 
@@ -476,9 +476,9 @@ class TestLoadSttConfig:
 
     def test_returns_default_hotkey_when_no_config_file(self):
         """Returns default hotkey dict when no voicecli.toml is found."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
-        with patch("voicecli.config._find_config", return_value=None):
+        with patch("voicecli.core.config._find_config", return_value=None):
             result = load_stt_config()
 
         assert result == {
@@ -489,7 +489,7 @@ class TestLoadSttConfig:
 
     def test_reads_stt_table_from_toml(self, tmp_path):
         """Reads [stt] table values from a real toml file via tmp_path."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
         toml_file.write_text('[stt]\nhotkey = "ctrl+shift+d"\n')
@@ -500,7 +500,7 @@ class TestLoadSttConfig:
 
     def test_custom_hotkey_parsed_correctly(self, tmp_path):
         """A non-default hotkey value from toml is parsed and returned."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
         toml_file.write_text('[stt]\nhotkey = "alt+h"\n')
@@ -511,7 +511,7 @@ class TestLoadSttConfig:
 
     def test_missing_stt_table_falls_back_to_defaults(self, tmp_path):
         """When [stt] table is absent, returns default hotkey dict."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
         toml_file.write_text('[defaults]\nlanguage = "French"\n')
@@ -526,7 +526,7 @@ class TestLoadSttConfig:
 
     def test_model_key_in_stt_table_is_parsed(self, tmp_path):
         """The 'model' key from [stt] is also parsed if present."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
         toml_file.write_text('[stt]\nhotkey = "alt+space"\nmodel = "large-v3"\n')
@@ -538,12 +538,12 @@ class TestLoadSttConfig:
 
     def test_explicit_config_path_skips_walk_up(self, tmp_path):
         """Passing config= explicitly uses that file, bypassing _find_config."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "custom.toml"
         toml_file.write_text('[stt]\nhotkey = "ctrl+space"\n')
 
-        with patch("voicecli.config._find_config") as mock_find:
+        with patch("voicecli.core.config._find_config") as mock_find:
             result = load_stt_config(config=toml_file)
 
         # _find_config should NOT be called when config= is provided
@@ -552,7 +552,7 @@ class TestLoadSttConfig:
 
     def test_stt_table_with_only_model_preserves_default_hotkey(self, tmp_path):
         """If [stt] only has model (no hotkey), the default hotkey is preserved."""
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
 
         toml_file = tmp_path / "voicecli.toml"
         toml_file.write_text('[stt]\nmodel = "large-v3-turbo"\n')
@@ -724,7 +724,7 @@ class TestDictateCLI:
         """dictate --listen → hotkey_loop called with hotkey from config and paste=False."""
         with (
             patch(
-                "voicecli.config.load_stt_config",
+                "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "alt+space"},
             ),
             patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,
@@ -740,7 +740,7 @@ class TestDictateCLI:
         """dictate --listen --paste → hotkey_loop called with paste=True."""
         with (
             patch(
-                "voicecli.config.load_stt_config",
+                "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "ctrl+shift+d"},
             ),
             patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,

@@ -34,7 +34,7 @@ try:
 except (ValueError, ImportError):
     HAS_LAYER_SHELL = False
 
-from voicecli.env import coerce_bool_env  # noqa: E402
+from voicecli.core.env import coerce_bool_env  # noqa: E402
 from voicecli.ui.overlay_audio import LEVEL_PEAK, SND_STOP, play, read_level  # noqa: E402
 from voicecli.ui.overlay_draw import (  # noqa: E402
     ANIM_MS,

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tomllib
 
-from voicecli.config import _find_config
+from voicecli.core.config import _find_config
 
 
 # ---------------------------------------------------------------------------

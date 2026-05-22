@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from voicecli.engines.engine import cuda_guard
 from voicecli.engines.qwen import QwenEngine
-from voicecli.models import (
+from voicecli.core.models import (
     QWEN_CLONE_MODEL,
     QWEN_CLONE_MODEL_SMALL,
     QWEN_MODEL,
@@ -71,7 +71,7 @@ class QwenFastEngine(QwenEngine):
         default_crossfade: int = 0,
     ) -> tuple[np.ndarray, int]:
         """Generate audio per-segment with CUDA-graph-accelerated model."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         if method == "custom_voice":
             model = self._load_model()

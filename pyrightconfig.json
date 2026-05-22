@@ -16,7 +16,7 @@
     "src/voicecli/runtime/daemon.py",
     "src/voicecli/runtime/listen.py",
     "src/voicecli/runtime/model_registry.py",
-    "src/voicecli/models.py",
+    "src/voicecli/core/models.py",
     "src/voicecli/runtime/stt_daemon.py",
     "src/voicecli/runtime/transcribe.py",
     "src/voicecli/cli_doctor.py"

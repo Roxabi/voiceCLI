@@ -91,7 +91,7 @@ def _get_registry() -> dict[str, type[TTSEngine]]:
     Real engine imports are wrapped in try/except to handle missing torch.
     If ImportError occurs (torch not installed), real engines are skipped.
     """
-    from voicecli.env import coerce_bool_env
+    from voicecli.core.env import coerce_bool_env
 
     registry: dict[str, type[TTSEngine]] = {}
 

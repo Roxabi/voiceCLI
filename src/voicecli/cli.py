@@ -6,7 +6,7 @@ import typer
 
 from voicecli import __version__
 from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
-from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
+from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
 
 def _version_callback(value: bool) -> None:
@@ -45,7 +45,7 @@ app.add_typer(samples_app, name="samples")
 @samples_app.command("list")
 def samples_list():
     """List all samples in the TTS/samples/ directory."""
-    from voicecli.samples import list_samples
+    from voicecli.core.samples import list_samples
 
     items = list_samples()
     if not items:
@@ -60,7 +60,7 @@ def samples_add(
     file: Annotated[Path, typer.Argument(help="Path to a .wav file to import")],
 ):
     """Copy a local WAV file into the samples directory."""
-    from voicecli.samples import add_sample
+    from voicecli.core.samples import add_sample
 
     try:
         dest = add_sample(file)
@@ -78,7 +78,7 @@ def samples_record(
     ] = 10.0,
 ):
     """Record audio from microphone and save as a sample."""
-    from voicecli.samples import record_sample
+    from voicecli.core.samples import record_sample
 
     dest = record_sample(name, duration=duration)
     typer.echo(f"Recorded {dest}")
@@ -89,7 +89,7 @@ def samples_use(
     name: Annotated[str, typer.Argument(help="Sample filename to set as active")],
 ):
     """Set a sample as the active reference for voice cloning."""
-    from voicecli.samples import set_active
+    from voicecli.core.samples import set_active
 
     try:
         set_active(name)
@@ -102,7 +102,7 @@ def samples_use(
 @samples_app.command("active")
 def samples_active():
     """Show the currently active sample."""
-    from voicecli.samples import get_active
+    from voicecli.core.samples import get_active
 
     name = get_active()
     if name:
@@ -116,7 +116,7 @@ def samples_remove(
     name: Annotated[str, typer.Argument(help="Sample filename to remove")],
 ):
     """Remove a sample from the samples directory."""
-    from voicecli.samples import remove_sample
+    from voicecli.core.samples import remove_sample
 
     try:
         remove_sample(name)
@@ -137,7 +137,7 @@ def samples_from_url(
     use: Annotated[bool, typer.Option("--use", help="Set as active sample after download")] = False,
 ):
     """Download audio from a URL, extract and normalize a voice sample."""
-    from voicecli.samples import from_url, set_active
+    from voicecli.core.samples import from_url, set_active
 
     try:
         dest = from_url(url, name, start=start, duration=duration)
@@ -311,7 +311,7 @@ def dictate(
         return
 
     if listen:
-        from voicecli.config import load_stt_config
+        from voicecli.core.config import load_stt_config
         from voicecli.ui.stt_client import hotkey_loop
 
         stt_cfg = load_stt_config()
@@ -404,8 +404,8 @@ def dictate_cancel() -> None:
 @dictate_app.command("modes")
 def dictate_modes() -> None:
     """List all available STT modes with descriptions."""
-    from voicecli.config import load_config
-    from voicecli.stt_modes import load_modes
+    from voicecli.core.config import load_config
+    from voicecli.core.stt_modes import load_modes
 
     cfg = load_config()
     modes = load_modes(cfg)
@@ -439,7 +439,7 @@ def dictate_history(
     import json as _json
 
     from voicecli.ui.clipboard import write_clipboard
-    from voicecli.history import HISTORY_PATH
+    from voicecli.core.history import HISTORY_PATH
 
     if not HISTORY_PATH.exists():
         typer.echo("No history yet.")
@@ -782,7 +782,7 @@ def transcribe(
         typer.echo(f"Error: file not found: {audio}", err=True)
         raise typer.Exit(1)
 
-    from voicecli.config import load_vocab, vocab_to_prompt
+    from voicecli.core.config import load_vocab, vocab_to_prompt
 
     initial_prompt = vocab_to_prompt(load_vocab())
     result = do_transcribe(audio, model=model, language=language, initial_prompt=initial_prompt)
@@ -800,7 +800,7 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from voicecli.utils import default_output_path
+        from voicecli.core.utils import default_output_path
 
         ext = "json" if json_output else "txt"
         output = default_output_path(
@@ -830,7 +830,7 @@ def mp3(
     bitrate: Annotated[int, typer.Option("--bitrate", "-b", help="MP3 bitrate in kbps")] = 192,
 ):
     """Convert a WAV file to MP3."""
-    from voicecli.utils import wav_to_mp3
+    from voicecli.core.utils import wav_to_mp3
 
     if not file.exists():
         typer.echo(f"Error: file not found: {file}", err=True)
@@ -863,7 +863,7 @@ def init(
     ] = False,
 ):
     """Create a voicecli.toml config file (interactive wizard or -y for defaults)."""
-    from voicecli.config import VOICECLI_DIR
+    from voicecli.core.config import VOICECLI_DIR
 
     VOICECLI_DIR.mkdir(parents=True, exist_ok=True)
     config_path = VOICECLI_DIR / "voicecli.toml"
@@ -916,7 +916,7 @@ def init(
 
     # 2. Language (skip for chatterbox-turbo — English only)
     if engine != "chatterbox-turbo":
-        from voicecli.utils import LANG_MAP
+        from voicecli.core.utils import LANG_MAP
 
         lang_names = sorted({k.title() for k in LANG_MAP if k.isascii()})
         typer.echo(f"  Supported languages: {', '.join(lang_names)}")
@@ -1116,7 +1116,12 @@ def doctor():
     import shutil
     import sys
 
-    from voicecli.models import MODEL_REGISTRY, cached_model_size_gb, hf_cache_dir, is_model_cached
+    from voicecli.core.models import (
+        MODEL_REGISTRY,
+        cached_model_size_gb,
+        hf_cache_dir,
+        is_model_cached,
+    )
 
     def ok(msg: str) -> None:
         typer.echo(typer.style("  \u2713 ", fg=typer.colors.GREEN, bold=True) + msg)
@@ -1180,7 +1185,7 @@ def doctor():
 
     # Directory structure
     typer.echo(typer.style("\nDirectories", bold=True))
-    from voicecli.config import VOICECLI_DIR
+    from voicecli.core.config import VOICECLI_DIR
 
     for rel in ["TTS/voices_out", "TTS/samples", "TTS/texts_in", "STT/audio_in", "STT/texts_out"]:
         try:
@@ -1195,7 +1200,7 @@ def doctor():
     # User config
     typer.echo(typer.style("\nConfig", bold=True))
     try:
-        from voicecli.config import load_defaults
+        from voicecli.core.config import load_defaults
 
         cfg = load_defaults()
         if cfg:
@@ -1212,7 +1217,7 @@ def doctor():
     # Active voice sample
     typer.echo(typer.style("\nVoice Sample", bold=True))
     try:
-        from voicecli.samples import get_active
+        from voicecli.core.samples import get_active
 
         active = get_active()
         if active:
@@ -1290,7 +1295,7 @@ def stt_serve(
     autorestart=true
     stdout_logfile=/var/log/voicecli_stt.log
     """
-    from voicecli.config import load_config
+    from voicecli.core.config import load_config
     from voicecli.runtime.stt_daemon import SttDaemon
 
     cfg = load_config()
@@ -1360,7 +1365,7 @@ def nats_serve_tts(
     import logging
     import os
 
-    from voicecli.config import load_nats_config
+    from voicecli.core.config import load_nats_config
     from voicecli.adapters.nats.config import _resolve_engine
     from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
 

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voicecli.utils import UNRESTRICTED
+from voicecli.core.utils import UNRESTRICTED
 
 
 def test_import_lightweight():
@@ -41,7 +41,7 @@ def test_generate_returns_tts_result(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         result = generate(
             "Hello world", output=out_path, engine="chatterbox", allowed_base=UNRESTRICTED
@@ -65,7 +65,7 @@ def test_generate_md_input(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         result = generate(
             str(md_file), output=out_path, engine="chatterbox", allowed_base=UNRESTRICTED
@@ -81,7 +81,7 @@ def test_clone_no_ref_no_active_raises_valueerror():
     from voicecli.api import clone
 
     with (
-        patch("voicecli.samples.get_active_path", return_value=None),
+        patch("voicecli.core.samples.get_active_path", return_value=None),
         pytest.raises(ValueError, match="no active sample"),
     ):
         clone("Hello")
@@ -92,7 +92,7 @@ def test_invalid_engine_raises_valueerror(mock_engine):
     from voicecli.api import generate
 
     with (
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
         pytest.raises(ValueError, match="Unknown engine"),
     ):
         generate("Hello", engine="nonexistent-engine")
@@ -116,7 +116,7 @@ def test_path_params_accept_str_and_path(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         # str output
         result = generate(
@@ -179,7 +179,7 @@ def test_clone_happy_path(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         result = clone(
             "Hello world",
@@ -250,8 +250,8 @@ def test_generate_chunked_returns_chunk_paths(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
-        patch("voicecli.utils.smart_chunk", return_value=["Hello world"]),
+        patch("voicecli.core.config.load_defaults", return_value={}),
+        patch("voicecli.core.utils.smart_chunk", return_value=["Hello world"]),
     ):
         result = generate(
             "Hello world",
@@ -278,8 +278,8 @@ def test_generate_mp3(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
-        patch("voicecli.utils.wav_to_mp3", return_value=mp3_path),
+        patch("voicecli.core.config.load_defaults", return_value={}),
+        patch("voicecli.core.utils.wav_to_mp3", return_value=mp3_path),
     ):
         result = generate(
             "Hello world", output=out_path, mp3=True, engine="chatterbox", allowed_base=UNRESTRICTED
@@ -302,7 +302,7 @@ def test_generate_plain_strips_tags(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         result = generate(
             str(md_file),
@@ -327,7 +327,7 @@ def test_generate_async_returns_tts_result(tmp_path):
 
     with (
         patch("voicecli.engine.get_engine", return_value=mock_engine),
-        patch("voicecli.config.load_defaults", return_value={}),
+        patch("voicecli.core.config.load_defaults", return_value={}),
     ):
         result = asyncio.run(
             generate_async("Hello", output=out_path, engine="chatterbox", allowed_base=UNRESTRICTED)

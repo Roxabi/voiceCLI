@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from voicecli.paths import STT_HISTORY_PATH
+from voicecli.core.paths import STT_HISTORY_PATH
 
 HISTORY_PATH = STT_HISTORY_PATH  # public alias used by cli.py
 HISTORY_MAX = 100

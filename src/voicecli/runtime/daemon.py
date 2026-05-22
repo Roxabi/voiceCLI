@@ -26,7 +26,7 @@ from voicecli.runtime.wire_protocol import (
     send_json,
 )
 from voicecli.engines.engine import QWEN_ENGINES
-from voicecli.paths import TTS_SOCKET_PATH as SOCKET_PATH
+from voicecli.core.paths import TTS_SOCKET_PATH as SOCKET_PATH
 
 _OUTPUT_BASE = Path.home()  # output_path must resolve within this directory (patchable in tests)
 _DEFAULT_TIMEOUT = 300  # seconds

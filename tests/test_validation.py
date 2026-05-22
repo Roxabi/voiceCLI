@@ -194,7 +194,7 @@ class TestGenerateValidation:
         from voicecli.api import generate
 
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             pytest.raises(ValueError, match="must be finite"),
         ):
             generate("Hello", exaggeration=float("nan"))
@@ -203,7 +203,7 @@ class TestGenerateValidation:
         from voicecli.api import generate
 
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             pytest.raises(ValueError, match="maximum length"),
         ):
             generate("Hello", instruct="x" * 257)
@@ -214,7 +214,7 @@ class TestCloneValidation:
         from voicecli.api import clone
 
         with (
-            patch("voicecli.config.load_defaults", return_value={}),
+            patch("voicecli.core.config.load_defaults", return_value={}),
             pytest.raises(ValueError, match="between 0.0 and 2.0"),
         ):
             clone("Hello", ref="/tmp/fake.wav", exaggeration=-1.0)
