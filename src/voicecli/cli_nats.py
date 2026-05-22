@@ -51,13 +51,13 @@ def nats_serve_tts(
 
     from voicecli.config import apply_nats_env_from_config, load_nats_config
     from voicecli.model_registry import model_registry
-    from voicecli.nats.config import _probe_socket_daemon, _resolve_engine
-    from voicecli.nats.tts_adapter import TtsNatsAdapter
+    from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
+    from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
 
     apply_nats_env_from_config()
 
     logging.basicConfig(level=logging.INFO)
-    log = logging.getLogger("voicecli.nats-serve.tts")
+    log = logging.getLogger("voicecli.adapters.nats-serve.tts")
 
     nats_cfg = load_nats_config()
     model_registry.configure(max_cached=nats_cfg["max_cached_engines"])
@@ -119,13 +119,13 @@ def nats_serve_stt(
     import asyncio
 
     from voicecli.config import apply_nats_env_from_config
-    from voicecli.nats.config import _probe_socket_daemon, _resolve_model
-    from voicecli.nats.stt_adapter import SttNatsAdapter
+    from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_model
+    from voicecli.adapters.nats.stt_adapter import SttNatsAdapter
 
     apply_nats_env_from_config()
 
     logging.basicConfig(level=logging.INFO)
-    log = logging.getLogger("voicecli.nats-serve.stt")
+    log = logging.getLogger("voicecli.adapters.nats-serve.stt")
 
     resolved_model = _resolve_model(model)
 

@@ -308,7 +308,7 @@ class TestHeartbeatEnhancement:
     def test_heartbeat_payload_includes_vram_metrics(self):
         """heartbeat_payload includes vram_free_mb and vram_status."""
         # Arrange - mock TtsNatsAdapter's heartbeat_payload
-        from voicecli.nats.tts_adapter import TtsNatsAdapter
+        from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
 
         adapter = TtsNatsAdapter(default_engine="qwen-fast")
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64  # noqa: F401 — test patch anchor for voicecli.nats.tts_adapter.base64.b64encode
+import base64  # noqa: F401 — test patch anchor for voicecli.adapters.nats.tts_adapter.base64.b64encode
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -14,10 +14,10 @@ from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
-from voicecli.nats._tts_runner import TtsRunnerState, run_synthesis
-from voicecli.nats._validation import validate_tts_request
-from voicecli.nats.queue_groups import TTS_WORKERS
-from voicecli.nats.tempdir import cleanup, scoped_path
+from voicecli.adapters.nats._tts_runner import TtsRunnerState, run_synthesis
+from voicecli.adapters.nats._validation import validate_tts_request
+from voicecli.adapters.nats.queue_groups import TTS_WORKERS
+from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch when only inspecting the adapter (e.g. for --help).

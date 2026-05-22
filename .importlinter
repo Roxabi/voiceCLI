@@ -9,7 +9,7 @@ include_external_packages = False
 name = Layer dependency rule
 type = layers
 layers =
-    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.nats | voicecli.tg | voicecli.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
+    voicecli.cli | voicecli.cli_samples | voicecli.cli_dictate | voicecli.cli_doctor | voicecli.cli_nats | voicecli.tg | voicecli.listen | voicecli.overlay | voicecli.stt_client | voicecli.overlay_audio | voicecli.overlay_draw
     voicecli.api
     voicecli.adapters
     voicecli.engine | voicecli.transcribe | voicecli.daemon | voicecli.stt_daemon | voicecli.model_registry | voicecli.daemon_protocol
@@ -25,10 +25,10 @@ ignore_imports =
     voicecli.cli -> voicecli.cli_dictate
     voicecli.cli -> voicecli.cli_doctor
     voicecli.cli -> voicecli.cli_nats
-    # Transitional: voicecli.cli_nats imports voicecli.nats adapters and config — same top-tier peer dependencies (ADR-003 V9)
-    voicecli.cli_nats -> voicecli.nats.config
-    voicecli.cli_nats -> voicecli.nats.tts_adapter
-    voicecli.cli_nats -> voicecli.nats.stt_adapter
+    # Transitional: voicecli.cli_nats imports voicecli.adapters.nats adapters and config — same top-tier peer dependencies (ADR-003 V9)
+    voicecli.cli_nats -> voicecli.adapters.nats.config
+    voicecli.cli_nats -> voicecli.adapters.nats.tts_adapter
+    voicecli.cli_nats -> voicecli.adapters.nats.stt_adapter
     # Transitional: voicecli.cli_nats configures model_registry at startup — pending ports-layer wiring (ADR-003)
     voicecli.cli_nats -> voicecli.model_registry
     # Transitional: voicecli.cli imports voicecli.listen for recording subcommand — needs extraction to adapter layer
@@ -58,6 +58,10 @@ ignore_imports =
     voicecli.translate -> voicecli.engine_caps
     voicecli.markdown -> voicecli._markdown_directives
     voicecli.history -> voicecli.paths
+    # Transitional: adapters.nats runners call voicecli.api for synthesis/transcription — deferred imports
+    # (PLC0415), coupling existed when nats/ was top-tier; to be resolved via ports wiring (ADR-003)
+    voicecli.adapters.nats._tts_runner -> voicecli.api
+    voicecli.adapters.nats._stt_runner -> voicecli.api
 
 [importlinter:contract:api-no-direct-infra]
 name = api must not import daemon or model_registry directly

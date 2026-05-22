@@ -6,7 +6,7 @@ State purpose:
     focused on NATS I/O while this module owns the generate → encode → return cycle.
 
 Cross-reference:
-    voicecli.nats._validation — envelope validation (orthogonal concern; caller
+    voicecli.adapters.nats._validation — envelope validation (orthogonal concern; caller
     validates before invoking run_synthesis).
 
 Threading constraint:
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from voicecli.nats.tts_wav_utils import (
+from voicecli.adapters.nats.tts_wav_utils import (
     cleanup_chunks,
     collect_chunked_output,
     concat_wav_chunks,

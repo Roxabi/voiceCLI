@@ -1,4 +1,4 @@
-"""Unit tests for voicecli.nats._stt_runner (issue #147).
+"""Unit tests for voicecli.adapters.nats._stt_runner (issue #147).
 
 Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
 on-disk audio file. The runner writes the decoded bytes via scoped_path but
@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from _fakes import SyncExecutor
 
-from voicecli.nats._stt_runner import (
+from voicecli.adapters.nats._stt_runner import (
     SttRunnerState,
     run_transcription,
 )
@@ -112,7 +112,7 @@ def patch_scoped_path(tmp_path, monkeypatch):
     def _impl(request_id: str, ext: str) -> Path:
         return tmp_path / f"{request_id}.{ext}"
 
-    monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _impl)
+    monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _impl)
     return _impl
 
 
@@ -234,7 +234,7 @@ class TestRunTranscriptionHappyPath:
             observed_ext.append(ext)
             return tmp_path / f"{request_id}.{ext}"
 
-        monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _capturing_scoped_path)
+        monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _capturing_scoped_path)
 
         state = _make_state()
 
