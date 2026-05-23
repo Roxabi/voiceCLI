@@ -1,0 +1,60 @@
+---
+title: "feat(workers): consume/produce BlobRef via roxabi-blobs (lyra #1061 V5)"
+issue: 144
+status: approved
+tier: F-lite
+date: 2026-05-23
+---
+
+## Problem
+
+VoiceCLI's STT/TTS NATS satellites currently ship raw audio inline on every request/response — `audio_b64` (base64 string, ~33% bloat) in `SttRequest`, `audio_bytes` in `TtsResponse`/`AudioPayload`. Each call transports the entire payload across NATS, which:
+
+1. Blows past NATS default message size limits for >~1MB audio (already an operational pain on long TTS outputs).
+2. Forces re-encode at every hop in the lyra agent pipeline (mic → STT → LLM → TTS → playback), even when downstream consumers don't need the bytes.
+3. Couples voiceCLI to a payload shape that lyra is removing in slice V2 (lyra#1064).
+
+Upstream lyra V1 (`roxabi-blobs` package, lyra#1063) ships a content-addressed `BlobStore` abstraction and `BlobRef` (≤300B reference). Slice V5 is voiceCLI's side of that migration: workers consume/produce `BlobRef`, not inline bytes.
+
+## Who
+
+- **Primary:** Lyra agent pipeline (M₁ hub) — orchestrates STT → LLM → TTS chains and currently pays the inline-audio tax at every hop.
+- **Secondary:** voiceCLI NATS satellite operators (M₁ voice-worker host) — get smaller payloads, no NATS size-limit surprises, and cleaner cross-host blob sharing via the shared BlobStore backend.
+
+## Constraints
+
+- **Atomic merge with lyra#1064** — that PR removes `audio_b64`/`audio_bytes` from `SttRequest`/`TtsResponse`/`AudioPayload`. No `DeprecationWarning` shim. Either both land or neither.
+- **Cross-repo deps via uv git sources** — `roxabi-blobs` + updated `roxabi-contracts` pulled from the lyra workspace per project convention (¬submodules; CLAUDE.md global rule).
+- **Stay inside dev-core file limits** — `max_lines: 300` per file (stack.yml `quality_gates.file_length`). NATS satellite paths (`nats_mic_recorder.py`, `transcribe_client.py`, engine-side satellites) are already near the ceiling; refactor in-place, do not balloon.
+- **Quadlet (M₁) + native (M₂) coexistence** — satellites run under systemd Quadlet on M₁ and as native processes on M₂. BlobStore client init must work in both contexts (env-var or config-driven backend resolution).
+- **No VRAM regression** — current TTS daemon ~7.4 GB + STT daemon ~2.2 GB ≈ saturates RTX 3080. BlobStore client must be host-process work only (no GPU allocation).
+
+## Out of Scope
+
+- The `BlobStore` implementation itself (lives in `roxabi-blobs` upstream, lyra#1063).
+- `BlobRef` contract definition (lives in `roxabi-contracts`, lyra#1064).
+- Local CLI flows (`voicecli generate`, `voicecli transcribe` file-path mode) — they don't transit NATS; payload shape change is satellite-scope only.
+- Inline-bytes fallback shim — explicitly rejected by the atomic-landing requirement.
+- Migration of stored historical audio — content-addressed store is new; nothing to migrate.
+
+## Premise Validity
+
+**Success in 6 months:** STT/TTS satellites round-trip audio via `BlobRef` in prod (M₁); inline `audio_bytes`/`audio_b64` removed from voiceCLI NATS payloads; per-message payload sizes drop from ~250 KB – 1 MB to ≤300 B; zero `audio_b64`/`audio_bytes` references remain in `nats_mic_recorder.py`, `transcribe_client.py`, and the engine-side NATS satellite paths.
+
+**Failure in 6 months:** After 4 weeks in prod, ≥1 of:
+1. p95 audio round-trip latency regressed >100 ms vs. inline baseline, **OR**
+2. `BlobStore.get`/`put` error rate >0.5% on the satellite hot path, **OR**
+3. an inline-`audio_bytes` fallback was re-introduced "for safety" instead of being deleted (proxy-metric / shim-regression trap).
+
+**Simplest alternative:** Keep inline `audio_bytes` and add wire compression (opus/gzip) on the NATS message.
+**Why not simplest:** doesn't solve content-addressed sharing (each consumer re-decodes the same bytes); blocks lyra's STT→LLM→TTS chain from reusing a single blob across hops; and lyra#1064 is removing the inline field upstream — voiceCLI must align or break the cross-repo contract.
+
+## Complexity
+
+**Tier: F-lite** — clear scope (spec lives upstream in `Roxabi/lyra/artifacts/specs/1061-blobstore-spec.mdx`, ADR in lyra ADR-067), single domain (NATS satellites), no new architecture inside voiceCLI.
+
+Signals observed:
+- 4–10 files in scope (`pyproject.toml`, `nats_mic_recorder.py`, `transcribe_client.py`, engine satellite paths, tests).
+- Single domain — NATS satellites only; local CLI flows untouched.
+- Cross-repo coordination is the only unknown, mitigated by the existing upstream spec/ADR + confirmed CLOSED state of lyra#1063 + lyra#1064 (per /recheck this session).
+- No new patterns inside voiceCLI — we're consuming an existing upstream contract.
