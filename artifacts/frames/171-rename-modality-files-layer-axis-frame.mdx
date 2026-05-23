@@ -1,0 +1,45 @@
+---
+title: "chore(refactor): rename pre-existing modality-tagged filenames to layer-axis names"
+issue: 171
+status: approved
+tier: F-lite
+date: 2026-05-23
+---
+
+## Problem
+
+Issue #170 restructured `src/voicecli/` into layer sub-packages (`ui/`, `runtime/`, `core/`, `adapters/`, etc.). Some files retained their old modality-tagged names (`stt_*`, `tts_*`, `nats_stt_*`) as historical residuals. These names describe *what technology* the file uses (STT, TTS) rather than *what layer responsibility* it holds (dictate, transcribe, synthesize).
+
+This creates a naming-axis mismatch: the directory structure follows layer-axis decomposition, but the filenames inside still follow modality-axis naming. The inconsistency makes it harder to navigate the codebase and violates the axial-decomposition convention established in #170.
+
+## Who
+
+- **Primary:** Developers maintaining voiceCLI (Mickael)
+- **Secondary:** lyra hub-spoke agents and deploy scripts that import voiceCLI modules
+
+## Constraints
+
+- Must preserve all existing behavior — zero functional change
+- Must update all internal import references atomically (single PR)
+- Must verify external callers (lyra, deploy scripts) are not broken
+- Must keep file length and complexity within quality gates (max 300 LOC, no new exemptions needed)
+
+## Out of Scope
+
+- Any behavioral changes to the renamed modules
+- New features or refactoring beyond pure rename + import fix
+- Changes to the axial-decomposition convention itself — only aligning filenames to it
+
+## Premise Validity
+
+**Success in 6 months:** All 9 files renamed, all internal imports + external callers (lyra, deploy) updated, old names zero-referenced in codebase.
+
+**Failure in 6 months:** After 2 weeks, any old filename still grep-matchable in `src/voicecli/`, docs, or lyra/deploy.
+
+**Simplest alternative:** Rename one file per PR.
+
+**Why not simplest:** Merge conflicts across shared import chains; atomic batch cleaner for zero-behavior-change refactor.
+
+## Complexity
+
+**Tier: F-lite** — clear scope (9 enumerated renames), single concern (pure refactor), no new architecture or unknowns. External caller check is mechanical grep.
