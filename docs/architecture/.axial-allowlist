@@ -1,11 +1,3 @@
 # Pre-existing modality-tagged filenames — accepted as historical residuals.
-# Tracked for rename in follow-up issue #166.
-src/voicecli/ui/stt_client.py
-src/voicecli/ui/nats_recorder.py
-src/voicecli/runtime/stt_daemon.py
-src/voicecli/core/stt_modes.py
-src/voicecli/adapters/nats/stt_adapter.py
-src/voicecli/adapters/nats/_stt_runner.py
-src/voicecli/adapters/nats/tts_adapter.py
-src/voicecli/adapters/nats/_tts_runner.py
-src/voicecli/adapters/nats/stt_client.py
+# All residuals renamed to layer-axis names in #171.
+# Empty as of 2026-05-23.

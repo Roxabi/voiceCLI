@@ -50,13 +50,13 @@ class TestCheckLyraLiterals:
     def test_script_passes_on_allowlisted_file(self, tmp_path):
         """Script should exit 0 when lyra. literal is in an allowlisted file."""
         # Arrange
-        nats_dir = tmp_path / "src" / "voicecli" / "nats"
+        nats_dir = tmp_path / "src" / "voicecli" / "adapters" / "nats"
         nats_dir.mkdir(parents=True)
 
-        stt_adapter = nats_dir / "stt_adapter.py"
+        stt_adapter = nats_dir / "transcribe_adapter.py"
         stt_adapter.write_text('SUBJECT = "lyra.voice.stt"\n')
 
-        tts_adapter = nats_dir / "tts_adapter.py"
+        tts_adapter = nats_dir / "synthesize_adapter.py"
         tts_adapter.write_text('SUBJECT = "lyra.voice.tts"\n')
 
         # Act
@@ -105,10 +105,10 @@ class TestCheckLyraLiterals:
         src_dir = tmp_path / "src"
         src_dir.mkdir()
 
-        nats_dir = src_dir / "voicecli" / "nats"
+        nats_dir = src_dir / "voicecli" / "adapters" / "nats"
         nats_dir.mkdir(parents=True)
 
-        allowlisted = nats_dir / "tts_adapter.py"
+        allowlisted = nats_dir / "synthesize_adapter.py"
         allowlisted.write_text('SUBJECT = "lyra.voice.tts"\n')
 
         violator = src_dir / "violator.py"
