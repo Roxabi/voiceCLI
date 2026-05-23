@@ -161,13 +161,13 @@ def dictate(
 
     if listen:
         from voicecli.core.config import load_stt_config
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         stt_cfg = load_stt_config()
         hotkey_loop(stt_cfg["hotkey"], paste=paste)
         return
 
-    from voicecli.ui.stt_client import auto_paste, notify, send_toggle
+    from voicecli.ui.dictate_client import auto_paste, notify, send_toggle
 
     resp = send_toggle(mode=mode)
 
@@ -200,7 +200,7 @@ def dictate(
 @dictate_app.command("status")
 def dictate_status() -> None:
     """Show current STT daemon state."""
-    from voicecli.ui.stt_client import send_status
+    from voicecli.ui.dictate_client import send_status
 
     resp = send_status()
     if resp.get("status") == "error":
@@ -227,7 +227,7 @@ def dictate_test_overlay() -> None:
 @dictate_app.command("next-mode")
 def dictate_next_mode() -> None:
     """Cycle to the next STT mode (becomes the new default)."""
-    from voicecli.ui.stt_client import notify, send_next_mode
+    from voicecli.ui.dictate_client import notify, send_next_mode
 
     resp = send_next_mode()
     if resp.get("status") == "error":
@@ -242,7 +242,7 @@ def dictate_next_mode() -> None:
 @dictate_app.command("cancel")
 def dictate_cancel() -> None:
     """Cancel the current STT recording without transcribing."""
-    from voicecli.ui.stt_client import send_cancel
+    from voicecli.ui.dictate_client import send_cancel
 
     resp = send_cancel()
     if resp.get("status") == "error":
@@ -254,7 +254,7 @@ def dictate_cancel() -> None:
 def dictate_modes() -> None:
     """List all available STT modes with descriptions."""
     from voicecli.core.config import load_config
-    from voicecli.core.stt_modes import load_modes
+    from voicecli.core.dictate_modes import load_modes
 
     cfg = load_config()
     modes = load_modes(cfg)
@@ -397,10 +397,10 @@ def dictate_nats(
         load_vocab,
         vocab_to_prompt,
     )
-    from voicecli.ui.nats_recorder import is_recording, start_recording, stop_recording
-    from voicecli.adapters.nats.stt_client import transcribe_via_nats
-    from voicecli.ui.stt_client import notify
-    from voicecli.core.stt_modes import get_mode
+    from voicecli.ui.nats_mic_recorder import is_recording, start_recording, stop_recording
+    from voicecli.adapters.nats.transcribe_client import transcribe_via_nats
+    from voicecli.ui.dictate_client import notify
+    from voicecli.core.dictate_modes import get_mode
     from voicecli.ui.sounds import play_ui_sound
 
     apply_nats_env_from_config()
@@ -419,7 +419,7 @@ def dictate_nats(
         if language is None and "language" in mode_cfg:
             language = mode_cfg["language"]
 
-    # Vocab is prepended to the prompt — same shape as stt_daemon._stop_and_transcribe.
+    # Vocab is prepended to the prompt — same shape as dictation._stop_and_transcribe.
     try:
         vocab_fragment = vocab_to_prompt(load_vocab())
     except Exception:

@@ -12,7 +12,7 @@ from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttResponse
 from roxabi_nats import NatsAdapterBase
-from voicecli.adapters.nats._stt_runner import SttRunnerState, run_transcription
+from voicecli.adapters.nats._transcribe_runner import SttRunnerState, run_transcription
 from voicecli.adapters.nats._validation import validate_stt_request
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
 from voicecli.adapters.nats.requests import SttRequest
@@ -28,7 +28,7 @@ SUBJECT = VOICE_SUBJECTS.stt_request
 HEARTBEAT_SUBJECT = VOICE_SUBJECTS.stt_heartbeat
 
 # Audio shape helpers + size cap are re-exported here so tests + adapter callers
-# keep importing from voicecli.adapters.nats.stt_adapter. The actual definitions live in
+# keep importing from voicecli.adapters.nats.transcribe_adapter. The actual definitions live in
 # _audio_utils.py to keep the adapter ↔ runner dependency direction one-way
 # (the runner imports the helpers from _audio_utils directly, not from here).
 from voicecli.adapters.nats._audio_utils import (  # noqa: E402

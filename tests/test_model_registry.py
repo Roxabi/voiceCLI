@@ -308,7 +308,7 @@ class TestHeartbeatEnhancement:
     def test_heartbeat_payload_includes_vram_metrics(self):
         """heartbeat_payload includes vram_free_mb and vram_status."""
         # Arrange - mock TtsNatsAdapter's heartbeat_payload
-        from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
+        from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 
         adapter = TtsNatsAdapter(default_engine="qwen-fast")
 
@@ -330,7 +330,7 @@ class TestHeartbeatEnhancement:
         # Mock vram_free_mb to return high value
         with patch.object(registry, "vram_free_mb", return_value=5000):
             free_mb = registry.vram_free_mb()
-            # Determine status like tts_adapter does
+            # Determine status like synthesize_adapter does
             if free_mb >= 4096:
                 vram_status = "ok"
             elif free_mb >= 1024:

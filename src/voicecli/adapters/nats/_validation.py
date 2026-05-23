@@ -36,8 +36,8 @@ from voicecli.adapters.nats.requests import (
 log = logging.getLogger(__name__)
 
 # request_id pattern: 1–128 alphanumeric/underscore/hyphen chars.
-# Mirrors the same check in both staging adapters (tts_adapter.py and
-# stt_adapter.py).
+# Mirrors the same check in both staging adapters (synthesize_adapter.py and
+# transcribe_adapter.py).
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 

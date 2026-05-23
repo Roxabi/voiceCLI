@@ -1,4 +1,4 @@
-"""Unit tests for voicecli.adapters.nats._stt_runner (issue #147).
+"""Unit tests for voicecli.adapters.nats._transcribe_runner (issue #147).
 
 Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
 on-disk audio file. The runner writes the decoded bytes via scoped_path but
@@ -18,7 +18,7 @@ from _fakes import SyncExecutor
 
 from voicecli.runtime.transcribe import Segment, TranscriptionResult
 
-from voicecli.adapters.nats._stt_runner import (
+from voicecli.adapters.nats._transcribe_runner import (
     SttRunnerState,
     run_transcription,
 )

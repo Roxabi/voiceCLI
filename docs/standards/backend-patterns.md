@@ -39,7 +39,7 @@ src/voicecli/
 
 ### File Naming
 
-- **Modules:** snake_case — `chatterbox_turbo.py`, `stt_daemon.py`
+- **Modules:** snake_case — `chatterbox_turbo.py`, `transcribe_daemon.py`
 - **Test files:** `test_<module>.py` — `test_markdown.py`, `test_translate.py`
 - **Engine files:** match the engine name — `qwen.py`, `chatterbox.py`
 

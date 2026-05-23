@@ -19,10 +19,10 @@ Ce système varie selon 2 axes :
 
 Sans axe primaire explicite, le code dérive selon la modalité : chaque nouvelle modalité recopie les concerns (daemon, adapter, runner, client, CLI). C'est le drift N×M actuellement visible dans le repo :
 
-- `daemon.py` / `stt_daemon.py` — concern "daemon lifecycle" dupliqué par modalité
-- `nats/tts_adapter.py` / `nats/stt_adapter.py` — concern "NATS adapter" dupliqué
-- `nats/_tts_runner.py` / `nats/_stt_runner.py` — concern "runner" dupliqué
-- `stt_client.py` / `nats_stt_client.py` — variation par transport, pas par modalité
+- `daemon.py` / `transcribe_daemon.py` — concern "daemon lifecycle" dupliqué par modalité
+- `nats/synthesize_adapter.py` / `nats/transcribe_adapter.py` — concern "NATS adapter" dupliqué
+- `nats/_synthesize_runner.py` / `nats/_transcribe_runner.py` — concern "runner" dupliqué
+- `dictate_client.py` / `transcribe_client.py` — variation par transport, pas par modalité
 - `cli_dictate.py` — concern "dictation CLI" en module séparé au lieu de traverser `ports/`
 
 Le `.importlinter` référençait un ADR-059 fantôme (24 occurrences de "Transitional: needs ports layer wiring (ADR-059)") pointant vers une cible ports/adapters aspirationnelle jamais écrite. Cette ADR-003 est la décision canonique qui remplace ce fantôme.
@@ -36,7 +36,7 @@ Référence : `shared/references/axial-decomposition.md`.
 ### Option A : `Modalité` comme axe primaire (tts / stt / sts)
 
 - **Pros :** Layout naturel pour un dev qui pense "je travaille sur TTS" ou "je travaille sur STT" ; colocalisé par feature
-- **Cons :** Ajouter STS = recopier chaque concern (daemon, adapter, runner, client) → N×M. Le concern "daemon lifecycle" existe en 2 copies (daemon.py, stt_daemon.py) dès 2 modalités — à 3 c'est 3 copies. Les bugs dans un concern se corrigent N fois.
+- **Cons :** Ajouter STS = recopier chaque concern (daemon, adapter, runner, client) → N×M. Le concern "daemon lifecycle" existe en 2 copies (daemon.py, transcribe_daemon.py) dès 2 modalités — à 3 c'est 3 copies. Les bugs dans un concern se corrigent N fois.
 - **Drift signature :** `*tts*.py` + `*stt*.py` + `*sts*.py` à la racine et dans `nats/` — 3 familles parallèles.
 
 ### Option B : `Couche` comme axe primaire (cli → api → ports → adapters → engine)
@@ -68,12 +68,12 @@ Quand on étend le système :
 
 ### Negative (Dette acceptée)
 
-- **Migration progressive** — `stt_daemon.py`, `daemon.py`, `nats/{tts,stt}_adapter.py`, `nats/_{tts,stt}_runner.py`, `stt_client.py`, `nats_stt_client.py`, `cli_dictate.py` restent en l'état. Refactor = chantier séparé non bloquant, tagué drift connu. — Mitigation : issues #81 / #82 / #83 / #129 ouvertes ; 1 refactor par couche par PR
+- **Migration progressive** — `transcribe_daemon.py`, `daemon.py`, `nats/{synthesize,transcribe}_adapter.py`, `nats/_{synthesize,transcribe}_runner.py`, `dictate_client.py`, `transcribe_client.py`, `cli_dictate.py` restent en l'état. Refactor = chantier séparé non bloquant, tagué drift connu. — Mitigation : issues #81 / #82 / #83 / #129 ouvertes ; 1 refactor par couche par PR
 - **24 `ignore_imports` "Transitional ADR-059"** dans `.importlinter` → repointer vers ADR-003, retirer au fil des splits. — Mitigation : 1 `ignore_imports` retiré par PR de refactor
-- **6 fichiers exemptés >300 LOC** (`cli.py` 821, `api.py` 850, `stt_daemon.py` 784, `cli_dictate.py` 486, `transcribe.py` 344, `daemon_protocol.py` 326) — l'ADR ne les fait pas disparaître. — Mitigation : issues #81/82/83/129 ; split par couche quand chantier ouvert
-- **`daemon_protocol.py` peer-import "Permanent"** entre `daemon`/`stt_daemon` contradictoire avec doctrine ports. — Mitigation : reclasser "Transitional, à extraire en `wire_protocol/` sous couche ports" lors du refactor daemon
-- **`voicecli.adapters.nats._tts_runner -> voicecli.api`** — NATS TTS runner appelle `voicecli.api.generate` / `warmup_model` pour la synthèse ; adapters ¬censés remonter vers api. — Mitigation : résoudre via port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
-- **`voicecli.adapters.nats._stt_runner -> voicecli.api`** — NATS STT runner appelle `voicecli.api.warmup_model` (import différé, dans le corps de fonction) pour charger le modèle ; même résolution que ci-dessus. — Mitigation : port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
+- **6 fichiers exemptés >300 LOC** (`cli.py` 821, `api.py` 850, `transcribe_daemon.py` 784, `cli_dictate.py` 486, `transcribe.py` 344, `daemon_protocol.py` 326) — l'ADR ne les fait pas disparaître. — Mitigation : issues #81/82/83/129 ; split par couche quand chantier ouvert
+- **`daemon_protocol.py` peer-import "Permanent"** entre `daemon`/`transcribe_daemon` contradictoire avec doctrine ports. — Mitigation : reclasser "Transitional, à extraire en `wire_protocol/` sous couche ports" lors du refactor daemon
+- **`voicecli.adapters.nats._synthesize_runner -> voicecli.api`** — NATS TTS runner appelle `voicecli.api.generate` / `warmup_model` pour la synthèse ; adapters ¬censés remonter vers api. — Mitigation : résoudre via port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
+- **`voicecli.adapters.nats._transcribe_runner -> voicecli.api`** — NATS STT runner appelle `voicecli.api.warmup_model` (import différé, dans le corps de fonction) pour charger le modèle ; même résolution que ci-dessus. — Mitigation : port warmup ou DI injection (ADR-003) ; `ignore_imports` en place
 - **STS = pipeline STT→TTS** composé via 2 adapters explicitement → coût d'assemblage visible, pas de méga-adapter monolithique. — Mitigation : accepté comme coût normal de composition ; documenter le wiring dans la couche `api.py`
 
 ### Anti-pattern signal

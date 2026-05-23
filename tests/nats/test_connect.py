@@ -68,7 +68,7 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -93,7 +93,7 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -134,7 +134,7 @@ class TestVramGuard:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="stale"),
             patch(
-                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ),
         ):
@@ -165,7 +165,7 @@ class TestSttConnect:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -286,7 +286,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -316,7 +316,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -346,7 +346,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -430,7 +430,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):

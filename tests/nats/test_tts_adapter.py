@@ -1,6 +1,6 @@
 """RED-phase tests for TtsNatsAdapter (issue #42 T6).
 
-All 12 cases FAIL until voicecli.adapters.nats.tts_adapter is implemented.
+All 12 cases FAIL until voicecli.adapters.nats.synthesize_adapter is implemented.
 The top-level imports are wrapped so pytest --collect-only works even before
 the voicecli.adapters.nats package exists; individual tests will fail on ImportError.
 """
@@ -25,7 +25,7 @@ try:
     from voicecli.api import ParamValidationError
     from voicecli.adapters.nats.config import _resolve_engine
     from voicecli.adapters.nats.tempdir import scoped_path  # noqa: F401
-    from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
+    from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
@@ -144,7 +144,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -178,7 +179,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -221,7 +223,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path, raises=RuntimeError("model OOM"))},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -246,7 +249,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -365,11 +369,12 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
-            patch("voicecli.adapters.nats.tts_adapter.base64.b64encode", side_effect=_sniff),
+            patch("voicecli.adapters.nats.synthesize_adapter.base64.b64encode", side_effect=_sniff),
         ):
             asyncio.run(adapter.handle(msg, payload))
 
@@ -398,7 +403,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path)},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -425,7 +431,8 @@ class TestTtsNatsAdapter:
             return_value={"mock": _stub_engine_factory(tmp_path, raises=RuntimeError("kaboom"))},
         ):
             with patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
@@ -489,7 +496,7 @@ class TestTtsNatsAdapter:
                 return_value={"mock": _stub_engine_factory(tmp_path, gate=gate)},
             ):
                 with patch(
-                    "voicecli.adapters.nats.tts_adapter.scoped_path",
+                    "voicecli.adapters.nats.synthesize_adapter.scoped_path",
                     side_effect=_patched_scoped_path,
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))
@@ -634,7 +641,7 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(request_id="req-space", engine="a b")
 
         with (
-            patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available") as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
@@ -657,7 +664,7 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(request_id="req-wild", engine="*.tts")
 
         with (
-            patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available") as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
@@ -680,7 +687,7 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(request_id="req-dbl-wild", engine="**")
 
         with (
-            patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available") as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
@@ -708,7 +715,7 @@ class TestTtsNatsAdapter:
         payload = _valid_payload(request_id="req-ws", engine=bad_engine)
 
         with (
-            patch("voicecli.adapters.nats.tts_adapter._engine_available") as mock_avail,
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available") as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
@@ -731,7 +738,7 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter._engine_available", return_value=False
+                "voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=False
             ) as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
@@ -760,14 +767,15 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter._engine_available", return_value=True
+                "voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True
             ) as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -796,14 +804,15 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter._engine_available", return_value=True
+                "voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True
             ) as mock_avail,
             patch(
                 "voicecli.engines.engine._get_registry",
                 return_value={"mock": _stub_engine_factory(tmp_path)},
             ),
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -853,9 +862,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -953,9 +963,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -987,9 +998,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1021,9 +1033,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1058,9 +1071,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1088,9 +1102,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1160,9 +1175,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1204,9 +1220,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1248,9 +1265,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1399,9 +1417,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1438,9 +1457,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
@@ -1471,9 +1491,10 @@ class TestTtsNatsAdapter:
 
         with (
             patch(
-                "voicecli.adapters.nats.tts_adapter.scoped_path", side_effect=_patched_scoped_path
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
             ),
-            patch("voicecli.adapters.nats.tts_adapter._engine_available", return_value=True),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
         ):
             asyncio.run(adapter.handle(msg, payload))
