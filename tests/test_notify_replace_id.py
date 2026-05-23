@@ -10,9 +10,11 @@ the constant down.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 
 def test_replace_id_is_stable_across_processes() -> None:
@@ -22,11 +24,12 @@ def test_replace_id_is_stable_across_processes() -> None:
         print(_NOTIFY_REPLACE_ID)
         """
     )
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
     a = subprocess.run(
-        [sys.executable, "-c", script], check=True, capture_output=True, text=True
+        [sys.executable, "-c", script], check=True, capture_output=True, text=True, env=env
     ).stdout.strip()
     b = subprocess.run(
-        [sys.executable, "-c", script], check=True, capture_output=True, text=True
+        [sys.executable, "-c", script], check=True, capture_output=True, text=True, env=env
     ).stdout.strip()
     assert a == b, (
         f"_NOTIFY_REPLACE_ID must be deterministic across processes "
