@@ -16,8 +16,8 @@ layers =
     voicecli.ports
     voicecli.core
 ignore_imports =
-    # ADR-003 V11: runtime.stt_daemon uses clipboard and ui_sounds — cross-layer (runtime → ui)
-    voicecli.runtime.stt_daemon -> voicecli.ui.clipboard
+    # ADR-003 V11: runtime.stt_daemon uses ui_sounds; dictation uses clipboard — cross-layer (runtime → ui)
+    voicecli.runtime.dictation -> voicecli.ui.clipboard
     voicecli.runtime.stt_daemon -> voicecli.ui.sounds
     # Transitional: engines import Segment/TTSDocument from voicecli.api.markdown — pure data types, moving to
     # a shared primitives layer is tracked by ADR-003; engines need Segment for type-hinted segment iteration

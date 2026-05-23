@@ -20,6 +20,8 @@
     "src/voicecli/core/models.py",
     "src/voicecli/runtime/stt_daemon.py",
     "src/voicecli/runtime/transcribe.py",
+    "src/voicecli/runtime/dictation.py",
+    "src/voicecli/runtime/recording.py",
     "src/voicecli/cli/doctor.py"
   ],
   "reportMissingImports": "error",

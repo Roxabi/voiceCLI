@@ -27,6 +27,12 @@ from typing import Callable
 
 from roxabi_nats._validate import validate_nats_token
 
+from voicecli.adapters.nats.requests import (
+    MalformedRequestError,
+    SttRequest,
+    TtsRequest,
+)
+
 log = logging.getLogger(__name__)
 
 # request_id pattern: 1–128 alphanumeric/underscore/hyphen chars.
@@ -56,6 +62,7 @@ class TtsValidationOutcome:
     error_code: str | None
     cleaned_text: str | None = None
     engine: str | None = None
+    request: TtsRequest | None = None
 
 
 @dataclass(frozen=True)
@@ -67,10 +74,12 @@ class SttValidationOutcome:
         overrides: Dict of optional transcription parameters supplied in the
             payload (None values excluded).  Present only on success; always
             a dict (possibly empty) — never ``None`` on success.
+        request: The successfully parsed ``SttRequest``, present only on success.
     """
 
     error_code: str | None
     overrides: dict | None = None
+    request: SttRequest | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -88,14 +97,9 @@ def validate_tts_request(
 ) -> TtsValidationOutcome:
     """Validate a decoded TTS NATS request payload.
 
-    Checks (in order):
-    1. ``request_id`` present and non-empty.
-    2. ``request_id`` matches ``^[A-Za-z0-9_-]{1,128}$``.
-    3. ``text`` present and a ``str`` instance.
-    4. Newline normalisation: ``\\r\\n`` → space, ``\\r`` → space, ``\\n`` → space.
-    5. ``text`` non-empty after ``.strip()``.
-    6. Engine token valid (``validate_nats_token``).
-    7. Engine available per ``engine_available`` callback.
+    Delegates typed construction to ``TtsRequest.from_payload()``; performs
+    semantic validation (newline stripping, engine token, availability) on the
+    typed result.
 
     Args:
         payload: Decoded JSON dict from the NATS message.
@@ -107,55 +111,50 @@ def validate_tts_request(
         ``TtsValidationOutcome`` with ``error_code=None`` on success, or a
         non-None ``error_code`` string on the first failing check.
     """
-    # 1. request_id presence
-    request_id = payload.get("request_id", "")
-    if not request_id:
+    try:
+        req = TtsRequest.from_payload(payload)
+    except (MalformedRequestError, TypeError, KeyError):
         return _MALFORMED
 
-    # 2. request_id format
-    if not _REQUEST_ID_RE.match(request_id):
+    if not _REQUEST_ID_RE.match(req.request_id):
         return _MALFORMED
 
-    # 3. text presence and type
-    text = payload.get("text")
-    if not isinstance(text, str) or not text:
-        return _MALFORMED
-
-    # 4. Newline normalisation — \r\n first to avoid double-space
+    # Newline normalisation — \r\n first to avoid double-space
+    text = req.text
     _newline_count = text.count("\n") + text.count("\r")
     if _newline_count:
         text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
         log.debug(
             "text_newlines_stripped",
             extra={
-                "request_id": payload.get("request_id", ""),
+                "request_id": req.request_id,
                 "removed": _newline_count,
             },
         )
 
-    # 5. Non-empty after strip
+    # Non-empty after strip
     if not text.strip():
         log.warning(
             "text_empty_after_strip",
             extra={
-                "request_id": payload.get("request_id", ""),
-                "original_length": len(payload.get("text") or ""),
+                "request_id": req.request_id,
+                "original_length": len(req.text),
             },
         )
         return _MALFORMED
 
-    # 6. Engine token validation
-    engine = payload.get("engine") or default_engine
+    # Engine token validation
+    engine = req.engine or default_engine
     try:
         validate_nats_token(engine, kind="engine")
     except ValueError:
         return _MALFORMED
 
-    # 7. Engine availability
+    # Engine availability
     if not engine_available(engine):
         return TtsValidationOutcome(error_code="engine_unavailable")
 
-    return TtsValidationOutcome(error_code=None, cleaned_text=text, engine=engine)
+    return TtsValidationOutcome(error_code=None, cleaned_text=text, engine=engine, request=req)
 
 
 # ---------------------------------------------------------------------------
@@ -164,38 +163,12 @@ def validate_tts_request(
 
 _STT_MALFORMED = SttValidationOutcome(error_code="malformed_request")
 
-# Optional fields: (key, accepted types) — mirrors stt_adapter.py handle()
-_STT_OPTIONAL_TYPE_MAP: tuple[tuple[str, tuple[type, ...]], ...] = (
-    ("language", (str,)),
-    ("language_detection_threshold", (int, float)),
-    ("language_detection_segments", (int,)),
-    ("language_fallback", (str,)),
-    ("initial_prompt", (str,)),
-    ("task", (str,)),
-)
-
-_STT_OVERRIDE_KEYS = (
-    "language",
-    "language_detection_threshold",
-    "language_detection_segments",
-    "language_fallback",
-    "initial_prompt",
-    "task",
-)
-
 
 def validate_stt_request(payload: dict) -> SttValidationOutcome:
     """Validate a decoded STT NATS request payload.
 
-    Checks (in order):
-    1. ``request_id`` present and non-empty.
-    2. ``request_id`` matches ``^[A-Za-z0-9_-]{1,128}$``.
-    3. ``audio_b64`` present and a ``str`` instance.
-    4. Optional field type checks (language, thresholds, task…).
-       ``language_detection_segments`` must be ``int`` but NOT ``bool``
-       (bool is a subclass of int in Python).
-    5. ``task`` value in ``("transcribe", "translate")`` when present.
-    6. Builds ``overrides`` dict from non-None optional fields.
+    Delegates typed construction to ``SttRequest.from_payload()``; returns
+    ``malformed_request`` on any type mismatch or format violation.
 
     Args:
         payload: Decoded JSON dict from the NATS message.
@@ -205,37 +178,12 @@ def validate_stt_request(payload: dict) -> SttValidationOutcome:
         dict (possibly empty) on success, or ``error_code="malformed_request"``
         on the first failing check.
     """
-    # 1. request_id presence
-    request_id = payload.get("request_id", "")
-    if not request_id:
+    try:
+        req = SttRequest.from_payload(payload)
+    except (MalformedRequestError, TypeError, KeyError):
         return _STT_MALFORMED
 
-    # 2. request_id format
-    if not _REQUEST_ID_RE.match(request_id):
+    if not _REQUEST_ID_RE.match(req.request_id):
         return _STT_MALFORMED
 
-    # 3. audio_b64 presence and type
-    audio_b64 = payload.get("audio_b64")
-    if not isinstance(audio_b64, str) or not audio_b64:
-        return _STT_MALFORMED
-
-    # 4. Optional field type checks
-    for key, expected_types in _STT_OPTIONAL_TYPE_MAP:
-        val = payload.get(key)
-        if val is None:
-            continue
-        # bool is a subclass of int — reject explicitly for segments field
-        if key == "language_detection_segments" and isinstance(val, bool):
-            return _STT_MALFORMED
-        if not isinstance(val, expected_types):
-            return _STT_MALFORMED
-
-    # 5. task value check
-    task_val = payload.get("task")
-    if task_val is not None and task_val not in ("transcribe", "translate"):
-        return _STT_MALFORMED
-
-    # 6. Build overrides dict (None values excluded)
-    overrides = {k: v for k in _STT_OVERRIDE_KEYS if (v := payload.get(k)) is not None}
-
-    return SttValidationOutcome(error_code=None, overrides=overrides)
+    return SttValidationOutcome(error_code=None, overrides=req.to_overrides(), request=req)

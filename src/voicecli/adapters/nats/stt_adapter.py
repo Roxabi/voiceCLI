@@ -15,12 +15,14 @@ from roxabi_nats import NatsAdapterBase
 from voicecli.adapters.nats._stt_runner import SttRunnerState, run_transcription
 from voicecli.adapters.nats._validation import validate_stt_request
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
+from voicecli.adapters.nats.requests import SttRequest
 from voicecli.adapters.nats.tempdir import cleanup, scoped_path
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch/faster-whisper when only inspecting the adapter (e.g. --help).
 
 log = logging.getLogger(__name__)
+
 
 SUBJECT = VOICE_SUBJECTS.stt_request
 HEARTBEAT_SUBJECT = VOICE_SUBJECTS.stt_heartbeat
@@ -41,6 +43,7 @@ __all__ = [
     "_MIME_TO_EXT",
     "_duration_from_segments",
     "_ext_from_mime",
+    "SttRequest",
     "SttNatsAdapter",
     "SUBJECT",
     "HEARTBEAT_SUBJECT",
@@ -128,26 +131,35 @@ class SttNatsAdapter(NatsAdapterBase):
         if outcome.error_code is not None:
             await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code))
             return
-        audio_b64 = payload["audio_b64"]  # validated by validate_stt_request to be str
-        overrides = outcome.overrides or {}
+        req = outcome.request
 
         if self.reject_when_full:
             # Non-blocking acquire: avoid the race in _sem.locked()
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(msg, _err_stt(trace_id, request_id, "capacity_exceeded"))
+                await self.reply(msg, _err_stt(trace_id, req.request_id, "capacity_exceeded"))
                 return
             try:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
+                    msg,
+                    payload,
+                    req.request_id,
+                    req.audio_b64,
+                    req.to_overrides(),
+                    trace_id=trace_id,
                 )
             finally:
                 self._sem.release()
         else:
             async with self._sem:
                 await self._run_transcription(
-                    msg, payload, request_id, audio_b64, overrides, trace_id=trace_id
+                    msg,
+                    payload,
+                    req.request_id,
+                    req.audio_b64,
+                    req.to_overrides(),
+                    trace_id=trace_id,
                 )
 
     async def _run_transcription(
