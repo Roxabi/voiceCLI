@@ -1,0 +1,77 @@
+---
+title: "chore(refactor): rename pre-existing modality-tagged filenames to layer-axis names"
+issue: 171
+tier: F-lite
+status: approved
+date: 2026-05-23
+---
+
+## Context
+
+Promoted from [frame #171](../frames/171-rename-modality-files-layer-axis-frame.mdx).
+
+Issue #170 restructured `src/voicecli/` into layer sub-packages. Some files retained modality-tagged names (`stt_*`, `tts_*`) as historical residuals. This spec tracks their rename to layer-axis names, plus import and documentation updates.
+
+**Scope update from #170:** The issue body lists `src/voicecli/nats_stt_client.py` → `src/voicecli/nats_transcribe_client.py`. However, #170 already moved this file to `src/voicecli/adapters/nats/stt_client.py`. The rename is adjusted to keep it in the correct layer package: `src/voicecli/adapters/nats/stt_client.py` → `src/voicecli/adapters/nats/transcribe_client.py`.
+
+## Goal
+
+All modality-tagged filenames in `src/voicecli/` are renamed to layer-axis names, with all internal imports, docs, and external callers updated atomically in a single PR.
+
+## Users
+
+- **Primary:** Developers maintaining voiceCLI
+- **Secondary:** lyra hub-spoke agents and deploy scripts importing voiceCLI modules
+
+## Expected Behavior
+
+1. Each file in the rename table is moved to its proposed name via `git mv` (preserving history).
+2. All `from voicecli... import ...` statements referencing old module names are updated to new names.
+3. All `__init__.py` lazy-loading entries (e.g., `adapters/nats/__init__.py`) are updated.
+4. All documentation references (`.axial-allowlist`, ADRs, setup guides) are updated.
+5. External callers (lyra, deploy scripts) are verified and updated if needed.
+6. `ruff check .`, `ruff format .`, `pyright` all pass after renames.
+
+## Data Model & Consumers
+
+**No data model changes** — this is a pure structural refactor. Module-level data shapes, function signatures, and class interfaces remain unchanged. Only file paths and import strings change.
+
+```mermaid
+classDiagram
+    note "No data model changes — module interfaces frozen"
+```
+
+## Breadboard
+
+**No new affordances** — existing CLI commands, daemon sockets, and NATS subjects remain unchanged.
+
+| Affordance | Handler | Data | Status |
+|---|---|---|---|
+| (unchanged) | — | — | — |
+
+## Slices
+
+| # | Slice | Deliverable | Verifiable |
+|---|---|---|---|
+| 1 | Rename files + update internal imports | All 9 `git mv` operations + import fixes | `ruff check .` passes, `pyright` passes |
+| 2 | Update docs + architecture references | `.axial-allowlist`, ADRs, setup guides updated | `grep` for old names in docs returns zero |
+| 3 | Verify external callers | lyra + deploy scripts audited | No broken imports in external repos |
+
+## Success Criteria
+
+- [ ] `src/voicecli/ui/stt_client.py` renamed to `src/voicecli/ui/dictate_client.py`
+- [ ] `src/voicecli/ui/nats_recorder.py` renamed to `src/voicecli/ui/nats_mic_recorder.py`
+- [ ] `src/voicecli/runtime/stt_daemon.py` renamed to `src/voicecli/runtime/transcribe_daemon.py`
+- [ ] `src/voicecli/core/stt_modes.py` renamed to `src/voicecli/core/dictate_modes.py`
+- [ ] `src/voicecli/adapters/nats/stt_adapter.py` renamed to `src/voicecli/adapters/nats/transcribe_adapter.py`
+- [ ] `src/voicecli/adapters/nats/_stt_runner.py` renamed to `src/voicecli/adapters/nats/_transcribe_runner.py`
+- [ ] `src/voicecli/adapters/nats/tts_adapter.py` renamed to `src/voicecli/adapters/nats/synthesize_adapter.py`
+- [ ] `src/voicecli/adapters/nats/_tts_runner.py` renamed to `src/voicecli/adapters/nats/_synthesize_runner.py`
+- [ ] `src/voicecli/adapters/nats/stt_client.py` renamed to `src/voicecli/adapters/nats/transcribe_client.py`
+- [ ] Zero internal `from voicecli...` import errors after rename (`ruff check .` passes)
+- [ ] Zero `pyright` type errors after rename
+- [ ] `docs/architecture/.axial-allowlist` updated to reflect new names
+- [ ] All docs references (STT-SETUP.md, ADRs, backend-patterns.md) updated
+- [ ] External callers (lyra, deploy scripts) verified — no broken imports
+- [ ] All tests pass (`uv run pytest`)
+- [ ] `src/voicecli/nats/` pycache directory cleaned up if orphaned
