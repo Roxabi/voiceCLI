@@ -93,7 +93,7 @@ def start_recording(
     cmd = [
         sys.executable,
         "-m",
-        "voicecli.nats_mic_recorder",
+        "voicecli.ui.nats_mic_recorder",
         "--run-recorder",
         "--model",
         model,

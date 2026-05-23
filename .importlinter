@@ -18,7 +18,7 @@ layers =
 ignore_imports =
     # ADR-003 V11: runtime.stt_daemon uses ui_sounds; dictation uses clipboard — cross-layer (runtime → ui)
     voicecli.runtime.dictation -> voicecli.ui.clipboard
-    voicecli.runtime.stt_daemon -> voicecli.ui.sounds
+    voicecli.runtime.transcribe_daemon -> voicecli.ui.sounds
     # Transitional: engines import Segment/TTSDocument from voicecli.api.markdown — pure data types, moving to
     # a shared primitives layer is tracked by ADR-003; engines need Segment for type-hinted segment iteration
     voicecli.engines.chatterbox -> voicecli.api.markdown
@@ -31,8 +31,8 @@ ignore_imports =
     voicecli.runtime.wire_protocol -> voicecli.api.markdown
     # Transitional: NATS runners call voicecli.api for warmup/model loading — adapters below api;
     # to be resolved via warmup port or dependency injection (ADR-003)
-    voicecli.adapters.nats._tts_runner -> voicecli.api
-    voicecli.adapters.nats._stt_runner -> voicecli.api
+    voicecli.adapters.nats._synthesize_runner -> voicecli.api
+    voicecli.adapters.nats._transcribe_runner -> voicecli.api
     # Transitional: voicecli.ports.stt imports runtime.transcribe directly — needs indirection via port interface (ADR-003)
     voicecli.ports.stt -> voicecli.runtime.transcribe
 
@@ -42,6 +42,6 @@ type = forbidden
 source_modules = voicecli.api
 forbidden_modules =
     voicecli.runtime.daemon
-    voicecli.runtime.stt_daemon
+    voicecli.runtime.transcribe_daemon
     voicecli.runtime.model_registry
 allow_indirect_imports = True

@@ -20,6 +20,15 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module(f"voicecli.adapters.nats.{name}")
+    # Backward-compat aliases for old modality-tagged submodule names
+    if name == "tts_adapter":
+        import importlib
+
+        return importlib.import_module("voicecli.adapters.nats.synthesize_adapter")
+    if name == "stt_adapter":
+        import importlib
+
+        return importlib.import_module("voicecli.adapters.nats.transcribe_adapter")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

@@ -419,7 +419,7 @@ def dictate_nats(
         if language is None and "language" in mode_cfg:
             language = mode_cfg["language"]
 
-    # Vocab is prepended to the prompt — same shape as transcribe_daemon._stop_and_transcribe.
+    # Vocab is prepended to the prompt — same shape as dictation._stop_and_transcribe.
     try:
         vocab_fragment = vocab_to_prompt(load_vocab())
     except Exception:
