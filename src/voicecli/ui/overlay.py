@@ -45,8 +45,8 @@ from voicecli.ui.overlay_draw import (  # noqa: E402
     draw_frame,
     hotkey_badge,
 )
-from voicecli.ui.stt_client import SOCKET_PATH, send_status  # noqa: E402
-from voicecli.runtime.stt_daemon import LEVEL_FILE  # noqa: E402
+from voicecli.ui.dictate_client import SOCKET_PATH, send_status  # noqa: E402
+from voicecli.runtime.transcribe_daemon import LEVEL_FILE  # noqa: E402
 
 
 class WaveformOverlay:

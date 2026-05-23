@@ -1,9 +1,9 @@
 """STT audio-shape helpers used by both the adapter and the runner.
 
-Extracted from `stt_adapter.py` to eliminate the otherwise-required deferred
-reverse import in `_stt_runner.py`. Owns nothing stateful — pure functions
+Extracted from `transcribe_adapter.py` to eliminate the otherwise-required deferred
+reverse import in `_transcribe_runner.py`. Owns nothing stateful — pure functions
 and one constant lookup table. The adapter re-exports the symbols for
-backward-compatible test imports (see `voicecli.nats.stt_adapter`).
+backward-compatible test imports (see `voicecli.adapters.nats.transcribe_adapter`).
 """
 
 from __future__ import annotations

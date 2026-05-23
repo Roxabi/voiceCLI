@@ -1,6 +1,6 @@
 """WAV utility helpers for the TTS NATS adapter.
 
-Extracted from tts_adapter to keep that module under the 300-line gate.
+Extracted from synthesize_adapter to keep that module under the 300-line gate.
 All functions are pure (no NATS / asyncio dependencies).
 """
 

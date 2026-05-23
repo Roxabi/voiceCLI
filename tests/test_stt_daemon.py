@@ -1,4 +1,4 @@
-"""Tests for voicecli.runtime.stt_daemon."""
+"""Tests for voicecli.runtime.transcribe_daemon."""
 
 from __future__ import annotations
 
@@ -60,10 +60,10 @@ def daemon_send(tmp_path):
     with (
         patch("voicecli.runtime.recording._probe_pyaudio", return_value=True),
         patch("voicecli.runtime.recording.RecordingThread", mock_recording_thread_cls),
-        patch("voicecli.runtime.stt_daemon.play_ui_sound", mock_play_ui_sound),
-        patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
+        patch("voicecli.runtime.transcribe_daemon.play_ui_sound", mock_play_ui_sound),
+        patch("voicecli.runtime.transcribe_daemon._spawn_overlay", MagicMock()),
         patch("voicecli.ui.clipboard.write_clipboard", mock_write_clipboard),
-        patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
+        patch("voicecli.runtime.transcribe_daemon.warmup", mock_warmup),
         # dictation._stop_and_transcribe() imports transcribe via a deferred
         # `from voicecli.runtime.transcribe import transcribe` inside the function body.
         # Patching voicecli.transcribe.transcribe intercepts this import at call
@@ -71,7 +71,10 @@ def daemon_send(tmp_path):
         # which targets the same module attribute — both paths are consistent.
         patch("voicecli.runtime.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
     ):
-        from voicecli.runtime.stt_daemon import SttDaemon, SOCKET_PATH as _DEFAULT_SOCKET_PATH
+        from voicecli.runtime.transcribe_daemon import (
+            SttDaemon,
+            SOCKET_PATH as _DEFAULT_SOCKET_PATH,
+        )
 
         daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
         t = threading.Thread(target=daemon.serve, daemon=True)
@@ -168,7 +171,7 @@ class TestRecordingAndChimes:
         overlay_called = threading.Event()
         mock_spawn.side_effect = lambda *a, **kw: overlay_called.set()
         # Arrange / Act
-        with patch("voicecli.runtime.stt_daemon._spawn_overlay", mock_spawn):
+        with patch("voicecli.runtime.transcribe_daemon._spawn_overlay", mock_spawn):
             resp = send("toggle")
         # Assert response
         assert resp["status"] == "ok"
@@ -503,13 +506,13 @@ class TestPaRecordFallback:
             patch("voicecli.runtime.recording._probe_pyaudio", return_value=False),
             patch("voicecli.runtime.recording._record_parecord", mock_record_parecord),
             patch("voicecli.runtime.recording.RecordingThread", mock_recording_thread_cls),
-            patch("voicecli.runtime.stt_daemon.play_ui_sound", MagicMock()),
-            patch("voicecli.runtime.stt_daemon._spawn_overlay", MagicMock()),
+            patch("voicecli.runtime.transcribe_daemon.play_ui_sound", MagicMock()),
+            patch("voicecli.runtime.transcribe_daemon._spawn_overlay", MagicMock()),
             patch("voicecli.ui.clipboard.write_clipboard", mock_write_clipboard),
-            patch("voicecli.runtime.stt_daemon.warmup", mock_warmup),
+            patch("voicecli.runtime.transcribe_daemon.warmup", mock_warmup),
             patch("voicecli.runtime.transcribe.transcribe", return_value=_MOCK_TRANSCRIPTION),
         ):
-            from voicecli.runtime.stt_daemon import SttDaemon
+            from voicecli.runtime.transcribe_daemon import SttDaemon
 
             daemon = SttDaemon(model="large-v3-turbo", socket_path=sock_path)
             t = threading.Thread(target=daemon.serve, daemon=True)

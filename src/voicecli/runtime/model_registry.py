@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# VRAM status thresholds (shared with tts_adapter)
+# VRAM status thresholds (shared with synthesize_adapter)
 VRAM_OK_MB = 4096
 VRAM_CONSTRAINED_MB = 1024
 

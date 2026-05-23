@@ -1,4 +1,4 @@
-"""Tests for voicecli.stt_client and load_stt_config from voicecli.core.config."""
+"""Tests for voicecli.dictate_client and load_stt_config from voicecli.core.config."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from typer.testing import CliRunner
 
 
 class TestSendRequest:
-    """Tests for stt_client._send_request — wire-protocol helper."""
+    """Tests for dictate_client._send_request — wire-protocol helper."""
 
     def test_success_returns_parsed_json(self):
         """Happy path: daemon responds with valid JSON → dict is returned."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         response_payload = json.dumps({"status": "ok", "state": "idle"}) + "\n"
 
@@ -41,7 +41,7 @@ class TestSendRequest:
 
     def test_send_request_sends_correct_action(self):
         """_send_request sends a JSON payload with the correct action field."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         response_payload = json.dumps({"status": "ok"}) + "\n"
         mock_sock = MagicMock()
@@ -57,7 +57,7 @@ class TestSendRequest:
 
     def test_connection_refused_returns_error_dict(self):
         """ConnectionRefusedError → error dict with daemon-not-running message."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         mock_sock = MagicMock()
         mock_sock.connect.side_effect = ConnectionRefusedError
@@ -72,7 +72,7 @@ class TestSendRequest:
 
     def test_file_not_found_returns_error_dict(self):
         """FileNotFoundError (socket absent) → error dict."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         mock_sock = MagicMock()
         mock_sock.connect.side_effect = FileNotFoundError
@@ -85,7 +85,7 @@ class TestSendRequest:
 
     def test_os_error_returns_error_dict(self):
         """Generic OSError → error dict (covers other socket failures)."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         mock_sock = MagicMock()
         mock_sock.connect.side_effect = OSError("connection failed")
@@ -98,7 +98,7 @@ class TestSendRequest:
 
     def test_socket_closed_in_finally(self):
         """Socket.close() is always called — even on error — via finally block."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         mock_sock = MagicMock()
         mock_sock.connect.side_effect = ConnectionRefusedError
@@ -110,7 +110,7 @@ class TestSendRequest:
 
     def test_multipart_recv_assembled_correctly(self):
         """Response arriving in multiple recv() chunks is reassembled before parsing."""
-        from voicecli.ui.stt_client import _send_request
+        from voicecli.ui.dictate_client import _send_request
 
         full_payload = json.dumps({"status": "ok", "text": "hello"}) + "\n"
         # Split into two chunks
@@ -136,11 +136,11 @@ class TestSendToggleAndStatus:
 
     def test_send_toggle_calls_send_request_with_toggle(self):
         """send_toggle() invokes _send_request('toggle') and returns its result."""
-        from voicecli.ui.stt_client import send_toggle
+        from voicecli.ui.dictate_client import send_toggle
 
         expected = {"status": "ok", "state": "recording"}
 
-        with patch("voicecli.ui.stt_client._send_request", return_value=expected) as mock_req:
+        with patch("voicecli.ui.dictate_client._send_request", return_value=expected) as mock_req:
             result = send_toggle()
 
         mock_req.assert_called_once_with("toggle", timeout=60)
@@ -148,11 +148,11 @@ class TestSendToggleAndStatus:
 
     def test_send_status_calls_send_request_with_status(self):
         """send_status() invokes _send_request('status') and returns its result."""
-        from voicecli.ui.stt_client import send_status
+        from voicecli.ui.dictate_client import send_status
 
         expected = {"status": "ok", "state": "idle"}
 
-        with patch("voicecli.ui.stt_client._send_request", return_value=expected) as mock_req:
+        with patch("voicecli.ui.dictate_client._send_request", return_value=expected) as mock_req:
             result = send_status()
 
         mock_req.assert_called_once_with("status")
@@ -165,11 +165,11 @@ class TestSendToggleAndStatus:
 
 
 class TestNotify:
-    """Tests for stt_client.notify — desktop notification via notify-send."""
+    """Tests for dictate_client.notify — desktop notification via notify-send."""
 
     def test_notify_skipped_when_notify_send_missing(self):
         """notify() is a no-op when notify-send is not installed."""
-        from voicecli.ui.stt_client import notify
+        from voicecli.ui.dictate_client import notify
 
         with (
             patch("shutil.which", return_value=None),
@@ -181,7 +181,7 @@ class TestNotify:
 
     def test_notify_calls_subprocess_when_notify_send_present(self):
         """notify() calls subprocess.run with notify-send and correct args."""
-        from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID, notify
+        from voicecli.ui.dictate_client import _NOTIFY_REPLACE_ID, notify
 
         with (
             patch("shutil.which", return_value="/usr/bin/notify-send"),
@@ -205,7 +205,7 @@ class TestNotify:
 
     def test_notify_uses_replace_id_to_replace_previous_bubble(self):
         """notify() includes the stable replace-ID so bubbles replace each other."""
-        from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID, notify
+        from voicecli.ui.dictate_client import _NOTIFY_REPLACE_ID, notify
 
         with (
             patch("shutil.which", return_value="/usr/bin/notify-send"),
@@ -224,7 +224,7 @@ class TestNotify:
 
     def test_notify_default_timeout_is_3000(self):
         """notify() uses 3000 ms as the default timeout."""
-        from voicecli.ui.stt_client import notify
+        from voicecli.ui.dictate_client import notify
 
         with (
             patch("shutil.which", return_value="/usr/bin/notify-send"),
@@ -238,7 +238,7 @@ class TestNotify:
 
     def test_notify_survives_subprocess_exception(self):
         """notify() swallows exceptions from subprocess.run silently."""
-        from voicecli.ui.stt_client import notify
+        from voicecli.ui.dictate_client import notify
 
         with (
             patch("shutil.which", return_value="/usr/bin/notify-send"),
@@ -254,11 +254,11 @@ class TestNotify:
 
 
 class TestAutoPaste:
-    """Tests for stt_client.auto_paste — type text via xdotool."""
+    """Tests for dictate_client.auto_paste — type text via xdotool."""
 
     def test_auto_paste_skipped_when_xdotool_missing(self):
         """auto_paste() is a no-op when xdotool is not installed."""
-        from voicecli.ui.stt_client import auto_paste
+        from voicecli.ui.dictate_client import auto_paste
 
         with (
             patch("shutil.which", return_value=None),
@@ -270,7 +270,7 @@ class TestAutoPaste:
 
     def test_auto_paste_calls_xdotool_with_correct_args(self):
         """auto_paste() calls xdotool type with the provided text (X11 fallback)."""
-        from voicecli.ui.stt_client import auto_paste
+        from voicecli.ui.dictate_client import auto_paste
 
         def _which(cmd):
             return "/usr/bin/xdotool" if cmd == "xdotool" else None
@@ -290,7 +290,7 @@ class TestAutoPaste:
 
     def test_auto_paste_prefers_wtype_on_wayland(self):
         """auto_paste() prefers wtype over xdotool when both are available."""
-        from voicecli.ui.stt_client import auto_paste
+        from voicecli.ui.dictate_client import auto_paste
 
         def _which(cmd):
             return f"/usr/bin/{cmd}" if cmd in ("wtype", "xdotool") else None
@@ -310,7 +310,7 @@ class TestAutoPaste:
 
     def test_auto_paste_sleeps_before_typing(self):
         """auto_paste() calls time.sleep(0.15) before invoking xdotool."""
-        from voicecli.ui.stt_client import auto_paste
+        from voicecli.ui.dictate_client import auto_paste
 
         def _which(cmd):
             return "/usr/bin/xdotool" if cmd == "xdotool" else None
@@ -326,7 +326,7 @@ class TestAutoPaste:
 
     def test_auto_paste_survives_subprocess_exception(self):
         """auto_paste() swallows exceptions from xdotool silently."""
-        from voicecli.ui.stt_client import auto_paste
+        from voicecli.ui.dictate_client import auto_paste
 
         def _which(cmd):
             return "/usr/bin/xdotool" if cmd == "xdotool" else None
@@ -360,7 +360,7 @@ def _make_pynput_mock(mock_global_hotkeys_cls):
 
 
 class TestHotkeyLoop:
-    """Tests for stt_client.hotkey_loop — pynput GlobalHotKeys wrapper."""
+    """Tests for dictate_client.hotkey_loop — pynput GlobalHotKeys wrapper."""
 
     def _make_listener(self):
         """Return a mock listener that exits via KeyboardInterrupt on join()."""
@@ -372,14 +372,14 @@ class TestHotkeyLoop:
 
     def test_hotkey_loop_constructs_global_hotkeys_with_correct_format(self):
         """hotkey_loop converts 'alt+space' to '<alt>+<space>' for GlobalHotKeys."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         mock_global_hotkeys_cls = MagicMock(return_value=self._make_listener())
         pynput_mock, mock_keyboard = _make_pynput_mock(mock_global_hotkeys_cls)
 
         with (
             patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
-            patch("voicecli.ui.stt_client.send_toggle", return_value={"status": "error"}),
+            patch("voicecli.ui.dictate_client.send_toggle", return_value={"status": "error"}),
         ):
             hotkey_loop(hotkey="alt+space")
 
@@ -390,14 +390,14 @@ class TestHotkeyLoop:
 
     def test_hotkey_loop_default_hotkey_formatted_correctly(self):
         """hotkey_loop converts 'ctrl+space' (default) to '<ctrl>+<space>' for GlobalHotKeys."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         mock_global_hotkeys_cls = MagicMock(return_value=self._make_listener())
         pynput_mock, mock_keyboard = _make_pynput_mock(mock_global_hotkeys_cls)
 
         with (
             patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
-            patch("voicecli.ui.stt_client.send_toggle", return_value={"status": "error"}),
+            patch("voicecli.ui.dictate_client.send_toggle", return_value={"status": "error"}),
         ):
             hotkey_loop(hotkey="ctrl+space")
 
@@ -406,14 +406,14 @@ class TestHotkeyLoop:
 
     def test_hotkey_loop_multi_key_combo_formatted_correctly(self):
         """hotkey_loop converts 'ctrl+shift+d' to '<ctrl>+<shift>+<d>'."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         mock_global_hotkeys_cls = MagicMock(return_value=self._make_listener())
         pynput_mock, mock_keyboard = _make_pynput_mock(mock_global_hotkeys_cls)
 
         with (
             patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
-            patch("voicecli.ui.stt_client.send_toggle", return_value={"status": "error"}),
+            patch("voicecli.ui.dictate_client.send_toggle", return_value={"status": "error"}),
         ):
             hotkey_loop(hotkey="ctrl+shift+d")
 
@@ -457,10 +457,10 @@ class TestHotkeyLoop:
 
         with (
             patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
-            patch("voicecli.ui.stt_client.send_toggle", side_effect=fake_send_toggle),
-            patch("voicecli.ui.stt_client.notify"),
+            patch("voicecli.ui.dictate_client.send_toggle", side_effect=fake_send_toggle),
+            patch("voicecli.ui.dictate_client.notify"),
         ):
-            from voicecli.ui.stt_client import hotkey_loop
+            from voicecli.ui.dictate_client import hotkey_loop
 
             hotkey_loop(hotkey="alt+space")
 
@@ -587,10 +587,10 @@ class TestDictateCLI:
         """Error response from daemon → exit code 1, message printed to stderr."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "error", "message": "STT daemon not running"},
             ),
-            patch("voicecli.ui.stt_client.notify"),
+            patch("voicecli.ui.dictate_client.notify"),
         ):
             # Act
             result = self._invoke()
@@ -603,10 +603,10 @@ class TestDictateCLI:
         """Recording state → exit code 0, 'recording' on stdout, notify called."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "recording"},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
         ):
             # Act
             result = self._invoke()
@@ -620,11 +620,11 @@ class TestDictateCLI:
         """Idle + text → exit 0, text printed, notify called with preview."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": "Hello world"},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
-            patch("voicecli.ui.stt_client.auto_paste"),
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.auto_paste"),
         ):
             # Act
             result = self._invoke()
@@ -638,10 +638,10 @@ class TestDictateCLI:
         """Idle + empty text → exit 0, 'idle' printed, no notify call."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": ""},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
         ):
             # Act
             result = self._invoke()
@@ -655,10 +655,10 @@ class TestDictateCLI:
         """Queued state → exit 0, 'queued' on stdout, notify called with 'Queued...'."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "queued"},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
         ):
             # Act
             result = self._invoke()
@@ -672,7 +672,7 @@ class TestDictateCLI:
         """Idle + text + language → notify preview includes '[fr] ' language tag."""
         with (
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={
                     "status": "ok",
                     "state": "idle",
@@ -680,8 +680,8 @@ class TestDictateCLI:
                     "language": "fr",
                 },
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
-            patch("voicecli.ui.stt_client.auto_paste"),
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.auto_paste"),
         ):
             # Act
             result = self._invoke()
@@ -697,7 +697,7 @@ class TestDictateCLI:
     def test_status_success_prints_state_exits_0(self):
         """dictate status success → state printed, exit 0."""
         with patch(
-            "voicecli.ui.stt_client.send_status",
+            "voicecli.ui.dictate_client.send_status",
             return_value={"status": "ok", "state": "idle"},
         ):
             # Act
@@ -710,7 +710,7 @@ class TestDictateCLI:
     def test_status_error_exits_1(self):
         """dictate status error → exit 1."""
         with patch(
-            "voicecli.ui.stt_client.send_status",
+            "voicecli.ui.dictate_client.send_status",
             return_value={"status": "error", "message": "STT daemon not running"},
         ):
             # Act
@@ -728,7 +728,7 @@ class TestDictateCLI:
                 "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "alt+space"},
             ),
-            patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,
+            patch("voicecli.ui.dictate_client.hotkey_loop") as mock_loop,
         ):
             # Act
             result = self._invoke(["--listen"])
@@ -744,7 +744,7 @@ class TestDictateCLI:
                 "voicecli.core.config.load_stt_config",
                 return_value={"hotkey": "ctrl+shift+d"},
             ),
-            patch("voicecli.ui.stt_client.hotkey_loop") as mock_loop,
+            patch("voicecli.ui.dictate_client.hotkey_loop") as mock_loop,
         ):
             # Act
             result = self._invoke(["--listen", "--paste"])
@@ -807,7 +807,7 @@ class TestHotkeyLoopBehavioral:
           call 1: 0.5 → first press, now=0.5, 0.5-0.0=0.5 >= 0.3 → fires, last_trigger=0.5
           call 2: 0.6 → second press, now=0.6, 0.6-0.5=0.1 < 0.3 → debounced
         """
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         # Arrange
         def fake_ctor(hotkeys_dict):
@@ -835,10 +835,10 @@ class TestHotkeyLoopBehavioral:
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "recording"},
             ) as mock_toggle,
-            patch("voicecli.ui.stt_client.notify"),
+            patch("voicecli.ui.dictate_client.notify"),
             patch("time.monotonic", side_effect=monotonic_values),
         ):
             # Act
@@ -877,7 +877,7 @@ class TestHotkeyLoopBehavioral:
     )
     def test_notification_branch(self, resp, expected_notify_body, expected_timeout):
         """Each daemon state triggers the correct notify() call."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         def fake_ctor(hotkeys_dict):
             cb = list(hotkeys_dict.values())[0]
@@ -900,9 +900,9 @@ class TestHotkeyLoopBehavioral:
                 "sys.modules",
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
-            patch("voicecli.ui.stt_client.send_toggle", return_value=resp),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
-            patch("voicecli.ui.stt_client.auto_paste"),
+            patch("voicecli.ui.dictate_client.send_toggle", return_value=resp),
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.auto_paste"),
         ):
             hotkey_loop(hotkey="alt+space", paste=False)
 
@@ -912,7 +912,7 @@ class TestHotkeyLoopBehavioral:
 
     def test_paste_true_calls_auto_paste_on_idle_with_text(self):
         """paste=True + idle + text → auto_paste called with full text."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         def fake_ctor(hotkeys_dict):
             cb = list(hotkeys_dict.values())[0]
@@ -936,11 +936,11 @@ class TestHotkeyLoopBehavioral:
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": "typed text"},
             ),
-            patch("voicecli.ui.stt_client.notify"),
-            patch("voicecli.ui.stt_client.auto_paste") as mock_paste,
+            patch("voicecli.ui.dictate_client.notify"),
+            patch("voicecli.ui.dictate_client.auto_paste") as mock_paste,
         ):
             # Act
             hotkey_loop(hotkey="alt+space", paste=True)
@@ -950,7 +950,7 @@ class TestHotkeyLoopBehavioral:
 
     def test_paste_false_does_not_call_auto_paste(self):
         """paste=False + idle + text → auto_paste NOT called."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         def fake_ctor(hotkeys_dict):
             cb = list(hotkeys_dict.values())[0]
@@ -974,11 +974,11 @@ class TestHotkeyLoopBehavioral:
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": "typed text"},
             ),
-            patch("voicecli.ui.stt_client.notify"),
-            patch("voicecli.ui.stt_client.auto_paste") as mock_paste,
+            patch("voicecli.ui.dictate_client.notify"),
+            patch("voicecli.ui.dictate_client.auto_paste") as mock_paste,
         ):
             # Act
             hotkey_loop(hotkey="alt+space", paste=False)
@@ -990,7 +990,7 @@ class TestHotkeyLoopBehavioral:
 
     def test_text_truncation_51_chars_ends_with_ellipsis(self):
         """Text of 51 chars → notify preview is first 50 chars + '...'."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         long_text = "A" * 51  # 51 characters
 
@@ -1016,11 +1016,11 @@ class TestHotkeyLoopBehavioral:
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": long_text},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
-            patch("voicecli.ui.stt_client.auto_paste"),
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.auto_paste"),
         ):
             # Act
             hotkey_loop(hotkey="alt+space", paste=False)
@@ -1032,7 +1032,7 @@ class TestHotkeyLoopBehavioral:
 
     def test_text_exactly_50_chars_no_ellipsis(self):
         """Text of exactly 50 chars → notify preview has no trailing '...'."""
-        from voicecli.ui.stt_client import hotkey_loop
+        from voicecli.ui.dictate_client import hotkey_loop
 
         text_50 = "B" * 50
 
@@ -1058,11 +1058,11 @@ class TestHotkeyLoopBehavioral:
                 {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard},
             ),
             patch(
-                "voicecli.ui.stt_client.send_toggle",
+                "voicecli.ui.dictate_client.send_toggle",
                 return_value={"status": "ok", "state": "idle", "text": text_50},
             ),
-            patch("voicecli.ui.stt_client.notify") as mock_notify,
-            patch("voicecli.ui.stt_client.auto_paste"),
+            patch("voicecli.ui.dictate_client.notify") as mock_notify,
+            patch("voicecli.ui.dictate_client.auto_paste"),
         ):
             # Act
             hotkey_loop(hotkey="alt+space", paste=False)

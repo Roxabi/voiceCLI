@@ -9,7 +9,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from voicecli.runtime.stt_daemon import LEVEL_FILE
+from voicecli.runtime.transcribe_daemon import LEVEL_FILE
 
 _ASSETS = Path(__file__).parent / "assets"
 

@@ -22,9 +22,9 @@ Enable: `auto_paste = true` in `[stt]` section of `voicecli.toml` (requires daem
 
 ## UI sounds
 
-- `start.wav` — played by `stt_daemon._play_ui_sound()` (zero-latency, before overlay spawns)
+- `start.wav` — played by `transcribe_daemon._play_ui_sound()` (zero-latency, before overlay spawns)
 - `stop.wav` — played by overlay on `_close()`
-- `_chime()` removed from stt_daemon — overlay handles all UI sounds
+- `_chime()` removed from transcribe_daemon — overlay handles all UI sounds
 - Overlay shortcuts (Tab/Esc in toolbar) are display-only — actual shortcuts go through AHK
 
 ## CLI commands

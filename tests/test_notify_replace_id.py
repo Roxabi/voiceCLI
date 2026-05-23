@@ -1,7 +1,7 @@
 """Regression test for the notify-send replace-ID.
 
 The dictate flow notifies from three distinct Python processes (foreground
-``dictate nats``, background ``nats_recorder`` subprocess, and the second
+``dictate nats``, background ``nats_mic_recorder`` subprocess, and the second
 ``dictate nats`` press that transcribes). Python's ``hash()`` is salted per
 process via PYTHONHASHSEED, so a hash-derived replace-ID would produce three
 different IDs and stack three bubbles instead of replacing in place. Lock
@@ -18,7 +18,7 @@ import textwrap
 def test_replace_id_is_stable_across_processes() -> None:
     script = textwrap.dedent(
         """
-        from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID
+        from voicecli.ui.dictate_client import _NOTIFY_REPLACE_ID
         print(_NOTIFY_REPLACE_ID)
         """
     )
@@ -35,7 +35,7 @@ def test_replace_id_is_stable_across_processes() -> None:
 
 
 def test_replace_id_is_a_positive_integer_string() -> None:
-    from voicecli.ui.stt_client import _NOTIFY_REPLACE_ID
+    from voicecli.ui.dictate_client import _NOTIFY_REPLACE_ID
 
     # notify-send -r requires an integer.
     n = int(_NOTIFY_REPLACE_ID)

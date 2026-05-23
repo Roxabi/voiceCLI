@@ -19,7 +19,7 @@ MAX_AUDIO_B64_LEN
 -----------------
 The cap is passed in as ``max_audio_b64_len`` rather than imported here. The
 named constant ``MAX_AUDIO_B64_LEN`` lives in ``voicecli.adapters.nats._audio_utils``
-(re-exported by ``stt_adapter.py``) and is forwarded by the adapter, keeping
+(re-exported by ``transcribe_adapter.py``) and is forwarded by the adapter, keeping
 the dependency direction adapter → runner.
 """
 

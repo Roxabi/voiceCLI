@@ -123,7 +123,7 @@ class TestSttLazyWarmup:
     def test_serve_does_not_call_warmup(self, tmp_path):
         """serve() should not eagerly call warmup() — model loads on first request."""
         # Arrange
-        from voicecli.runtime.stt_daemon import SttDaemon
+        from voicecli.runtime.transcribe_daemon import SttDaemon
 
         sock_path = tmp_path / "stt-lazy.sock"
         daemon = SttDaemon(socket_path=sock_path)
@@ -137,8 +137,8 @@ class TestSttLazyWarmup:
                 raise KeyboardInterrupt("break out of serve() for test")
 
         with (
-            patch("voicecli.runtime.stt_daemon.warmup") as mock_warmup,
-            patch("voicecli.runtime.stt_daemon._probe_pyaudio", return_value=False),
+            patch("voicecli.runtime.transcribe_daemon.warmup") as mock_warmup,
+            patch("voicecli.runtime.transcribe_daemon._probe_pyaudio", return_value=False),
             patch("socket.socket", _BreakOnListen),
         ):
             # Act — serve() must exit cleanly via the KeyboardInterrupt path
@@ -172,7 +172,7 @@ class TestSttOomRetry:
         """Return a minimal (SttDaemon, audio_path, fake_conn) tuple for unit tests."""
         from unittest.mock import MagicMock
 
-        from voicecli.runtime.stt_daemon import SttDaemon
+        from voicecli.runtime.transcribe_daemon import SttDaemon
 
         audio_path = tmp_path / "audio.wav"
         audio_path.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt ")  # minimal WAV-ish header
@@ -216,7 +216,7 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe_daemon.load_stt_config", return_value={}),
             patch("voicecli.runtime.transcribe.transcribe", side_effect=_transcribe_side_effect),
             patch("time.sleep"),
             patch("gc.collect"),
@@ -252,7 +252,7 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe_daemon.load_stt_config", return_value={}),
             patch("voicecli.runtime.transcribe.transcribe", side_effect=_always_oom),
             patch("time.sleep") as mock_sleep,
             patch("gc.collect"),
@@ -287,7 +287,7 @@ class TestSttOomRetry:
         mock_cuda.OutOfMemoryError = _FakeOOM
 
         with (
-            patch("voicecli.runtime.stt_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe_daemon.load_stt_config", return_value={}),
             patch(
                 "voicecli.runtime.transcribe.transcribe",
                 side_effect=ValueError("Unknown model 'bad'"),

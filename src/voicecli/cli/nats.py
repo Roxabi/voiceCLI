@@ -52,7 +52,7 @@ def nats_serve_tts(
     from voicecli.core.config import apply_nats_env_from_config, load_nats_config
     from voicecli.runtime.model_registry import model_registry
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
-    from voicecli.adapters.nats.tts_adapter import TtsNatsAdapter
+    from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 
     apply_nats_env_from_config()
 
@@ -120,7 +120,7 @@ def nats_serve_stt(
 
     from voicecli.core.config import apply_nats_env_from_config
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_model
-    from voicecli.adapters.nats.stt_adapter import SttNatsAdapter
+    from voicecli.adapters.nats.transcribe_adapter import SttNatsAdapter
 
     apply_nats_env_from_config()
 

@@ -31,7 +31,7 @@ VOICECLI_BIN="${VOICECLI_BIN:-voicecli}"
 # spawn a second recorder on top of the first.
 STATE_FILE="$HOME/.local/share/voicecli/nats-recording.json"
 if command -v pgrep >/dev/null 2>&1; then
-    orphan_pids="$(pgrep -u "$USER" -f 'voicecli\.nats_recorder .*--run-recorder' || true)"
+    orphan_pids="$(pgrep -u "$USER" -f 'voicecli\.nats_mic_recorder .*--run-recorder' || true)"
     if [ -n "$orphan_pids" ]; then
         tracked_pid=""
         if [ -f "$STATE_FILE" ] && command -v python3 >/dev/null 2>&1; then

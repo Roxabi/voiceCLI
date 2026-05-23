@@ -93,7 +93,7 @@ def start_recording(
     cmd = [
         sys.executable,
         "-m",
-        "voicecli.nats_recorder",
+        "voicecli.nats_mic_recorder",
         "--run-recorder",
         "--model",
         model,
@@ -192,7 +192,7 @@ def stop_recording() -> bytes:
 def _record_until_signal(stop_event: threading.Event) -> bytes:
     """Record from mic until stop_event is set. Return WAV bytes."""
     # Try pyaudio first, fall back to parecord
-    from voicecli.runtime.stt_daemon import _probe_pyaudio, _record_parecord, RecordingThread
+    from voicecli.runtime.transcribe_daemon import _probe_pyaudio, _record_parecord, RecordingThread
 
     if _probe_pyaudio():
         rt = RecordingThread()
@@ -222,7 +222,7 @@ def _progress_notify_loop(stop_event: threading.Event, started_at: float) -> Non
     "Recording... 3s" → "Recording... 5s" updates while speaking, instead of
     a static "Recording..." until they stop. Exits when ``stop_event`` is set.
     """
-    from voicecli.ui.stt_client import notify
+    from voicecli.ui.dictate_client import notify
 
     while not stop_event.wait(PROGRESS_TICK_SECONDS):
         elapsed = int(time.monotonic() - started_at)
