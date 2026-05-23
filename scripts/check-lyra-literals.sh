@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Designated adapter modules (actual subject string usage)
 # cli.py: docstrings only, not subject literals
-# nats_stt_client.py: one-shot NATS STT adapter for `voicecli dictate nats`
+# transcribe_client.py: one-shot NATS STT adapter for `voicecli dictate nats`
 ALLOWLIST="src/voicecli/adapters/nats/transcribe_adapter.py src/voicecli/adapters/nats/synthesize_adapter.py src/voicecli/cli/nats.py src/voicecli/adapters/nats/transcribe_client.py"
 
 # Find files with lyra. literals, excluding allowlisted paths

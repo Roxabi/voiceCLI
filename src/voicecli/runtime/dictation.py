@@ -14,7 +14,7 @@ from voicecli.runtime.wire_protocol import send_json as _send_json
 from voicecli.core.history import append_history, wav_duration_s
 
 if TYPE_CHECKING:
-    from voicecli.runtime.stt_daemon import SttDaemon
+    from voicecli.runtime.transcribe_daemon import SttDaemon
 
 
 def handle_ping(daemon: "SttDaemon", conn) -> None:
@@ -111,7 +111,7 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
 
 
 def handle_toggle(daemon: "SttDaemon", conn, mode: str | None = None) -> None:
-    from voicecli.runtime.stt_daemon import State
+    from voicecli.runtime.transcribe_daemon import State
 
     with daemon._lock:
         state = daemon._state
@@ -129,7 +129,7 @@ def handle_toggle(daemon: "SttDaemon", conn, mode: str | None = None) -> None:
 
 
 def handle_cancel(daemon: "SttDaemon", conn) -> None:
-    from voicecli.runtime.stt_daemon import State
+    from voicecli.runtime.transcribe_daemon import State
 
     with daemon._lock:
         state = daemon._state
@@ -152,7 +152,7 @@ def handle_cancel(daemon: "SttDaemon", conn) -> None:
 def handle_next_mode(daemon: "SttDaemon", conn) -> None:
     """Cycle to the next available mode and update default_mode."""
     from voicecli.core.config import _find_config
-    from voicecli.core.stt_modes import load_modes
+    from voicecli.core.dictate_modes import load_modes
 
     cfg_path = _find_config()
     raw_cfg: dict = {}
@@ -168,7 +168,7 @@ def handle_next_mode(daemon: "SttDaemon", conn) -> None:
         idx = (mode_names.index(current) + 1) % len(mode_names)
     else:
         idx = 0
-    from voicecli.runtime.stt_daemon import State
+    from voicecli.runtime.transcribe_daemon import State
 
     next_mode = mode_names[idx]
     daemon.default_mode = next_mode
@@ -178,7 +178,7 @@ def handle_next_mode(daemon: "SttDaemon", conn) -> None:
 
 
 def _stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
-    from voicecli.runtime.stt_daemon import State
+    from voicecli.runtime.transcribe_daemon import State
 
     with daemon._lock:
         daemon._state = State.TRANSCRIBING
@@ -209,7 +209,7 @@ def _stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
     if current_mode is not None:
         try:
             from voicecli.core.config import load_config
-            from voicecli.core.stt_modes import get_mode
+            from voicecli.core.dictate_modes import get_mode
 
             mode_cfg = get_mode(current_mode, load_config())
             if "language" in mode_cfg:

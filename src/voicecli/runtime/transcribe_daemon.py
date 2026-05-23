@@ -83,7 +83,7 @@ def _spawn_overlay(
 
 
 def warmup(model: str) -> None:
-    """Re-exported so tests can patch voicecli.stt_daemon.warmup."""
+    """Re-exported so tests can patch voicecli.transcribe_daemon.warmup."""
     from voicecli.runtime.transcribe import warmup as _warmup
 
     _warmup(model)

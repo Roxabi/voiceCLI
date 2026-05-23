@@ -53,11 +53,11 @@ class TestCheckLyraLiterals:
         nats_dir = tmp_path / "src" / "voicecli" / "adapters" / "nats"
         nats_dir.mkdir(parents=True)
 
-        stt_adapter = nats_dir / "transcribe_adapter.py"
-        stt_adapter.write_text('SUBJECT = "lyra.voice.stt"\n')
+        transcribe_adapter_path = nats_dir / "transcribe_adapter.py"
+        transcribe_adapter_path.write_text('SUBJECT = "lyra.voice.stt"\n')
 
-        tts_adapter = nats_dir / "synthesize_adapter.py"
-        tts_adapter.write_text('SUBJECT = "lyra.voice.tts"\n')
+        synthesize_adapter_path = nats_dir / "synthesize_adapter.py"
+        synthesize_adapter_path.write_text('SUBJECT = "lyra.voice.tts"\n')
 
         # Act
         result = subprocess.run(

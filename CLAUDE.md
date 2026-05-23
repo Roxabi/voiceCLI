@@ -61,8 +61,8 @@ src/voicecli/
   transcribe.py     — Faster Whisper file transcription
   listen.py         — Kyutai STT real-time mic transcription
   overlay.py        — Waveform overlay (GTK3 + gtk-layer-shell on Wayland, X11 fallback); stop.wav on close
-  nats_recorder.py  — Background mic recorder for NATS dictation (toggle, state ∈ ~/.local/share/voicecli/)
-  nats_stt_client.py — One-shot NATS STT client; inbox_prefix=_inbox.voice-client (ACL ADR-051)
+  nats_mic_recorder.py  — Background mic recorder for NATS dictation (toggle, state ∈ ~/.local/share/voicecli/)
+  transcribe_client.py — One-shot NATS STT client; inbox_prefix=_inbox.voice-client (ACL ADR-051)
   assets/           — UI sounds: start.wav (mic tap) + stop.wav (slowed); start_mic/stop_mic alts
   engines/
     qwen.py              — Qwen3-TTS (CustomVoice generate, Base clone)

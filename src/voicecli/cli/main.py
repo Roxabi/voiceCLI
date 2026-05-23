@@ -722,7 +722,7 @@ def stt_serve(
     stdout_logfile=/var/log/voicecli_stt.log
     """
     from voicecli.core.config import load_config
-    from voicecli.runtime.stt_daemon import SttDaemon
+    from voicecli.runtime.transcribe_daemon import SttDaemon
 
     cfg = load_config()
     stt_cfg = cfg.get("stt", {}) if cfg else {}
