@@ -458,6 +458,7 @@ class TestHotkeyLoop:
         with (
             patch.dict("sys.modules", {"pynput": pynput_mock, "pynput.keyboard": mock_keyboard}),
             patch("voicecli.ui.stt_client.send_toggle", side_effect=fake_send_toggle),
+            patch("voicecli.ui.stt_client.notify"),
         ):
             from voicecli.ui.stt_client import hotkey_loop
 
