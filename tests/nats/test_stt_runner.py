@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 from _fakes import SyncExecutor
 
+from voicecli.runtime.transcribe import Segment, TranscriptionResult
+
 from voicecli.adapters.nats._stt_runner import (
     SttRunnerState,
     run_transcription,
@@ -43,9 +45,9 @@ class _FakeApi:
         if self._transcribe_behavior is not None:
             return self._transcribe_behavior(out_path, model=model, **overrides)
         # Default: minimal TranscriptionResult-shaped object
-        from voicecli.runtime.transcribe import TranscriptionResult
-
-        return TranscriptionResult(text="hello", language="en", segments=[{"end": 1.5}])
+        return TranscriptionResult(
+            text="hello", language="en", segments=[Segment(end=1.5, start=0.0, text="")]
+        )
 
     def warmup_model(self, model: str) -> None:
         self.warmup_calls.append(model)
@@ -379,8 +381,6 @@ class TestRunTranscriptionModelLoad:
 
         def _fake_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             transcribe_calls.append(model)
-            from voicecli.runtime.transcribe import TranscriptionResult
-
             return TranscriptionResult(text="x", language="en", segments=[])
 
         monkeypatch.setattr("voicecli.api.warmup_model", _fail_warmup)
@@ -531,9 +531,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.runtime.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="bonjour", language="fr", segments=[{"end": 1.0}])
+            return TranscriptionResult(
+                text="bonjour", language="fr", segments=[Segment(end=1.0, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)
@@ -567,9 +567,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.runtime.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="hi", language="en", segments=[{"end": 0.5}])
+            return TranscriptionResult(
+                text="hi", language="en", segments=[Segment(end=0.5, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)
@@ -604,9 +604,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.runtime.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="hallo", language="de", segments=[{"end": 2.0}])
+            return TranscriptionResult(
+                text="hallo", language="de", segments=[Segment(end=2.0, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)

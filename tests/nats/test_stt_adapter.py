@@ -32,7 +32,7 @@ try:
         _duration_from_segments,
         _ext_from_mime,
     )
-    from voicecli.runtime.transcribe import TranscriptionResult
+    from voicecli.runtime.transcribe import Segment, TranscriptionResult
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
@@ -107,7 +107,7 @@ def _fake_result(
     return TranscriptionResult(
         text=text,
         language=language,
-        segments=[{"start": 0.0, "end": end, "text": text}],
+        segments=[Segment(start=0.0, end=end, text=text)],
     )
 
 
@@ -282,6 +282,37 @@ class TestSttNatsAdapter:
         asyncio.run(adapter.handle(msg, payload))
 
         # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    # ------------------------------------------------------------------
+    # Case 5b: wrong-type override fields yield malformed_request
+    # ------------------------------------------------------------------
+    def test_malformed_language_detection_threshold_type(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["language_detection_threshold"] = "high"
+
+        asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_malformed_language_detection_segments_bool(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["language_detection_segments"] = True
+
+        asyncio.run(adapter.handle(msg, payload))
+
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
@@ -745,7 +776,7 @@ class TestSttNatsAdapter:
                 return TranscriptionResult(
                     text="ok",
                     language="en",
-                    segments=[{"start": 0.0, "end": 1.5, "text": "ok"}],
+                    segments=[Segment(start=0.0, end=1.5, text="ok")],
                 )
 
             with patch(
