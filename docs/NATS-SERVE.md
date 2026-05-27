@@ -33,6 +33,45 @@ Both subcommands are now available: `nats-serve tts` (Slice 1) and `nats-serve s
 
 ---
 
+## Client side — synthesize from any host
+
+For consumers on a host **without** the model loaded (e.g. M₂, laptop, any tailnet member), `voicecli generate` can route through the hub satellite instead of loading models locally.
+
+```bash
+# Synthesize via NATS → WAV lands in ~/.voicecli/TTS/voices_out/
+voicecli generate --via-nats "Bonjour le monde"
+
+# Env-driven (same effect)
+VOICECLI_VIA_NATS=1 voicecli generate "Bonjour le monde"
+
+# Specify engine + voice + language
+voicecli generate --via-nats "Bonjour" -e qwen-fast --lang French --voice anna
+
+# Custom timeout (default 60s)
+voicecli generate --via-nats --timeout 90 "..."
+
+# Markdown input (frontmatter + segments flattened client-side, single text sent)
+voicecli generate --via-nats path/to/script.md
+```
+
+| Flag / env | Default | Effect |
+|---|---|---|
+| `--via-nats` / `VOICECLI_VIA_NATS=1` | off | route through NATS instead of socket-daemon/standalone |
+| `--timeout <s>` | 60 | NATS request timeout (one-shot reply, no streaming) |
+| `--engine`, `--voice`, `--lang` | satellite defaults | mapped to `TtsRequest` fields |
+
+Requires `NATS_URL` set (e.g. `tls://hub:4222`) and an NKey seed at the path declared in `voicecli.toml` `[nats].nkey_seed_path` (default `~/.voicecli/nkeys/voice-client.seed`). The client uses `inbox_prefix=_inbox.voice-client` (ACL-aligned with the STT client).
+
+**V1 non-goals** (use local socket daemon for these):
+- Per-segment multi-language synthesis — `TtsRequest.text` is a single string
+- Streaming audio — one-shot reply only
+- Voice cloning over NATS — only `generate`; use local `voicecli clone` for cloning
+- Auto-routing when `NATS_URL` is set — flag/env is always explicit
+
+Underlying adapter: [`src/voicecli/adapters/nats/synthesize_client.py`](../src/voicecli/adapters/nats/synthesize_client.py).
+
+---
+
 ## Environment variables
 
 Precedence: `CLI flag > env var > voicecli.toml > hardcoded default`
