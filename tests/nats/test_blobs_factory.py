@@ -38,7 +38,7 @@ class _FakeHttpBlobStore:
 
 
 @pytest.fixture(autouse=True)
-def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
     """Clear blobs._INSTANCE before (and after) each test.
 
     The factory caches its result at module level. Without this reset, a test
@@ -57,7 +57,7 @@ def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None
 
 
 @pytest.fixture()
-def _fake_http_blobstore(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fake_http_blobstore(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
     """Replace HttpBlobStore with _FakeHttpBlobStore for construction tests."""
     monkeypatch.setattr(blobs, "HttpBlobStore", _FakeHttpBlobStore)
 
@@ -171,9 +171,8 @@ class TestADR068Enforcement:
 
 
 class TestMissingEnvVars:
-    def test_missing_blobstore_url_raises_key_error(
-        self, monkeypatch: pytest.MonkeyPatch, _fake_http_blobstore: None
-    ) -> None:
+    @pytest.mark.usefixtures("_fake_http_blobstore")
+    def test_missing_blobstore_url_raises_key_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """BLOBSTORE_URL absent → KeyError.
 
         os.environ["BLOBSTORE_URL"] raises KeyError when the key does not exist;
@@ -188,8 +187,9 @@ class TestMissingEnvVars:
         with pytest.raises(KeyError):
             blobs.get_blobstore()
 
+    @pytest.mark.usefixtures("_fake_http_blobstore")
     def test_missing_blobstore_bearer_token_raises_key_error(
-        self, monkeypatch: pytest.MonkeyPatch, _fake_http_blobstore: None
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """BLOBSTORE_BEARER_TOKEN absent → KeyError.
 
