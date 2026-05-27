@@ -9,7 +9,6 @@ Mirror of ``transcribe_client.py`` (STT side).
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 from datetime import datetime, timezone
@@ -89,11 +88,15 @@ async def synthesize_via_nats(
         tts_response = TtsResponse.model_validate_json(reply.data)
 
         if tts_response.ok:
-            assert tts_response.audio_b64 is not None
+            assert tts_response.blob_ref is not None, "V2 contract requires blob_ref"
             assert tts_response.mime_type is not None
             assert tts_response.duration_ms is not None
+            # Fetch the synthesized audio bytes from the BlobStore (V2 contract).
+            from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
+
+            audio_bytes = await get_blobstore().get(tts_response.blob_ref.store_key)
             return {
-                "audio": base64.b64decode(tts_response.audio_b64),
+                "audio": audio_bytes,
                 "mime_type": tts_response.mime_type,
                 "duration_ms": tts_response.duration_ms,
             }
