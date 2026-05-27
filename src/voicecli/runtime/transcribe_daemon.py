@@ -14,10 +14,8 @@ import threading
 from enum import Enum
 from pathlib import Path
 
-from roxabi_nats import sanitize_for_wire
-
 from voicecli.core.config import load_stt_config
-from voicecli.runtime.wire_protocol import recv_json
+from voicecli.runtime.wire_protocol import _sanitize_for_wire, recv_json
 from voicecli.runtime.wire_protocol import send_json as _send_json
 from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
 from voicecli.ui.sounds import play_ui_sound
@@ -218,7 +216,7 @@ class SttDaemon:
                 handle_unknown(self, conn, action)
         except Exception as exc:
             try:
-                _send_json(conn, {"status": "error", "message": sanitize_for_wire(exc)})
+                _send_json(conn, {"status": "error", "message": _sanitize_for_wire(exc)})
             except Exception:
                 pass
         finally:

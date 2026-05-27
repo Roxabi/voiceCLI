@@ -153,6 +153,18 @@ voicecli stt-serve &
 
 ¬allow-coexist on RTX 3080 (10GB) prod — OOMs under concurrent synthesis. Full guard + exit codes: [`docs/NATS-SERVE.md#vram-sequencing`](docs/NATS-SERVE.md#vram-sequencing).
 
+### NATS client — synthesize from any host
+
+From a non-satellite host (M₂, laptop, …) → `voicecli generate --via-nats "text"` routes synthesis to the hub TTS satellite over NATS, decodes the reply, writes the WAV locally. ¬loads model on caller. Mirror of `voicecli dictate nats` (STT side).
+
+| Flag / env | Effect |
+|---|---|
+| `--via-nats` ∨ `VOICECLI_VIA_NATS=1` | Bypass socket-daemon/standalone; request/reply on `lyra.voice.tts.request` |
+| `--timeout <s>` | NATS request timeout (default 60s) |
+| `.md` input | Frontmatter + segments flattened client-side → single `text` field sent to satellite (V1, no per-segment multi-language) |
+
+Requires `NATS_URL` + `NATS_NKEY_SEED_PATH` env (same as STT client).
+
 ### Container deployment (Quadlet)
 
 Production hosts can run voiceCLI as a Podman container managed by systemd via Quadlet. Unit files in `deploy/quadlet/` define TTS and STT NATS satellites with GPU passthrough.

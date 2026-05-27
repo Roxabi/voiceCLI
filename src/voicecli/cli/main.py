@@ -145,8 +145,39 @@ def generate(
         Optional[Path],
         typer.Option("--config", help="Explicit path to voicecli.toml (overrides walk-up search)"),
     ] = None,
+    via_nats: Annotated[
+        bool,
+        typer.Option(
+            "--via-nats",
+            envvar="VOICECLI_VIA_NATS",
+            help="Route synthesis through the hub TTS satellite over NATS (request/reply).",
+        ),
+    ] = False,
+    timeout: Annotated[
+        float,
+        typer.Option(
+            "--timeout",
+            help="NATS request timeout in seconds (only with --via-nats)",
+        ),
+    ] = 60.0,
 ):
     """Generate speech from text or a markdown file using a built-in voice."""
+    if via_nats:
+        _generate_via_nats(
+            text=text,
+            engine="qwen-fast" if fast else engine,
+            voice=voice,
+            output=output,
+            language=language,
+            chunked=chunked,
+            chunk_size=chunk_size,
+            segment_gap=segment_gap,
+            crossfade=crossfade,
+            plain=plain,
+            timeout=timeout,
+        )
+        return
+
     from voicecli.api import generate as api_generate
 
     extra: dict = {}
@@ -190,6 +221,93 @@ def generate(
     except RuntimeError as e:
         _print_cuda_error(str(e))
         raise typer.Exit(1)
+
+
+def _resolve_text_for_nats(
+    text: str, *, plain: bool
+) -> tuple[str, str | None, str | None, str | None]:
+    """Resolve CLI text arg to plain text for the satellite.
+
+    `.md` ⇒ parse frontmatter + directives, flatten segments → plain text.
+    Returns ``(plain_text, language, voice, engine)`` where language/voice/engine come
+    from the markdown frontmatter (None if absent or input is raw text).
+    """
+    text_path = Path(text)
+    if text_path.suffix == ".md" and text_path.exists():
+        from voicecli.api.input import _flatten_doc
+        from voicecli.api.markdown import parse_md_file
+
+        doc = parse_md_file(text_path)
+        _flatten_doc(doc)
+        return doc.text, doc.language, doc.voice, doc.engine
+    if text_path.suffix == ".txt" and text_path.exists():
+        return text_path.read_text(encoding="utf-8"), None, None, None
+    return text, None, None, None
+
+
+def _generate_via_nats(
+    *,
+    text: str,
+    engine: str | None,
+    voice: str | None,
+    output: Optional[Path],
+    language: str | None,
+    chunked: bool,
+    chunk_size: int | None,
+    segment_gap: int | None,
+    crossfade: int | None,
+    plain: bool,
+    timeout: float,
+) -> None:
+    """Synthesize via NATS TTS satellite, write WAV to ``output`` or default path."""
+    import asyncio
+
+    from voicecli.adapters.nats.synthesize_client import synthesize_via_nats
+    from voicecli.core.utils import build_output_prefix, default_output_path
+
+    text_path = Path(text)
+    script_stem = (
+        text_path.stem if text_path.suffix in {".md", ".txt"} and text_path.exists() else None
+    )
+
+    plain_text, md_lang, md_voice, md_engine = _resolve_text_for_nats(text, plain=plain)
+
+    resolved_engine = engine or md_engine or "qwen-fast"
+    resolved_voice = voice or md_voice
+    resolved_language = language or md_lang
+
+    result = asyncio.run(
+        synthesize_via_nats(
+            plain_text,
+            engine=resolved_engine,
+            voice=resolved_voice,
+            language=resolved_language,
+            chunked=chunked,
+            chunk_size=chunk_size,
+            segment_gap=float(segment_gap) if segment_gap is not None else None,
+            crossfade=float(crossfade) if crossfade is not None else None,
+            timeout=timeout,
+        )
+    )
+
+    if "error" in result:
+        typer.echo(f"Error: {result['error']}", err=True)
+        raise typer.Exit(1)
+
+    if output is not None:
+        out_path = output
+    else:
+        prefix = build_output_prefix(
+            resolved_engine,
+            script=script_stem,
+            voice=resolved_voice,
+            language=resolved_language,
+        )
+        out_path = default_output_path(prefix=prefix, fmt="wav")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(result["audio"])
+    typer.echo(f"Saved to {out_path}")
 
 
 @app.command()

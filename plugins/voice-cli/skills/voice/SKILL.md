@@ -252,7 +252,11 @@ voicecli generate "text" --fast                       # 0.6B model (faster, lowe
 voicecli generate "Long text" --chunked               # progressive output (separate files)
 voicecli generate "Long text" --chunked --chunk-size 300  # smaller chunks (~20s each)
 voicecli generate article.txt --chunked               # long plain text file → chunks
+voicecli generate "Bonjour" --via-nats                # route through hub TTS satellite (no local model load)
+voicecli generate script.md --via-nats --timeout 90   # ditto, with custom NATS request timeout
 ```
+
+`--via-nats` (or `VOICECLI_VIA_NATS=1`) sends the request to the hub satellite over NATS and writes the returned WAV locally — useful from hosts without GPU/model. Requires `NATS_URL` + an NKey seed. Full guide: [`docs/NATS-SERVE.md#client-side`](../../../../../docs/NATS-SERVE.md#client-side--synthesize-from-any-host).
 
 ### Clone (voice cloning)
 
