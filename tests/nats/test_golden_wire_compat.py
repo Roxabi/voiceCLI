@@ -11,12 +11,19 @@ HOW TO REGENERATE GOLDENS
     cd /tmp/voicecli-staging-golden && uv run --extra nats python tools/capture_golden.py
     git worktree remove --force /tmp/voicecli-staging-golden
 Then commit the updated tests/nats/golden/*.json files.
+
+V2 UPDATE (#144)
+-----------------
+STT corpus now uses ``blob_ref`` dicts (not ``audio_b64``) per V2 contract.
+Error-path golden fixtures are unchanged — error responses don't carry audio.
+stt_request_v2.json and tts_response_v2.json document the V2 wire shape;
+they are NOT replay cases (no matching corpus entry) and are excluded from
+the parametrized test via the _golden_params exclusion list.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import concurrent.futures
 import json
 from pathlib import Path
@@ -27,12 +34,19 @@ import pytest
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 # ---------------------------------------------------------------------------
-# Corpus — identical payloads to tools/capture_golden.py
+# V2 blob_ref dict for STT corpus payloads
 # ---------------------------------------------------------------------------
 
-_VALID_AUDIO_B64 = base64.b64encode(b"\x00" * 16).decode()
+_BLOB_REF_V2 = {
+    "store_key": "sha256:deadbeef",
+    "content_hash": "deadbeef",
+    "mime": "audio/wav",
+    "size": 16,
+    "source": "voicecli",
+}
 
 # Maps case_name → payload dict (exactly as used during capture).
+# V2: STT payloads use blob_ref (not audio_b64).
 _CORPUS: dict[str, dict] = {
     # TTS cases
     "tts_missing_request_id": {
@@ -81,15 +95,17 @@ _CORPUS: dict[str, dict] = {
         "engine": "ghost-engine",
         "trace_id": "trace-tts-8",
     },
-    # STT cases
+    # STT cases — V2: blob_ref replaces audio payload for validation errors.
+    # All these cases test validation errors where the response shape is:
+    # {ok: false, error: "malformed_request"} — identical to V1 error responses.
     "stt_missing_request_id": {
-        "audio_b64": _VALID_AUDIO_B64,
+        "blob_ref": _BLOB_REF_V2,
         "mime_type": "audio/wav",
         "trace_id": "trace-stt-1",
     },
     "stt_malformed_request_id": {
         "request_id": "../escape",
-        "audio_b64": _VALID_AUDIO_B64,
+        "blob_ref": _BLOB_REF_V2,
         "mime_type": "audio/wav",
         "trace_id": "trace-stt-2",
     },
@@ -100,32 +116,36 @@ _CORPUS: dict[str, dict] = {
     },
     "stt_non_string_audio": {
         "request_id": "req-badaudio",
-        "audio_b64": 12345,
+        "blob_ref": "not-a-dict",
         "mime_type": "audio/wav",
         "trace_id": "trace-stt-4",
     },
     "stt_invalid_task": {
         "request_id": "req-badtask",
-        "audio_b64": _VALID_AUDIO_B64,
+        "blob_ref": _BLOB_REF_V2,
         "mime_type": "audio/wav",
         "task": "summarize",
         "trace_id": "trace-stt-5",
     },
     "stt_bool_detection_segments": {
         "request_id": "req-boolseg",
-        "audio_b64": _VALID_AUDIO_B64,
+        "blob_ref": _BLOB_REF_V2,
         "mime_type": "audio/wav",
         "language_detection_segments": True,
         "trace_id": "trace-stt-6",
     },
     "stt_wrong_type_language": {
         "request_id": "req-badlang",
-        "audio_b64": _VALID_AUDIO_B64,
+        "blob_ref": _BLOB_REF_V2,
         "mime_type": "audio/wav",
         "language": 42,
         "trace_id": "trace-stt-7",
     },
 }
+
+# Golden files that document the V2 wire shape but are NOT replay cases.
+# Excluded from _golden_params so they don't require corpus entries.
+_SCHEMA_DOCS = frozenset({"stt_request_v2", "tts_response_v2"})
 
 # ---------------------------------------------------------------------------
 # Minimal fakes (no external test helpers imported — standalone)
@@ -173,10 +193,12 @@ def _setup_adapter(adapter, msg: _FakeMsg) -> None:
 
 
 def _golden_params() -> list[pytest.MarkDecorator]:
-    """Collect all golden files as test parameters."""
+    """Collect all golden files as test parameters, excluding schema-doc fixtures."""
     params = []
     for path in sorted(GOLDEN_DIR.glob("*.json")):
         case_name = path.stem
+        if case_name in _SCHEMA_DOCS:
+            continue  # schema-documentation fixtures are not replay cases
         params.append(pytest.param(path, case_name, id=case_name))
     return params  # type: ignore[return-value]
 
