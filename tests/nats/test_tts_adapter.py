@@ -1,8 +1,17 @@
-"""RED-phase tests for TtsNatsAdapter (issue #42 T6).
+# pyright: reportOptionalCall=false, reportInvalidTypeForm=false
+"""Unit tests for TtsNatsAdapter (issue #42 T6, updated #144 T17).
 
-All 12 cases FAIL until voicecli.adapters.nats.synthesize_adapter is implemented.
-The top-level imports are wrapped so pytest --collect-only works even before
-the voicecli.adapters.nats package exists; individual tests will fail on ImportError.
+T17: Updated for V2 BlobRef contract — mocks get_blobstore().put; asserts
+TtsResponse carries blob_ref. New test: BlobStore.put raises →
+adapter publishes error envelope with error="audio_store_failed".
+
+All success-path tests inject a _FakeBlobStore via the autouse fixture so that
+the runner's get_blobstore().put() call returns a contract-compatible BlobRef dict.
+
+Pyright directives at top: optional-import pattern (TtsNatsAdapter = None when
+deps missing) is intentional — _require_imports() gates at runtime. Pyright
+can't narrow through the gate so we silence the resulting OptionalCall +
+InvalidTypeForm noise file-wide.
 """
 
 from __future__ import annotations
@@ -12,6 +21,7 @@ import base64
 import contextlib
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -123,12 +133,95 @@ def _stub_engine_factory(
 
 
 # ---------------------------------------------------------------------------
+# BlobStore fake — injected into every test via autouse fixture
+# ---------------------------------------------------------------------------
+
+
+class _FakeBlobRef:
+    """Contract-compatible BlobRef-like object for test injection.
+
+    model_dump() returns only roxabi_contracts.BlobRef fields (no id/is_sentinel),
+    avoiding the extra="forbid" validation error that roxabi_blobs.BlobRef.model_dump()
+    would trigger on TtsResponse construction.
+    """
+
+    def __init__(
+        self,
+        *,
+        store_key: str = "sha256:testkey",
+        mime: str = "audio/wav",
+    ) -> None:
+        self._store_key = store_key
+        self._mime = mime
+
+    def model_dump(self) -> dict:  # noqa: D102
+        return {
+            "store_key": self._store_key,
+            "content_hash": "testkey",
+            "mime": self._mime,
+            "size": 16,
+            "source": "voicecli",
+            "filename": None,
+            "platform_ref": None,
+            "platform_message_id": None,
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+        }
+
+
+class _FakeBlobStore:
+    """Async fake BlobStore for adapter tests.
+
+    Returned by the autouse fake_blobstore fixture.
+    """
+
+    def __init__(
+        self,
+        *,
+        raise_on_put: Exception | None = None,
+        blob_ref: _FakeBlobRef | None = None,
+    ) -> None:
+        self.put_calls: list[dict] = []
+        self._raise_on_put = raise_on_put
+        self._blob_ref = blob_ref or _FakeBlobRef()
+
+    async def put(
+        self,
+        data: bytes,
+        *,
+        mime: str,
+        source: str,
+        filename: str | None = None,
+        platform_ref: str | None = None,
+        platform_message_id: str | None = None,
+    ) -> _FakeBlobRef:
+        self.put_calls.append({"data": data, "mime": mime, "source": source})
+        if self._raise_on_put is not None:
+            raise self._raise_on_put
+        return self._blob_ref
+
+
+@pytest.fixture(autouse=True)
+def _inject_fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction]
+    """Inject a default _FakeBlobStore for every test in this module.
+
+    Tests that need to control put() behaviour (e.g. raise_on_put) create their
+    own _FakeBlobStore and patch blobs.get_blobstore directly in the test body.
+    """
+    store = _FakeBlobStore()
+    monkeypatch.setattr(
+        "voicecli.adapters.nats.blobs.get_blobstore",
+        lambda: store,
+    )
+    return store
+
+
+# ---------------------------------------------------------------------------
 # Test class
 # ---------------------------------------------------------------------------
 
 
 class TestTtsNatsAdapter:
-    def test_handle_success_publishes_adr044_reply(self, tmp_path: Path) -> None:
+    def test_handle_success_publishes_v2_reply_with_blob_ref(self, tmp_path: Path) -> None:
         _require_imports()
         # Arrange
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
@@ -149,7 +242,7 @@ class TestTtsNatsAdapter:
             ):
                 asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
+        # Assert — V2 response carries blob_ref
         reply = msg.last_reply()
         assert reply["ok"] is True
         assert reply["contract_version"] == "1"
@@ -160,8 +253,10 @@ class TestTtsNatsAdapter:
         _iat = _dt.fromisoformat(reply["issued_at"])
         assert _iat.tzinfo is not None
         assert reply["mime_type"] == "audio/wav"
-        assert "audio_b64" in reply
-        base64.b64decode(reply["audio_b64"])  # must not raise
+        # V2: blob_ref present
+        assert "blob_ref" in reply
+        assert isinstance(reply["blob_ref"], dict)
+        assert reply["blob_ref"]["store_key"] == "sha256:testkey"
         assert isinstance(reply.get("duration_ms"), (int, float))
 
     def test_reply_uses_unknown_trace_id_when_absent(self, tmp_path: Path) -> None:
@@ -232,6 +327,48 @@ class TestTtsNatsAdapter:
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "synthesis_failed"
+
+    def test_blobstore_put_raises_returns_audio_store_failed(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """BlobStore.put raises → adapter publishes error envelope with audio_store_failed.
+
+        Negative-test: if the inner try/except around get_blobstore().put() is removed,
+        the exception propagates to the outer handler and yields 'synthesis_failed'
+        instead of 'audio_store_failed'. This test fails if that distinction is lost.
+        """
+        _require_imports()
+        # Arrange — override the autouse fake with a raising one
+        failing_store = _FakeBlobStore(raise_on_put=ConnectionError("blobstore down"))
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: failing_store,
+        )
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-storefail")
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            with patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ):
+                asyncio.run(adapter.handle(msg, payload))
+
+        # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "audio_store_failed", (
+            f"expected 'audio_store_failed', got {reply['error']!r}; "
+            "removing the blobstore guard would yield 'synthesis_failed'"
+        )
 
     def test_defensive_contract_version_999_is_handled(self, tmp_path: Path) -> None:
         _require_imports()
@@ -324,18 +461,28 @@ class TestTtsNatsAdapter:
         assert reply["error"] == "capacity_exceeded"
 
     def test_synthesized_wav_written_with_mode_0o600(self, tmp_path: Path) -> None:
-        """Issue #60: synthesized WAV must be 0o600 before read_bytes, not 0o644.
+        """Issue #60: synthesized WAV must be 0o600 before BlobStore.put, not 0o644.
 
-        Intercepts base64.b64encode to snapshot the file mode at the exact moment
-        _run_synthesis reads the finished WAV — the adapter's finally block removes
-        the file before handle() returns, so a post-hoc stat would see nothing.
+        Intercepts the fake BlobStore's put() to snapshot the file mode at the exact
+        moment the runner reads the finished WAV — the adapter's finally block removes
+        the file before handle() returns.
         """
         _require_imports()
-        import base64 as _b64
         import os
         import stat as _stat
 
         request_id = "req-mode-0600"
+        observed: dict[str, int] = {}
+
+        # Override autouse fake with a sniffing one
+        class _SniffingBlobStore(_FakeBlobStore):
+            async def put(self, data: bytes, *, mime: str, source: str, **kw) -> _FakeBlobRef:
+                out = tmp_path / f"{request_id}.wav"
+                if out.exists():
+                    observed["mode"] = _stat.S_IMODE(os.stat(out).st_mode)
+                return await super().put(data, mime=mime, source=source, **kw)
+
+        # This test patches blobs.get_blobstore directly so the sniffing store is used.
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
@@ -346,7 +493,6 @@ class TestTtsNatsAdapter:
             b"\x01\x00\x01\x00\x80>\x00\x00\x00}\x00\x00"
             b"\x02\x00\x10\x00data\x00\x00\x00\x00"
         )
-        out_path = tmp_path / f"{request_id}.wav"
 
         def _patched_scoped_path(rid: str, ext: str) -> Path:
             return tmp_path / f"{rid}.{ext}"
@@ -359,14 +505,7 @@ class TestTtsNatsAdapter:
             out.chmod(0o644)
             return None
 
-        observed: dict[str, int] = {}
-        real_b64encode = _b64.b64encode
-
-        def _sniff(buf: bytes) -> bytes:
-            if out_path.exists():
-                observed["mode"] = _stat.S_IMODE(os.stat(out_path).st_mode)
-            return real_b64encode(buf)
-
+        sniffing_store = _SniffingBlobStore()
         with (
             patch(
                 "voicecli.adapters.nats.synthesize_adapter.scoped_path",
@@ -374,15 +513,17 @@ class TestTtsNatsAdapter:
             ),
             patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
-            patch("voicecli.adapters.nats.synthesize_adapter.base64.b64encode", side_effect=_sniff),
+            patch(
+                "voicecli.adapters.nats.blobs.get_blobstore",
+                return_value=sniffing_store,
+            ),
         ):
             asyncio.run(adapter.handle(msg, payload))
 
         assert msg.last_reply()["ok"] is True
-        assert "mode" in observed, "base64.b64encode was never called — sniff never ran"
+        assert "mode" in observed, "BlobStore.put() was never called — sniff never ran"
         assert observed["mode"] == 0o600, (
-            f"synthesized WAV mode at read_bytes was "
-            f"{oct(observed['mode'])}, expected 0o600 (issue #60)"
+            f"synthesized WAV mode at put() was {oct(observed['mode'])}, expected 0o600 (issue #60)"
         )
 
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
@@ -468,13 +609,6 @@ class TestTtsNatsAdapter:
             msg = MockMsg()
             _setup_adapter(adapter, msg)
             payload = _valid_payload(request_id="req-hb")
-
-            async def _fake_publish(subject: str, data: bytes) -> None:
-                nonlocal heartbeat_count
-                if "heartbeat" in subject:
-                    heartbeat_count += 1
-                    if heartbeat_count >= target_heartbeats:
-                        gate.set()
 
             def _patched_scoped_path(rid: str, ext: str) -> Path:
                 return tmp_path / f"{rid}.{ext}"
@@ -854,7 +988,7 @@ class TestTtsNatsAdapter:
         def _fake_generate(*args, **kwargs):
             captured["args"] = args
             captured["kwargs"] = kwargs
-            # Write a 1-byte stub so base64 + waveform steps succeed.
+            # Write a 1-byte stub so duration + waveform steps succeed.
             out = kwargs.get("output")
             if out is not None:
                 Path(out).write_bytes(b"\x00")
@@ -980,10 +1114,6 @@ class TestTtsNatsAdapter:
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        # No fallback_language provided → ParamValidationError surfaces as
-        # param_validation_failed (not synthesis_failed) so callers can tell
-        # bad params from crashes. The exc message is NOT echoed to the wire
-        # (security) — it stays in the log.
         payload = _valid_payload(request_id="req-nofb") | {"language": "zz"}
 
         calls = 0
@@ -1016,7 +1146,6 @@ class TestTtsNatsAdapter:
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        # fallback == primary → no retry, error is surfaced immediately.
         payload = _valid_payload(request_id="req-same") | {
             "language": "en",
             "fallback_language": "en",
@@ -1049,8 +1178,6 @@ class TestTtsNatsAdapter:
         # Real WAV so the waveform helper can decode frames.
         import wave as _wave
 
-        wav_path = tmp_path / "req-wf.wav"
-
         def _patched_scoped_path(rid: str, ext: str) -> Path:
             return tmp_path / f"{rid}.{ext}"
 
@@ -1081,9 +1208,13 @@ class TestTtsNatsAdapter:
 
         reply = msg.last_reply()
         assert reply["ok"] is True
+        # V2: waveform_b64 retained inline per contract
         assert "waveform_b64" in reply
         assert len(base64.b64decode(reply["waveform_b64"])) == 256
-        assert not wav_path.exists()  # cleanup still runs
+        # V2: blob_ref present
+        assert "blob_ref" in reply
+        # temp file removed by cleanup
+        assert not (tmp_path / "req-wf.wav").exists()
 
     def test_waveform_b64_omitted_when_wav_unreadable(self, tmp_path: Path) -> None:
         _require_imports()
@@ -1138,9 +1269,8 @@ class TestTtsNatsAdapter:
 
     def _make_silent_wav_bytes(self, n_frames: int = 2205) -> bytes:
         """Build a minimal silent WAV (22050 Hz, 16-bit, mono)."""
-        import struct as _struct
-        import wave as _wave
         import io
+        import wave as _wave
 
         buf = io.BytesIO()
         with _wave.open(buf, "wb") as wf:
@@ -1151,7 +1281,7 @@ class TestTtsNatsAdapter:
         return buf.getvalue()
 
     def test_chunked_output_single_chunk_succeeds(self, tmp_path: Path) -> None:
-        """Engine writes {stem}_001.wav + {stem}.done — adapter concatenates and encodes."""
+        """Engine writes {stem}_001.wav + {stem}.done — adapter concatenates and stores."""
         _require_imports()
         request_id = "req-chunk1"
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
@@ -1186,10 +1316,8 @@ class TestTtsNatsAdapter:
         reply = msg.last_reply()
         assert reply["ok"] is True, f"expected ok=True, got: {reply}"
         assert reply["mime_type"] == "audio/wav"
-        assert "audio_b64" in reply
-        decoded = base64.b64decode(reply["audio_b64"])
-        # Decoded bytes must be a valid WAV (RIFF header)
-        assert decoded[:4] == b"RIFF"
+        # V2: blob_ref present
+        assert "blob_ref" in reply
         # Chunk files and .done sentinel must be cleaned up
         assert not (tmp_path / f"{request_id}_001.wav").exists()
         assert not (tmp_path / f"{request_id}.done").exists()
@@ -1232,8 +1360,8 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is True, f"expected ok=True, got: {reply}"
         # duration_ms must reflect both chunks (≥ 200 ms of silence)
         assert reply["duration_ms"] >= 200
-        decoded = base64.b64decode(reply["audio_b64"])
-        assert decoded[:4] == b"RIFF"
+        # V2: blob_ref present
+        assert "blob_ref" in reply
         # All chunk files and .done must be cleaned up
         for i in (1, 2):
             assert not (tmp_path / f"{request_id}_{i:03d}.wav").exists()
@@ -1501,5 +1629,5 @@ class TestTtsNatsAdapter:
 
         reply = msg.last_reply()
         assert reply["ok"] is True
-        decoded = base64.b64decode(reply["audio_b64"])
-        assert decoded[:4] == b"RIFF"
+        # V2: blob_ref present
+        assert "blob_ref" in reply

@@ -1,4 +1,14 @@
-"""Unit tests for voicecli.adapters.nats._synthesize_runner (issue #147)."""
+"""Unit tests for voicecli.adapters.nats._synthesize_runner (issue #147, updated #144).
+
+T17: Updated for V2 BlobRef contract — mocks get_blobstore().put returning a BlobRef;
+asserts TtsResponse carries blob_ref.
+
+Note on mock design: roxabi_blobs.BlobRef.model_dump() includes 'id' and 'is_sentinel'
+which are forbidden by roxabi_contracts.BlobRef (extra="forbid"). The fake returned by
+the mock's put() therefore produces only contract-compatible fields from model_dump() —
+this is the correct test-time bridge (mirrors the intended production bridge:
+roxabi_contracts.BlobRef.model_validate(roxabi_blobs_ref.model_dump(exclude={"id","is_sentinel"}))).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +17,7 @@ import base64
 import io
 import wave
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +49,62 @@ class _FakeApi:
         self.calls.append({"text": text, "engine": engine, "output": output, **kw})
         if self._behavior is not None:
             self._behavior(text, engine=engine, output=output, **kw)
+
+
+class _FakeBlobRef:
+    """Contract-compatible BlobRef-like object whose model_dump() satisfies
+    roxabi_contracts.BlobRef (extra="forbid") — excludes id and is_sentinel.
+
+    The real roxabi_blobs.BlobRef.model_dump() includes 'id' and 'is_sentinel'
+    which would be rejected by roxabi_contracts.BlobRef at TtsResponse construction.
+    Using this fake avoids the bridge exclusion that production code must apply.
+    """
+
+    def __init__(self, *, store_key: str = "sha256:abc123", mime: str = "audio/wav") -> None:
+        self._store_key = store_key
+        self._mime = mime
+
+    def model_dump(self) -> dict:  # noqa: D102
+        return {
+            "store_key": self._store_key,
+            "content_hash": "abc123",
+            "mime": self._mime,
+            "size": 16,
+            "source": "voicecli",
+            "filename": None,
+            "platform_ref": None,
+            "platform_message_id": None,
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
+        }
+
+
+class _FakeBlobStore:
+    """Async-compatible fake BlobStore that records put() calls."""
+
+    def __init__(
+        self,
+        *,
+        raise_on_put: Exception | None = None,
+        blob_ref: _FakeBlobRef | None = None,
+    ) -> None:
+        self.put_calls: list[dict] = []
+        self._raise_on_put = raise_on_put
+        self._blob_ref = blob_ref or _FakeBlobRef()
+
+    async def put(
+        self,
+        data: bytes,
+        *,
+        mime: str,
+        source: str,
+        filename: str | None = None,
+        platform_ref: str | None = None,
+        platform_message_id: str | None = None,
+    ) -> _FakeBlobRef:
+        self.put_calls.append({"data": data, "mime": mime, "source": source})
+        if self._raise_on_put is not None:
+            raise self._raise_on_put
+        return self._blob_ref
 
 
 def _make_state(*, set_model_loaded=None) -> "TtsRunnerState":
@@ -72,10 +139,26 @@ def _run(coro):
 
 
 @pytest.fixture
-def fake_api(monkeypatch):
+def fake_api(monkeypatch):  # pyright: ignore[reportUnusedFunction]
     fake = _FakeApi()
     monkeypatch.setattr("voicecli.api.generate", fake.generate)
     return fake
+
+
+@pytest.fixture
+def fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction]
+    """Inject a _FakeBlobStore into the runner via get_blobstore().
+
+    The runner imports get_blobstore via a deferred 'from ... import' inside the
+    function body, so we patch the source module (blobs.get_blobstore) rather than
+    a module-level attribute on _synthesize_runner.
+    """
+    store = _FakeBlobStore()
+    monkeypatch.setattr(
+        "voicecli.adapters.nats.blobs.get_blobstore",
+        lambda: store,
+    )
+    return store
 
 
 # ===========================================================================
@@ -84,7 +167,9 @@ def fake_api(monkeypatch):
 
 
 class TestRunSynthesisHappyPath:
-    def test_happy_path_returns_true_with_fields(self, tmp_path: Path, fake_api: _FakeApi) -> None:
+    def test_happy_path_returns_true_with_blob_ref(
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange
         out_path = tmp_path / "req-001.wav"
         wav_bytes = _make_silent_wav_bytes()
@@ -104,15 +189,41 @@ class TestRunSynthesisHappyPath:
         # Assert
         assert ok is True
         assert isinstance(result, dict)
-        assert "audio_b64" in result
+        assert "blob_ref" in result
         assert result["mime_type"] == "audio/wav"
         assert isinstance(result["duration_ms"], int)
-        # audio_b64 must be valid base64
-        decoded = base64.b64decode(result["audio_b64"])
-        assert decoded[:4] == b"RIFF"
+        # blob_ref must carry the expected store_key from the fake
+        assert result["blob_ref"]["store_key"] == "sha256:abc123"
+
+    def test_happy_path_calls_blobstore_put_with_correct_kwargs(
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        # Arrange — verify put() is called with mime="audio/wav" and source="voicecli"
+        out_path = tmp_path / "req-put.wav"
+        wav_bytes = _make_silent_wav_bytes()
+
+        def _behavior(text, *, engine, output, **kw):
+            output.write_bytes(wav_bytes)
+
+        fake_api._behavior = _behavior
+        state = _make_state()
+
+        # Act
+        ok, result = _run(
+            run_synthesis(state, {}, "req-put", "Hello", "mock", out_path, trace_id="t1")
+        )
+
+        # Assert
+        assert ok is True
+        assert len(fake_blobstore.put_calls) == 1
+        call = fake_blobstore.put_calls[0]
+        assert call["mime"] == "audio/wav"
+        assert call["source"] == "voicecli"
+        # put() receives the actual WAV bytes
+        assert call["data"][:4] == b"RIFF"
 
     def test_happy_path_includes_waveform_b64_when_wav_readable(
-        self, tmp_path: Path, fake_api: _FakeApi
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange — real WAV with enough frames to produce a waveform
         out_path = tmp_path / "req-wf.wav"
@@ -138,7 +249,7 @@ class TestRunSynthesisHappyPath:
         assert len(wf_bytes) == 256
 
     def test_happy_path_omits_waveform_b64_when_wav_unreadable(
-        self, tmp_path: Path, fake_api: _FakeApi
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange — 1-byte stub is not a valid WAV; wav_waveform_b64 returns None
         out_path = tmp_path / "req-stub.wav"
@@ -160,7 +271,7 @@ class TestRunSynthesisHappyPath:
         assert "waveform_b64" not in result
 
     def test_set_model_loaded_called_once_with_engine(
-        self, tmp_path: Path, fake_api: _FakeApi
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange
         out_path = tmp_path / "req-ml.wav"
@@ -183,12 +294,114 @@ class TestRunSynthesisHappyPath:
 
 
 # ===========================================================================
+# TestRunSynthesisBlobStorePutFailure — SC-test-4 parity for TTS
+# ===========================================================================
+
+
+class TestRunSynthesisBlobStorePutFailure:
+    def test_put_raises_returns_audio_store_failed(
+        self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
+    ) -> None:
+        """BlobStore.put raises → runner returns (False, "audio_store_failed").
+
+        Negative-test: if the try/except around get_blobstore().put() is removed,
+        the exception propagates to the outer except and yields "synthesis_failed" —
+        not "audio_store_failed". This test fails if the specific error code is gone.
+        """
+        # Arrange
+        store = _FakeBlobStore(raise_on_put=ConnectionError("blobstore unreachable"))
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: store,
+        )
+        out_path = tmp_path / "req-storefail.wav"
+        wav_bytes = _make_silent_wav_bytes()
+
+        def _behavior(text, *, engine, output, **kw):
+            output.write_bytes(wav_bytes)
+
+        fake_api._behavior = _behavior
+        state = _make_state()
+
+        # Act
+        ok, error_code = _run(
+            run_synthesis(state, {}, "req-storefail", "Hello", "mock", out_path, trace_id="t1")
+        )
+
+        # Assert
+        assert ok is False
+        assert error_code == "audio_store_failed"
+
+    def test_put_raises_after_engine_success_not_synthesis_failed(
+        self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
+    ) -> None:
+        """Error code is 'audio_store_failed', NOT 'synthesis_failed'.
+
+        Distinguishes between engine failure (synthesis_failed) and blob upload failure
+        (audio_store_failed). If the inner guard were deleted, the outer catch would
+        return 'synthesis_failed' instead.
+        """
+        # Arrange — engine succeeds, then put raises
+        store = _FakeBlobStore(raise_on_put=RuntimeError("network timeout"))
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: store,
+        )
+        out_path = tmp_path / "req-storefail2.wav"
+        wav_bytes = _make_silent_wav_bytes()
+
+        def _behavior(text, *, engine, output, **kw):
+            output.write_bytes(wav_bytes)
+
+        fake_api._behavior = _behavior
+        state = _make_state()
+
+        # Act
+        ok, error_code = _run(
+            run_synthesis(state, {}, "req-storefail2", "Hello", "mock", out_path, trace_id="t1")
+        )
+
+        # Assert — must be audio_store_failed, not synthesis_failed
+        assert ok is False
+        assert error_code == "audio_store_failed", (
+            f"expected 'audio_store_failed' but got {error_code!r}; "
+            "deleting the inner blobstore guard would yield 'synthesis_failed'"
+        )
+
+    def test_put_raises_does_not_call_put_twice(
+        self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
+    ) -> None:
+        """put() is called exactly once even when it raises."""
+        # Arrange
+        store = _FakeBlobStore(raise_on_put=OSError("disk full"))
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: store,
+        )
+        out_path = tmp_path / "req-oncefail.wav"
+
+        def _behavior(text, *, engine, output, **kw):
+            output.write_bytes(b"\x00")
+
+        fake_api._behavior = _behavior
+        state = _make_state()
+
+        # Act
+        _run(run_synthesis(state, {}, "req-oncefail", "Hello", "mock", out_path, trace_id="t1"))
+
+        # Assert — put was called exactly once
+        assert len(store.put_calls) == 1
+
+
+# ===========================================================================
 # TestRunSynthesisFallbackLanguage
 # ===========================================================================
 
 
 class TestRunSynthesisFallbackLanguage:
-    def test_fallback_language_used_on_first_param_error(self, tmp_path: Path, monkeypatch) -> None:
+    def test_fallback_language_used_on_first_param_error(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — first call raises ParamValidationError, second succeeds with fallback
         from voicecli.api import ParamValidationError
 
@@ -216,7 +429,9 @@ class TestRunSynthesisFallbackLanguage:
         assert call_languages == ["en", "fr"], f"expected [en, fr], got {call_languages}"
         assert isinstance(result, dict)
 
-    def test_no_retry_when_fallback_equals_primary(self, tmp_path: Path, monkeypatch) -> None:
+    def test_no_retry_when_fallback_equals_primary(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — fallback_language == language → no retry
         from voicecli.api import ParamValidationError
 
@@ -242,7 +457,9 @@ class TestRunSynthesisFallbackLanguage:
         assert error_code == "param_validation_failed"
         assert calls == 1
 
-    def test_no_retry_when_fallback_missing(self, tmp_path: Path, monkeypatch) -> None:
+    def test_no_retry_when_fallback_missing(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — no fallback_language key → no retry
         from voicecli.api import ParamValidationError
 
@@ -269,7 +486,7 @@ class TestRunSynthesisFallbackLanguage:
         assert calls == 1
 
     def test_both_primary_and_fallback_fail_returns_param_validation_failed(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange — both calls raise ParamValidationError
         from voicecli.api import ParamValidationError
@@ -296,7 +513,9 @@ class TestRunSynthesisFallbackLanguage:
         assert error_code == "param_validation_failed"
         assert call_languages == ["zz", "xx"]
 
-    def test_fallback_call_uses_fallback_language_kwarg(self, tmp_path: Path, monkeypatch) -> None:
+    def test_fallback_call_uses_fallback_language_kwarg(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — verify that the second call receives language="fr" explicitly
         from voicecli.api import ParamValidationError
 
@@ -334,7 +553,9 @@ class TestRunSynthesisFallbackLanguage:
 
 
 class TestRunSynthesisErrors:
-    def test_runtime_error_returns_synthesis_failed(self, tmp_path: Path, monkeypatch) -> None:
+    def test_runtime_error_returns_synthesis_failed(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange
         out_path = tmp_path / "req-rt.wav"
         recorded: list[str] = []
@@ -362,7 +583,9 @@ class TestRunSynthesisErrors:
             f"expected set_model_loaded(engine) called once before failure, got {recorded}"
         )
 
-    def test_generic_exception_returns_synthesis_failed(self, tmp_path: Path, monkeypatch) -> None:
+    def test_generic_exception_returns_synthesis_failed(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange
         out_path = tmp_path / "req-exc.wav"
         recorded: list[str] = []
@@ -397,7 +620,9 @@ class TestRunSynthesisErrors:
 
 
 class TestRunSynthesisChunkedOutput:
-    def test_chunked_single_chunk_concatenated(self, tmp_path: Path, monkeypatch) -> None:
+    def test_chunked_single_chunk_concatenated(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — engine writes {stem}_001.wav + {stem}.done but NOT {stem}.wav
         out_path = tmp_path / "req-c1.wav"
         wav_bytes = _make_silent_wav_bytes()
@@ -420,14 +645,13 @@ class TestRunSynthesisChunkedOutput:
         # Assert
         assert ok is True
         assert isinstance(result, dict)
-        decoded = base64.b64decode(result["audio_b64"])
-        assert decoded[:4] == b"RIFF"
+        assert "blob_ref" in result
         # Chunk and done files must be cleaned up
         assert not (tmp_path / "req-c1_001.wav").exists()
         assert not (tmp_path / "req-c1.done").exists()
 
     def test_chunked_multiple_chunks_duration_reflects_all(
-        self, tmp_path: Path, monkeypatch
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange — two 100 ms chunks; total duration ≥ 200 ms
         out_path = tmp_path / "req-c2.wav"
@@ -450,12 +674,15 @@ class TestRunSynthesisChunkedOutput:
 
         # Assert
         assert ok is True
+        assert isinstance(result, dict)
         assert result["duration_ms"] >= 200
         for i in (1, 2):
             assert not (tmp_path / f"req-c2_{i:03d}.wav").exists()
         assert not (tmp_path / "req-c2.done").exists()
 
-    def test_non_chunked_output_path_used_directly(self, tmp_path: Path, monkeypatch) -> None:
+    def test_non_chunked_output_path_used_directly(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange — engine writes {stem}.wav directly; no .done → collect_chunked_output returns []
         out_path = tmp_path / "req-nc.wav"
         wav_bytes = _make_silent_wav_bytes()
@@ -473,8 +700,7 @@ class TestRunSynthesisChunkedOutput:
 
         # Assert
         assert ok is True
-        decoded = base64.b64decode(result["audio_b64"])
-        assert decoded[:4] == b"RIFF"
+        assert "blob_ref" in result
 
 
 # ===========================================================================
@@ -545,6 +771,7 @@ class TestRunSynthesisKwargForwarding:
         payload: dict,
         expected_present: dict,
         expected_absent: list,
+        fake_blobstore: _FakeBlobStore,
     ) -> None:
         # Arrange
         out_path = tmp_path / "req-kw.wav"
@@ -580,7 +807,12 @@ class TestRunSynthesisKwargForwarding:
         ids=["chunked_true", "chunked_false", "chunked_int_truthy", "chunked_int_falsy"],
     )
     def test_chunked_kwarg_cast_to_bool(
-        self, tmp_path: Path, monkeypatch, payload: dict, expected: bool
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        payload: dict,
+        expected: bool,
+        fake_blobstore: _FakeBlobStore,
     ) -> None:
         # Arrange
         out_path = tmp_path / "req-chunked.wav"
@@ -612,7 +844,12 @@ class TestRunSynthesisKwargForwarding:
         ],
     )
     def test_named_chunking_fields_forwarded(
-        self, tmp_path: Path, monkeypatch, field: str, value: int
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        field: str,
+        value: int,
+        fake_blobstore: _FakeBlobStore,
     ) -> None:
         # Arrange
         out_path = tmp_path / f"req-{field}.wav"
@@ -635,7 +872,9 @@ class TestRunSynthesisKwargForwarding:
         assert ok is True
         assert captured.get(field) == value
 
-    def test_engine_arg_forwarded(self, tmp_path: Path, monkeypatch) -> None:
+    def test_engine_arg_forwarded(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange
         out_path = tmp_path / "req-eng.wav"
         captured: dict = {}
@@ -656,7 +895,9 @@ class TestRunSynthesisKwargForwarding:
         assert ok is True
         assert captured["engine"] == "chatterbox"
 
-    def test_out_path_forwarded_as_output(self, tmp_path: Path, monkeypatch) -> None:
+    def test_out_path_forwarded_as_output(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
         # Arrange
         out_path = tmp_path / "req-out.wav"
         captured: dict = {}
