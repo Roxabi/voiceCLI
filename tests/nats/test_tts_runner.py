@@ -64,8 +64,8 @@ class _FakeBlobRef:
         self._store_key = store_key
         self._mime = mime
 
-    def model_dump(self) -> dict:  # noqa: D102
-        return {
+    def model_dump(self, *, exclude: set | None = None) -> dict:  # noqa: D102
+        d = {
             "store_key": self._store_key,
             "content_hash": "abc123",
             "mime": self._mime,
@@ -76,6 +76,10 @@ class _FakeBlobRef:
             "platform_message_id": None,
             "created_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
         }
+        if exclude:
+            for k in exclude:
+                d.pop(k, None)
+        return d
 
 
 class _FakeBlobStore:

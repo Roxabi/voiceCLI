@@ -184,7 +184,9 @@ async def run_synthesis(
             return False, "audio_store_failed"
 
         fields: dict[str, Any] = {
-            "blob_ref": blob_ref.model_dump(),
+            # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef: drop the
+            # producer-only fields the contract rejects (extra="forbid").
+            "blob_ref": blob_ref.model_dump(exclude={"id", "is_sentinel"}),
             "mime_type": "audio/wav",
             "duration_ms": duration_ms,
         }
