@@ -77,7 +77,7 @@ async def run_transcription(
 
     # Fetch audio bytes from BlobStore.
     try:
-        audio_bytes = await get_blobstore().get(blob_ref.store_key)
+        wav_bytes = await get_blobstore().get(blob_ref.store_key)
     except Exception as e:  # noqa: BLE001
         log.warning(
             "blobstore_get_failed",
@@ -90,7 +90,7 @@ async def run_transcription(
     scoped_path = scoped_dir / f"{request_id}.{ext.lstrip('.')}"
 
     try:
-        scoped_path.write_bytes(audio_bytes)
+        scoped_path.write_bytes(wav_bytes)
         scoped_path.chmod(0o600)
 
         # Idempotent warmup: load the model once and record success via callbacks.
