@@ -12,14 +12,22 @@ import math
 import socket
 from pathlib import Path
 
-from roxabi_nats import sanitize_for_wire
-
 from voicecli.engines.engine import QWEN_ENGINES
 
 
 _STR_MAX = 256
 _TEXT_MAX = 100_000
 DEFAULT_MAX_MSG = 262_144  # 256 KB — covers _TEXT_MAX 100k + envelope
+
+
+def _sanitize_for_wire(exc: BaseException) -> str:
+    """Render an exception as a one-line wire-safe string.
+
+    Replaces the removed ``roxabi_nats.sanitize_for_wire`` so the local
+    daemon's error-reply contract stays stable across upstream changes.
+    """
+    return repr(exc)[:512].replace("\n", " ").replace("\r", " ")
+
 
 # Patchable in tests — must stay in sync with daemon._OUTPUT_BASE
 _OUTPUT_BASE = Path.home()
@@ -316,7 +324,7 @@ def handle_job(
 
     except Exception as exc:
         try:
-            send_json(conn, {"status": "error", "message": sanitize_for_wire(exc)})
+            send_json(conn, {"status": "error", "message": _sanitize_for_wire(exc)})
         except Exception as send_exc:
             print(
                 f"[voicecli daemon] warning: failed to send error response: {send_exc}",
