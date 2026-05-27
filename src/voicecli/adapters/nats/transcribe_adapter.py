@@ -16,7 +16,7 @@ from voicecli.adapters.nats._transcribe_runner import SttRunnerState, run_transc
 from voicecli.adapters.nats._validation import validate_stt_request
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
 from voicecli.adapters.nats.requests import SttRequest
-from voicecli.adapters.nats.tempdir import cleanup, scoped_path
+from voicecli.adapters.nats.tempdir import TEMP_ROOT, cleanup
 
 # voicecli.api is NOT imported at module level — deferred to keep startup fast
 # and avoid pulling torch/faster-whisper when only inspecting the adapter (e.g. --help).
@@ -144,9 +144,8 @@ class SttNatsAdapter(NatsAdapterBase):
             try:
                 await self._run_transcription(
                     msg,
-                    payload,
                     req.request_id,
-                    req.audio_b64,
+                    req.blob_ref,
                     req.to_overrides(),
                     trace_id=trace_id,
                 )
@@ -156,9 +155,8 @@ class SttNatsAdapter(NatsAdapterBase):
             async with self._sem:
                 await self._run_transcription(
                     msg,
-                    payload,
                     req.request_id,
-                    req.audio_b64,
+                    req.blob_ref,
                     req.to_overrides(),
                     trace_id=trace_id,
                 )
@@ -166,23 +164,20 @@ class SttNatsAdapter(NatsAdapterBase):
     async def _run_transcription(
         self,
         msg: Any,
-        payload: dict,
         request_id: str,
-        audio_b64: str,
+        blob_ref: Any,
         overrides: dict,
         *,
         trace_id: str,
     ) -> None:
-        ext = _ext_from_mime(payload.get("mime_type"))
-        out_path = scoped_path(request_id, ext)
+        out_path = None
         try:
-            ok, result = await run_transcription(
+            ok, result, out_path = await run_transcription(
                 self._runner_state,
                 self.default_model,
-                MAX_AUDIO_B64_LEN,
-                payload,
+                blob_ref,
                 request_id,
-                audio_b64,
+                TEMP_ROOT,
                 overrides,
                 trace_id=trace_id,
             )
@@ -206,4 +201,5 @@ class SttNatsAdapter(NatsAdapterBase):
                 .encode(),
             )
         finally:
-            cleanup(out_path)
+            if out_path is not None:
+                cleanup(out_path)

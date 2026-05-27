@@ -80,6 +80,7 @@ fi
 run mkdir -p "$QUADLET_DIR"
 run mkdir -p "${HOME}/.cache/huggingface" "${HOME}/.cache/voicecli"
 run mkdir -p "${HOME}/.roxabi/voicecli/env"
+run mkdir -p "${HOME}/.voicecli/env"
 
 # ── Env stubs (S6) ────────────────────────────────────────────────────────────
 for role in stt tts; do
@@ -95,7 +96,37 @@ EOF
     fi
 done
 
-# ── 3. Copy Quadlet units ─────────────────────────────────────────────────────
+# ── Blobstore env stub ────────────────────────────────────────────────────────
+blobstore_env="${HOME}/.voicecli/env/blobstore.env"
+if [[ ! -f "$blobstore_env" ]]; then
+    run bash -c "cat > '${blobstore_env}'" <<'EOF'
+# voiceCLI blobstore credentials (ADR-068)
+# Fill in the bearer token issued by the lyra blobstore service.
+BLOBSTORE_BEARER_TOKEN=
+EOF
+    run chmod 600 "$blobstore_env"
+    echo "Created ${blobstore_env} (mode 600)"
+else
+    perms=$(stat -c '%a' "$blobstore_env")
+    if [[ "$perms" != "600" ]]; then
+        echo "ERROR: $blobstore_env has permissions $perms (expected 600 — bearer token is a credential)" >&2
+        echo "  Fix: chmod 600 $blobstore_env" >&2
+        exit 1
+    fi
+    echo "Keep ${blobstore_env} (exists, mode 600)"
+fi
+
+# Validate that the bearer token has been filled in before deploy. An empty
+# value would cause every get_blobstore() call to raise BlobstoreConfigError
+# at satellite startup and enter the systemd RestartSec=10 loop silently.
+if [[ "$DRY_RUN" -eq 0 ]]; then
+    token_value=$(grep -E '^BLOBSTORE_BEARER_TOKEN=' "$blobstore_env" | head -1 | cut -d= -f2-)
+    if [[ -z "$token_value" ]]; then
+        echo "ERROR: BLOBSTORE_BEARER_TOKEN is empty in $blobstore_env" >&2
+        echo "  Fill in the token issued by the lyra blobstore service, then re-run." >&2
+        exit 1
+    fi
+fi
 
 for unit in voicecli-stt.container voicecli-tts.container; do
     src="${SCRIPT_DIR}/quadlet/${unit}"

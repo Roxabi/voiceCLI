@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64  # noqa: F401 — test patch anchor for voicecli.adapters.nats.synthesize_adapter.base64.b64encode
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -187,7 +186,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                     issued_at=datetime.now(timezone.utc),
                     ok=True,
                     request_id=request_id,
-                    audio_b64=fields["audio_b64"],
+                    blob_ref=fields["blob_ref"],
                     mime_type=fields["mime_type"],
                     duration_ms=fields["duration_ms"],
                     waveform_b64=fields.get("waveform_b64"),

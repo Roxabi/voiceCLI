@@ -48,13 +48,14 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
-      - name: Install minimal e2e deps
-        # Host only drives docker compose + publishes via NATS client.
-        # Satellites install the full voicecli extra inside containers.
-        # roxabi-contracts pulled in for stub_hub's voice.SUBJECTS import (audit #162).
-        run: |
-          uv pip install --system pytest "nats-py>=2.6,<3" "nkeys>=0.1" \
-            "roxabi-contracts @ git+https://github.com/Roxabi/lyra.git@staging#subdirectory=packages/roxabi-contracts"
+      - name: Install e2e deps
+        # The in-process V2 tests (test_*_roundtrip_via_fake_blobstore, #144 T13/T18)
+        # import the real synthesize_adapter + transcribe_adapter, which pull
+        # roxabi_nats + roxabi_blobs + roxabi_contracts. `uv sync --extra nats`
+        # honours uv.lock so the git-pinned roxabi-* deps stay at the commits
+        # the rest of CI ran against — prior `uv pip install --system -e .[nats]`
+        # resolved transitively from PyPI/git HEAD and could silently drift.
+        run: uv sync --extra nats
       - name: Seed-leak lint
         run: |
           if find tests/e2e/ \( -name '*.seed' -o -name '*.nk' \) | grep .; then
@@ -67,7 +68,7 @@ jobs:
         # compose file expects.
         run: docker build -f deploy/Dockerfile.mock -t ghcr.io/roxabi/voicecli-mock:staging .
       - name: Run E2E tests
-        run: pytest tests/e2e/ -v
+        run: uv run pytest tests/e2e/ -v
       - name: Dump compose logs on failure
         if: failure()
         # Use -p (project name) instead of -f (compose file) so the step

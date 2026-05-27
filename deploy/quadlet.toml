@@ -13,3 +13,6 @@ container = "voicecli-tts.container"
 required_secrets = ["voicecli-nats-tts"]
 env_file = "~/.roxabi/voicecli/env/tts.env"
 host_roles = ["voice-worker"]
+
+[secrets]
+blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.voicecli/env/blobstore.env" }

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from roxabi_blobs import BlobRef
+
 
 class MalformedRequestError(ValueError):
     """Raised when a NATS payload fails typed construction or format checks."""
@@ -13,11 +15,10 @@ class MalformedRequestError(ValueError):
 class SttRequest:
     """Typed STT request constructed from NATS payload dict."""
 
-    audio_b64: str
+    blob_ref: BlobRef
     request_id: str
     trace_id: str = ""
     contract_version: str = ""
-    mime_type: str = ""
     language: str | None = None
     language_detection_threshold: float | None = None
     language_detection_segments: int | None = None
@@ -28,9 +29,13 @@ class SttRequest:
     @classmethod
     def from_payload(cls, payload: dict) -> "SttRequest":
         """Construct from decoded JSON payload; raise MalformedRequestError on type mismatch."""
-        audio_b64 = payload.get("audio_b64")
-        if not isinstance(audio_b64, str) or not audio_b64:
-            raise MalformedRequestError("audio_b64 must be a non-empty str")
+        raw_ref = payload.get("blob_ref")
+        if not isinstance(raw_ref, dict):
+            raise MalformedRequestError("blob_ref must be an object")
+        try:
+            blob_ref = BlobRef.model_validate(raw_ref)
+        except (TypeError, ValueError) as e:
+            raise MalformedRequestError(f"blob_ref invalid: {e}") from e
 
         request_id = payload.get("request_id", "")
         if not isinstance(request_id, str) or not request_id:
@@ -73,16 +78,11 @@ class SttRequest:
         if contract_version is not None and not isinstance(contract_version, str):
             raise MalformedRequestError("contract_version must be a str")
 
-        mime_type = payload.get("mime_type")
-        if mime_type is not None and not isinstance(mime_type, str):
-            raise MalformedRequestError("mime_type must be a str")
-
         return cls(
-            audio_b64=audio_b64,
+            blob_ref=blob_ref,
             request_id=request_id,
             trace_id=trace_id or "",
             contract_version=contract_version or "",
-            mime_type=mime_type or "",
             language=language,
             language_detection_threshold=float(threshold) if threshold is not None else None,
             language_detection_segments=segments,

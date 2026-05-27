@@ -1,0 +1,17 @@
+{
+  "contract_version": "1",
+  "ok": true,
+  "trace_id": "trace-example",
+  "request_id": "req-example",
+  "blob_ref": {
+    "store_key": "sha256:cafef00d",
+    "content_hash": "cafef00d",
+    "mime": "audio/wav",
+    "size": 65536,
+    "source": "voicecli"
+  },
+  "mime_type": "audio/wav",
+  "duration_ms": 1500,
+  "waveform_b64": "AAAAAA==",
+  "issued_at": "2026-05-27T17:00:00Z"
+}

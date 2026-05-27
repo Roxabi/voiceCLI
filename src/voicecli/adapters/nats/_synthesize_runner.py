@@ -25,7 +25,6 @@ Single-source-of-truth note:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -166,12 +165,39 @@ async def run_synthesis(
             cleanup_chunks(out_path, chunks)
 
         out_path.chmod(0o600)
-        audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii")
         duration_ms = wav_duration_ms(out_path)
         waveform_b64 = wav_waveform_b64(out_path)
 
+        from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+            BlobstoreConfigError,
+            blob_ref_to_contract,
+            get_blobstore,
+        )
+
+        try:
+            blobs_ref = await get_blobstore().put(
+                out_path.read_bytes(),
+                mime="audio/wav",
+                source="voicecli",
+            )
+        except BlobstoreConfigError as e:
+            log.error(
+                "blobstore_init_failed",
+                extra={"request_id": request_id, "err": str(e)},
+            )
+            return False, "blobstore_not_configured"
+        except Exception as e:
+            log.warning(
+                "blobstore_put_failed",
+                extra={"request_id": request_id, "err": str(e)},
+            )
+            return False, "audio_store_failed"
+
+        # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef via the helper
+        # centralised in blobs.py (single source of truth for the producer-only
+        # field exclusion set).
         fields: dict[str, Any] = {
-            "audio_b64": audio_b64,
+            "blob_ref": blob_ref_to_contract(blobs_ref).model_dump(),
             "mime_type": "audio/wav",
             "duration_ms": duration_ms,
         }

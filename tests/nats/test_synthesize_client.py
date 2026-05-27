@@ -6,7 +6,6 @@ Mirror of ``test_stt_adapter`` style — pin happy + 4 error paths.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 
 import pytest
@@ -44,6 +43,11 @@ class _FakeNc:
 
 
 def _tts_response_ok(audio: bytes, request_id: str = "rid-1") -> bytes:
+    # V2 contract: response carries a blob_ref, not inline audio_b64.
+    # The caller fetches bytes via get_blobstore().get(blob_ref.store_key).
+    import hashlib
+
+    store_key = f"sha256:{hashlib.sha256(audio).hexdigest()}"
     return json.dumps(
         {
             "contract_version": "1.0",
@@ -51,7 +55,13 @@ def _tts_response_ok(audio: bytes, request_id: str = "rid-1") -> bytes:
             "issued_at": "2026-01-01T00:00:00Z",
             "ok": True,
             "request_id": request_id,
-            "audio_b64": base64.b64encode(audio).decode("ascii"),
+            "blob_ref": {
+                "store_key": store_key,
+                "content_hash": hashlib.sha256(audio).hexdigest(),
+                "mime": "audio/wav",
+                "size": len(audio),
+                "source": "voicecli",
+            },
             "mime_type": "audio/wav",
             "duration_ms": 1234,
         }
@@ -80,6 +90,22 @@ def test_happy_path_returns_decoded_audio(monkeypatch: pytest.MonkeyPatch) -> No
         assert kwargs.get("inbox_prefix") == "_inbox.voice-client"
         return fake_nc
 
+    # V2 contract: client fetches audio bytes via BlobStore.get(blob_ref.store_key).
+    # Mock get_blobstore so the test exercises the V2 round-trip without a real
+    # HTTP BlobStore service. The fake.get returns the expected audio bytes.
+    class _FakeBlobStore:
+        def __init__(self) -> None:
+            self.get_calls: list[str] = []
+
+        async def get(self, store_key: str) -> bytes:
+            self.get_calls.append(store_key)
+            return audio
+
+    fake_blobstore = _FakeBlobStore()
+    monkeypatch.setattr(
+        "voicecli.adapters.nats.blobs.get_blobstore",
+        lambda: fake_blobstore,
+    )
     monkeypatch.setenv("NATS_URL", "nats://example:4222")
     monkeypatch.setattr(synthesize_client, "nats_connect", fake_connect)
 
@@ -89,6 +115,7 @@ def test_happy_path_returns_decoded_audio(monkeypatch: pytest.MonkeyPatch) -> No
     assert result["mime_type"] == "audio/wav"
     assert result["duration_ms"] == 1234
     assert fake_nc.drained and fake_nc.closed
+    assert len(fake_blobstore.get_calls) == 1, "client must fetch bytes via BlobStore.get"
     subject, payload, timeout = fake_nc.requests[0]
     assert subject == "lyra.voice.tts.request"
     assert timeout == 60.0

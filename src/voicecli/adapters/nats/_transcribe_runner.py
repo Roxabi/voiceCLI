@@ -1,8 +1,17 @@
 """Executor-bound STT transcription run loop extracted from SttNatsAdapter._run_transcription.
 
-This module owns the stateless transcription logic: size-cap, base64 decode,
-file write, model warmup, and inference dispatch. Envelope validation is an
+This module owns the stateless transcription logic: BlobStore fetch, file
+write, model warmup, and inference dispatch. Envelope validation is an
 orthogonal concern handled by ``voicecli.adapters.nats._validation``.
+
+Path-creation ownership
+-----------------------
+The runner owns scoped-path creation. It derives the file extension from
+``blob_ref.mime`` and writes decoded bytes to
+``scoped_dir / "{request_id}.{ext}"``. The adapter MUST NOT pre-create a
+temp path before calling the runner; it receives ``scoped_path`` back via the
+third element of the result tuple and passes it to ``cleanup()`` in its
+``finally`` block.
 
 Threading boundary
 ------------------
@@ -14,26 +23,26 @@ future, then the continuation runs on the loop). The adapter's heartbeat also
 reads ``model_loaded`` from the loop thread, so there is no cross-thread
 contention. CPython's GIL makes single-attribute writes safe regardless, but
 the design keeps all attribute mutations on the loop thread to avoid races.
-
-MAX_AUDIO_B64_LEN
------------------
-The cap is passed in as ``max_audio_b64_len`` rather than imported here. The
-named constant ``MAX_AUDIO_B64_LEN`` lives in ``voicecli.adapters.nats._audio_utils``
-(re-exported by ``transcribe_adapter.py``) and is forwarded by the adapter, keeping
-the dependency direction adapter → runner.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import functools
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
-from voicecli.adapters.nats import tempdir as _tempdir
+from roxabi_blobs import BlobRef
+
+from voicecli.adapters.nats._audio_utils import (
+    MAX_AUDIO_BYTES,
+    _duration_from_segments,
+    _ext_from_mime,
+)
+from voicecli.adapters.nats.blobs import BlobstoreConfigError
 
 log = logging.getLogger(__name__)
 
@@ -51,46 +60,75 @@ class SttRunnerState:
 async def run_transcription(
     state: SttRunnerState,
     default_model: str,
-    max_audio_b64_len: int,
-    payload: dict,
+    blob_ref: BlobRef,
     request_id: str,
-    audio_b64: str,
+    scoped_dir: Path,
     overrides: dict,
     *,
     trace_id: str,
-) -> tuple[bool, dict | str]:
-    """Execute one STT transcription request; return ``(ok, result_or_error_code)``.
+) -> tuple[bool, dict | str, Path | None]:
+    """Execute one STT transcription request.
 
-    On success returns ``(True, {"text": ..., "language": ..., "duration_seconds": ...})``.
-    On any failure returns ``(False, "<error_code>")``.
+    Returns ``(ok, result_or_error_code, scoped_path)``.
 
-    The adapter is responsible for creating and cleaning up the on-disk audio
-    file.  This function writes decoded bytes to ``out_path`` but never calls
-    ``cleanup()`` — the adapter wraps this coroutine in ``try/finally``.
+    On success: ``(True, {"text": ..., "language": ..., "duration_seconds": ...}, scoped_path)``.
+    On any failure: ``(False, "<error_code>", None)`` except after the file is
+    written, where scoped_path may be non-None so the adapter can clean up.
+
+    The adapter is responsible for calling ``cleanup(scoped_path)`` in a
+    ``finally`` block. This function never calls ``cleanup()`` itself.
     """
-    from voicecli.adapters.nats._audio_utils import _duration_from_segments, _ext_from_mime  # noqa: PLC0415
+    from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
 
-    ext = _ext_from_mime(payload.get("mime_type"))
-    out_path = _tempdir.scoped_path(request_id, ext)
+    # Two-gate size cap: reject obviously-too-large payloads BEFORE the HTTP
+    # round-trip (cheap, trusts the remote-supplied size) and again AFTER
+    # download (defense against an under-reporting sender). Same byte budget as
+    # the pre-V2 audio_b64 pathway (MAX_AUDIO_BYTES from _audio_utils.py).
+    if blob_ref.size > MAX_AUDIO_BYTES:
+        log.warning(
+            "payload_too_large",
+            extra={
+                "request_id": request_id,
+                "blob_size": blob_ref.size,
+                "max": MAX_AUDIO_BYTES,
+            },
+        )
+        return (False, "payload_too_large", None)
+
+    # Fetch audio bytes from BlobStore.
+    try:
+        wav_bytes = await get_blobstore().get(blob_ref.store_key)
+    except BlobstoreConfigError as e:
+        log.error(
+            "blobstore_init_failed",
+            extra={"request_id": request_id, "err": str(e)},
+        )
+        return (False, "blobstore_not_configured", None)
+    except Exception as e:  # noqa: BLE001
+        log.warning(
+            "blobstore_get_failed",
+            extra={"request_id": request_id, "err": str(e)},
+        )
+        return (False, "audio_fetch_failed", None)
+
+    if len(wav_bytes) > MAX_AUDIO_BYTES:
+        log.warning(
+            "payload_too_large",
+            extra={
+                "request_id": request_id,
+                "actual_bytes": len(wav_bytes),
+                "max": MAX_AUDIO_BYTES,
+            },
+        )
+        return (False, "payload_too_large", None)
+
+    # Runner owns scoped-path creation: derive ext from blob_ref.mime.
+    ext = _ext_from_mime(blob_ref.mime)
+    scoped_path = scoped_dir / f"{request_id}.{ext.lstrip('.')}"
 
     try:
-        # Size cap — prevent memory blowup from oversized or misrouted payloads.
-        if len(audio_b64) > max_audio_b64_len:
-            log.warning(
-                "payload_too_large",
-                extra={"request_id": request_id, "size": len(audio_b64)},
-            )
-            return (False, "payload_too_large")
-
-        # Isolate bad-base64 from transcription failures.
-        try:
-            audio_bytes = base64.b64decode(audio_b64, validate=True)
-        except Exception:  # noqa: BLE001
-            log.warning("audio_decode_failed", extra={"request_id": request_id})
-            return (False, "audio_decode_failed")
-
-        out_path.write_bytes(audio_bytes)
-        out_path.chmod(0o600)
+        scoped_path.write_bytes(wav_bytes)
+        scoped_path.chmod(0o600)
 
         # Idempotent warmup: load the model once and record success via callbacks.
         if not state.model_warm:
@@ -103,13 +141,13 @@ async def run_transcription(
                 state.set_model_loaded(default_model)
             except Exception:  # noqa: BLE001
                 log.exception("model_load_failed", extra={"request_id": request_id})
-                return (False, "model_load_failed")
+                return (False, "model_load_failed", scoped_path)
 
         from voicecli import api  # noqa: PLC0415
 
         fn = functools.partial(
             api.transcribe,
-            out_path,
+            scoped_path,
             model=default_model,
             _skip_daemon=True,
             **overrides,
@@ -122,7 +160,7 @@ async def run_transcription(
                 "param_validation_failed",
                 extra={"request_id": request_id, "reason": str(exc)},
             )
-            return (False, "param_validation_failed")
+            return (False, "param_validation_failed", scoped_path)
         duration_seconds = _duration_from_segments(result.segments)
         return (
             True,
@@ -131,8 +169,9 @@ async def run_transcription(
                 "language": result.language,
                 "duration_seconds": duration_seconds,
             },
+            scoped_path,
         )
 
     except Exception:  # noqa: BLE001
         log.exception("transcription_failed", extra={"request_id": request_id})
-        return (False, "transcription_failed")
+        return (False, "transcription_failed", scoped_path)

@@ -1,0 +1,106 @@
+---
+title: "BlobRef workers PR #180 — Review Fix Scope Consensus"
+issue: 144
+pr: 180
+status: consensus-reached
+date: 2026-05-27
+panel: architect, backend-dev, devops
+confidence: high
+---
+
+## Problem
+
+`/code-review` on PR #180 (voiceCLI BlobRef workers, atomic merge with lyra#1067) surfaced 6 blockers + 1 spec gap (SC-test-4) + 12 advisory findings. Panel must decide: (1) which findings MUST land in #180 vs follow-up, (2) the right fix per item (especially the SC-test-4 spec contradiction lazy-first-call vs eager `__aenter__`), (3) execution order, (4) defer scope. Goal: minimize merge latency without sacrificing correctness.
+
+## Panel
+
+| α | Focus |
+|---|-------|
+| architect | arch soundness, maintainability, scalability |
+| backend-dev | implementation complexity, API design, error-handling soundness |
+| devops | ops impact, deploy safety, monitoring, infra reproducibility |
+
+## Consensus ρ
+
+**All 6 blockers + SC-test-4 land in #180.** None are safely deferrable. Plus 4 cheap advisories that compound naturally with the blocker fixes (A1, A3, A5, A6). Defer the remaining 8 advisories to a post-merge polish issue.
+
+### Fix scope for #180 (unanimous)
+
+| # | Source | Fix |
+|---|---|---|
+| B1 | install.sh | `chmod 600` on `blobstore.env` after heredoc + perms guard mirroring nkey pattern |
+| B2 | install.sh | Validate `BLOBSTORE_BEARER_TOKEN` non-empty before deploy; print actionable error + exit 1 on empty |
+| B3 | `_transcribe_runner.py` | Two-gate size cap: reject `blob_ref.size > MAX_AUDIO_B64_LEN` early (cheap, before HTTP fetch) AND cap `len(wav_bytes)` post-`get` (defense-in-depth against under-reporting sender) → return `(False, "payload_too_large", None)` |
+| B4 | `blobs.py` + clients | Introduce `BlobstoreConfigError(RuntimeError)`; `get_blobstore()` catches `KeyError` on missing env vars and raises typed error with clear message; clients catch `BlobstoreConfigError` separately, return `{"error": "blobstore_not_configured: <var>"}` |
+| B5 | `transcribe_client.py` | Move `get_blobstore().put()` outside the NATS-timeout `try` block; give blobstore I/O its own `try/except` returning `{"error": "blobstore_put_failed: <detail>"}` |
+| B6 | `stub_hub.py` `_run()` | Migrate to V2: PUT WAV bytes via existing `FakeBlobStore` in same file → build `blob_ref` dict → assert `blob_ref` in TTS reply (not `audio_b64`); update `_assert_reply` payload_key accordingly |
+| SC-test-4 | spec + new test | Spec scope-reduce: change "Adapter startup logs blobstore_init_failed" → "First-request init failure logs blobstore_init_failed"; add unit test injecting a raising backend factory → assert log emitted on first dispatch |
+| A1 | `blobs.py` | Extract `blob_ref_to_contract(ref) -> ContractsBlobRef` helper to `blobs.py`; replace 2 inline `model_dump(exclude={"id","is_sentinel"})` callsites in `_synthesize_runner.py` + `transcribe_client.py` |
+| A3 | `synthesize_client.py` | Replace 3 `assert` statements (lines 91-93) with explicit `if ... is None: return {"error": "..."}` — preserves invariants under `-O` |
+| A5 | `.github/workflows/ci.yml` | Replace `uv pip install --system pytest -e ".[nats]"` with `uv sync --extra nats` (e2e job uses lockfile) |
+| A6 | install.sh | Remove duplicate `# ── 3. Copy Quadlet units` header at line 112 |
+
+### Deferred to follow-up issue (post-merge polish)
+
+| # | Reason for deferral |
+|---|---|
+| A2 (singleton async-safety, test-reset hook) | Non-trivial. Single event-loop deployment makes the race theoretical; explicit `reset_blobstore_for_tests()` is the right shape but touches conftest pattern → separate concern |
+| A4 (store_key shape validation) | Defense-in-depth only; upstream `HttpBlobStore` URL construction in `roxabi-blobs` is the true gate. Adding here is belt-and-suspenders, not blocker |
+| A7 (importlib hack for `_fakes`) | Touches `tests/` pythonpath / conftest scaffolding — should be its own refactor PR with a wider sweep of `tests/e2e/` ↔ `tests/nats/` shared fixtures |
+| A8 (`@pytest.mark.skip` → `xfail(strict=True)`) | Current skip reason explicitly cites lyra#1067 + lists prerequisites; when lyra#1067 lands the skip is removed manually (already on the cleanup checklist for that atomic merge) |
+| A9 (`_FakeBlobRef` dedup → `_fakes.py`) | Two-file copy; trivially fixable but adds churn to a file that's already overweight. Bundle with A7 |
+| A10 (`pytest.raises(Exception)` tightening) | Single test, single line; low-impact polish |
+| A11 (shared `_BLOBSTORE_PATCH_PATH` constant) | DRY hygiene, no correctness impact |
+| A12 (`tmp_path.iterdir() == []` assertion in E2E) | Unit tests in `test_stt_adapter.py` already cover cleanup; E2E duplication non-essential |
+
+### SC-test-4 rationale (3/3 picked option b)
+
+Option (a) — eager `__aenter__` calling `get_blobstore()`:
+- Contradicts spec line 176 ("no init in upstream `roxabi_nats` adapter `__aenter__` (which voiceCLI does not own)")
+- Requires voiceCLI to own a wrapper over an upstream class — cross-boundary lifecycle coupling
+- Marginal operational benefit over option (b) given systemd `RestartSec=10` provides restart-on-failure either way
+- Backend-dev: "creates a new restart-loop surface to test"
+
+Option (b) — scope-reduce SC-test-4 + add unit test against raising factory:
+- Spec-consistent (matches line 176 lazy pattern, mirrors `engine.py:_get_registry()`)
+- Testable without new abstraction
+- One unit test, no architecture change
+- Loses only "fails fast before first request" property; covered indirectly by B2 (install-time empty-token guard catches the most common misconfig)
+
+### Trade-offs
+
+- **B3 cap value:** using existing `MAX_AUDIO_B64_LEN = 25 MB` from `_audio_utils.py` preserves the pre-V2 invariant (same byte budget). Architecturally the cap belongs upstream in `HttpBlobStore`, but voiceCLI owns the satellite's memory-safety contract and must enforce locally.
+- **B4 typed error:** introducing `BlobstoreConfigError` is a small new exception type but makes the call graph legible — readers no longer have to trace `KeyError → str()` to understand "missing env" vs "missing dict key". Backend-dev explicit recommendation.
+- **A5 lockfile compliance:** ships now (devops strong, no opposition) — 1-line fix, prevents silent lyra-side dep drift breaking required CI gate between releases.
+
+## Dissent
+
+None — unanimous on all 11 in-scope items (6 blockers + SC-test-4 + A1, A3, A5, A6) and on deferring the 8 polish-only advisories.
+
+Backend-dev added one nuance the others did not contradict: B3 should guard both `blob_ref.size` (pre-fetch, cheap) AND `len(wav_bytes)` (post-fetch, immune to under-reporting). Adopted into the consensus fix.
+
+## Implementation Notes
+
+**Suggested order for `/fix` (independent items can run in parallel):**
+
+1. **Wave 1 — install.sh hardening (devops domain, single file):** B1 + B2 + A6 — all in `deploy/install.sh`
+2. **Wave 2 — error-handling refactor (backend domain, 2-3 files, sequenced — A1 helper used by all):**
+   - A1 first → `blob_ref_to_contract()` helper in `blobs.py` + `BlobstoreConfigError` exception type
+   - B4 → `synthesize_client.py` + `transcribe_client.py` use typed error
+   - B5 → `transcribe_client.py` separate blobstore try block
+   - A3 → `synthesize_client.py` assert → explicit checks
+3. **Wave 3 — size cap (backend domain, 1 file):** B3 in `_transcribe_runner.py`
+4. **Wave 4 — test infrastructure (tester domain, parallel-safe):**
+   - B6 → `stub_hub.py` `_run()` V2 migration
+   - SC-test-4 → new test against raising factory + spec update (`artifacts/specs/144-blobref-workers-spec.mdx` line 211 wording)
+5. **Wave 5 — CI hygiene (devops domain, 1 file):** A5 in `.github/workflows/ci.yml`
+
+Quality gates (run after all waves):
+- `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`
+- Verify CI green on push (ci + e2e required)
+
+**Follow-up issue to file post-merge:** "voiceCLI #144 polish — defer-list from PR #180 consensus" covering A2, A4, A7, A8, A9, A10, A11, A12.
+
+## Next
+
+`/fix` against this consensus artifact → quality gates → push → re-loop `/code-review` if surface changed materially → `reviewed` label → auto-merge once lyra#1067 satisfies atomic-merge guarantee.

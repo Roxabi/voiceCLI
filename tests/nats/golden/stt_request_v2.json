@@ -1,0 +1,12 @@
+{
+  "contract_version": "1",
+  "trace_id": "trace-example",
+  "request_id": "req-example",
+  "blob_ref": {
+    "store_key": "sha256:deadbeef",
+    "content_hash": "deadbeef",
+    "mime": "audio/wav",
+    "size": 16384,
+    "source": "voicecli"
+  }
+}

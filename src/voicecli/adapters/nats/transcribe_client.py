@@ -7,7 +7,6 @@ No daemon, no heartbeats — just request/reply.
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 from datetime import datetime, timezone
@@ -52,6 +51,30 @@ async def transcribe_via_nats(
     if not nats_url:
         return {"error": "NATS_URL environment variable not set"}
 
+    # Blobstore PUT happens BEFORE the NATS connect / request so a blobstore
+    # config/network error surfaces with its own structured code — not mistaken
+    # for a NATS timeout by the catch-all below.
+    from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+        BlobstoreConfigError,
+        blob_ref_to_contract,
+        get_blobstore,
+    )
+
+    try:
+        blobs_ref = await get_blobstore().put(
+            wav_bytes,
+            mime="audio/wav",
+            source="voicecli",
+        )
+    except BlobstoreConfigError as e:
+        log.error("blobstore_init_failed: %s", e)
+        return {"error": f"blobstore_not_configured: {e}"}
+    except Exception as e:
+        log.exception("blobstore_put_failed")
+        return {"error": f"blobstore_put_failed: {e}"}
+
+    blob_ref = blob_ref_to_contract(blobs_ref)
+
     try:
         nc = await nats_connect(nats_url, inbox_prefix="_inbox.voice-client")
     except Exception as e:
@@ -60,16 +83,14 @@ async def transcribe_via_nats(
 
     try:
         request_id = str(uuid4())
-        audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
 
         request = SttRequest(
             contract_version=CONTRACT_VERSION,
             trace_id=request_id,
             issued_at=datetime.now(timezone.utc),
             request_id=request_id,
-            audio_b64=audio_b64,
+            blob_ref=blob_ref,
             model=model,
-            mime_type="audio/wav",
             language=language,
             initial_prompt=initial_prompt,
             task=task,
@@ -97,5 +118,5 @@ async def transcribe_via_nats(
         try:
             await nc.drain()
             await nc.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — best-effort cleanup; drain/close errors are unactionable here
+            log.debug("NATS drain/close error", exc_info=True)

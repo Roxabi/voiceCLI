@@ -1,27 +1,86 @@
-"""Unit tests for voicecli.adapters.nats._transcribe_runner (issue #147).
+"""Unit tests for voicecli.adapters.nats._transcribe_runner (V2 — BlobRef contract).
 
-Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
-on-disk audio file. The runner writes the decoded bytes via scoped_path but
-does NOT call cleanup() — the adapter wraps run_transcription in try/finally.
+Lifecycle invariant (pinned by spec): the runner owns scoped-path creation and
+writes audio bytes fetched from BlobStore.  The adapter wraps run_transcription
+in try/finally and calls cleanup(scoped_path).  The runner NEVER calls cleanup()
+itself.
+
+V2 signature:
+    run_transcription(state, default_model, blob_ref, request_id, scoped_dir,
+                      overrides, *, trace_id)
+    -> tuple[bool, dict | str, Path | None]
+
+BlobStore.get is async; we inject a FakeBlobStore via monkeypatch on the
+module-level import inside the runner.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 from _fakes import SyncExecutor
 
+from roxabi_blobs import BlobRef
 from voicecli.runtime.transcribe import Segment, TranscriptionResult
 
 from voicecli.adapters.nats._transcribe_runner import (
     SttRunnerState,
     run_transcription,
 )
+
+# ---------------------------------------------------------------------------
+# BlobRef factory
+# ---------------------------------------------------------------------------
+
+_NOW = datetime.now(timezone.utc)
+
+
+def _make_blob_ref(
+    *,
+    store_key: str = "sha256:deadbeef",
+    mime: str = "audio/wav",
+    size: int = 32,
+    source: str = "test",
+    content_hash: str = "deadbeef",
+) -> BlobRef:
+    return BlobRef(
+        store_key=store_key,
+        mime=mime,
+        size=size,
+        source=source,
+        content_hash=content_hash,
+        created_at=_NOW,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fake BlobStore
+# ---------------------------------------------------------------------------
+
+
+class _FakeBlobStore:
+    """Async BlobStore that returns pre-loaded bytes for any store_key."""
+
+    def __init__(self, data: bytes = b"\x00" * 32) -> None:
+        self._data = data
+        self.get_calls: list[str] = []
+
+    async def get(self, store_key: str) -> bytes:
+        self.get_calls.append(store_key)
+        return self._data
+
+
+class _RaisingBlobStore:
+    """BlobStore whose get() always raises."""
+
+    async def get(self, store_key: str) -> bytes:
+        raise RuntimeError("blobstore unreachable")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,7 +103,6 @@ class _FakeApi:
         self.transcribe_calls.append({"out_path": out_path, "model": model, **overrides})
         if self._transcribe_behavior is not None:
             return self._transcribe_behavior(out_path, model=model, **overrides)
-        # Default: minimal TranscriptionResult-shaped object
         return TranscriptionResult(
             text="hello", language="en", segments=[Segment(end=1.5, start=0.0, text="")]
         )
@@ -60,33 +118,23 @@ def _make_state(
     model_warm: bool = False,
     set_model_warm: Callable[[bool], None] | None = None,
     set_model_loaded: Callable[[str | None], None] | None = None,
-) -> "SttRunnerState":
-    """Build an SttRunnerState with recorded callbacks."""
+) -> SttRunnerState:
     warm_calls: list[bool] = []
     loaded_calls: list[str | None] = []
-
     cb_warm = set_model_warm or (lambda v: warm_calls.append(v))
     cb_loaded = set_model_loaded or (lambda m: loaded_calls.append(m))
-
     state = SttRunnerState(  # type: ignore[call-arg]
         executor=SyncExecutor(),  # type: ignore[arg-type]
         set_model_warm=cb_warm,
         set_model_loaded=cb_loaded,
         model_warm=model_warm,
     )
-    # Attach the recorded lists for easy inspection in tests
     state._warm_calls = warm_calls  # type: ignore[attr-defined]
     state._loaded_calls = loaded_calls  # type: ignore[attr-defined]
     return state
 
 
-def _valid_audio_b64() -> str:
-    """Return valid base64 of a small WAV-ish byte blob."""
-    return base64.b64encode(b"\x00" * 32).decode()
-
-
 def _run(coro):
-    """Run a coroutine in a fresh event loop and return the result."""
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro)
@@ -100,7 +148,7 @@ def _run(coro):
 
 
 @pytest.fixture
-def fake_api(monkeypatch):
+def fake_api(monkeypatch):  # pyright: ignore[reportUnusedFunction]
     fake = _FakeApi()
     monkeypatch.setattr("voicecli.api.transcribe", fake.transcribe)
     monkeypatch.setattr("voicecli.api.warmup_model", fake.warmup_model)
@@ -108,14 +156,20 @@ def fake_api(monkeypatch):
 
 
 @pytest.fixture
-def patch_scoped_path(tmp_path, monkeypatch):
-    """Redirect scoped_path so the runner writes into tmp_path."""
+def fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction]
+    """Inject a FakeBlobStore into the runner via the blobs module singleton.
 
-    def _impl(request_id: str, ext: str) -> Path:
-        return tmp_path / f"{request_id}.{ext}"
-
-    monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _impl)
-    return _impl
+    The runner does ``from voicecli.adapters.nats.blobs import get_blobstore``
+    inside the function body — a fresh import each call that goes through the
+    module cache.  Patching `blobs.get_blobstore` (the attribute on the cached
+    module object) is therefore the correct intercept point.
+    """
+    store = _FakeBlobStore()
+    monkeypatch.setattr(
+        "voicecli.adapters.nats.blobs.get_blobstore",
+        lambda: store,
+    )
+    return store
 
 
 # ===========================================================================
@@ -125,21 +179,20 @@ def patch_scoped_path(tmp_path, monkeypatch):
 
 class TestRunTranscriptionHappyPath:
     def test_happy_path_returns_true_with_fields(
-        self, fake_api: _FakeApi, patch_scoped_path
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange
         state = _make_state()
-        audio_b64 = _valid_audio_b64()
+        blob_ref = _make_blob_ref()
 
         # Act
-        ok, result = _run(
+        ok, result, scoped_path = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {"mime_type": "audio/wav"},
+                blob_ref,
                 "req-001",
-                audio_b64,
+                tmp_path,
                 {},
                 trace_id="t1",
             )
@@ -152,28 +205,27 @@ class TestRunTranscriptionHappyPath:
         assert result["language"] == "en"
         assert "duration_seconds" in result
         assert isinstance(result["duration_seconds"], float)
+        assert scoped_path is not None
 
     def test_happy_path_calls_set_model_warm_and_set_model_loaded(
-        self, fake_api: _FakeApi, patch_scoped_path
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange
         warm_calls: list[bool] = []
         loaded_calls: list[str | None] = []
-
         state = _make_state(
             set_model_warm=lambda v: warm_calls.append(v),
             set_model_loaded=lambda m: loaded_calls.append(m),
         )
 
         # Act
-        ok, result = _run(
+        ok, result, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {"mime_type": "audio/wav"},
+                _make_blob_ref(),
                 "req-002",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t2",
             )
@@ -182,26 +234,22 @@ class TestRunTranscriptionHappyPath:
         # Assert
         assert ok is True
         assert warm_calls == [True], f"expected set_model_warm(True) once, got {warm_calls}"
-        assert loaded_calls == ["large-v3-turbo"], (
-            f"expected set_model_loaded('large-v3-turbo') once, got {loaded_calls}"
-        )
+        assert loaded_calls == ["large-v3-turbo"]
 
     def test_warm_model_skips_warmup_on_second_call(
-        self, fake_api: _FakeApi, patch_scoped_path
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
     ) -> None:
         # Arrange — model already warm; warmup_model must NOT be called
         state = _make_state(model_warm=True)
-        audio_b64 = _valid_audio_b64()
 
         # Act
-        ok, result = _run(
+        ok, result, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-003",
-                audio_b64,
+                tmp_path,
                 {},
                 trace_id="t3",
             )
@@ -209,46 +257,89 @@ class TestRunTranscriptionHappyPath:
 
         # Assert
         assert ok is True
-        assert fake_api.warmup_calls == [], (
-            "warmup_model must not be called when state.model_warm is True"
+        assert fake_api.warmup_calls == [], "warmup_model must not be called when already warm"
+
+    def test_blob_ref_store_key_fetched_from_blobstore(
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """Runner calls BlobStore.get(blob_ref.store_key)."""
+        # Arrange
+        state = _make_state(model_warm=True)
+        blob_ref = _make_blob_ref(store_key="sha256:unique-key")
+
+        # Act
+        ok, _, _ = _run(
+            run_transcription(
+                state,
+                "large-v3-turbo",
+                blob_ref,
+                "req-store-key",
+                tmp_path,
+                {},
+                trace_id="t-sk",
+            )
         )
 
+        # Assert — BlobStore.get called with the blob_ref store_key
+        assert ok is True
+        assert fake_blobstore.get_calls == ["sha256:unique-key"]
+
+    def test_scoped_path_returned_on_success(
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """Third tuple element is a Path the adapter uses for cleanup."""
+        # Arrange
+        state = _make_state(model_warm=True)
+        blob_ref = _make_blob_ref(mime="audio/wav")
+
+        # Act
+        ok, _, scoped_path = _run(
+            run_transcription(
+                state,
+                "large-v3-turbo",
+                blob_ref,
+                "req-path",
+                tmp_path,
+                {},
+                trace_id="t-path",
+            )
+        )
+
+        # Assert
+        assert ok is True
+        assert scoped_path is not None
+        assert isinstance(scoped_path, Path)
+        assert scoped_path.parent == tmp_path
+        assert scoped_path.name.startswith("req-path")
+
     @pytest.mark.parametrize(
-        "mime_type,expected_ext",
+        "mime,expected_ext",
         [
             ("audio/wav", "wav"),
             ("audio/mp3", "mp3"),
         ],
         ids=["wav", "mp3"],
     )
-    def test_mime_type_determines_file_extension(
+    def test_mime_from_blob_ref_determines_file_extension(
         self,
         tmp_path: Path,
-        monkeypatch,
         fake_api: _FakeApi,
-        mime_type: str,
+        fake_blobstore: _FakeBlobStore,
+        mime: str,
         expected_ext: str,
     ) -> None:
-        # Arrange — capture the path that scoped_path produces
-        observed_ext: list[str] = []
-
-        def _capturing_scoped_path(request_id: str, ext: str) -> Path:
-            observed_ext.append(ext)
-            return tmp_path / f"{request_id}.{ext}"
-
-        monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _capturing_scoped_path)
-
-        state = _make_state()
+        # Arrange
+        state = _make_state(model_warm=True)
+        blob_ref = _make_blob_ref(mime=mime)
 
         # Act
-        ok, _result = _run(
+        ok, _, scoped_path = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {"mime_type": mime_type},
+                blob_ref,
                 "req-mime",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t-mime",
             )
@@ -256,106 +347,123 @@ class TestRunTranscriptionHappyPath:
 
         # Assert
         assert ok is True
-        assert observed_ext == [expected_ext], (
-            f"expected ext={expected_ext!r} for mime_type={mime_type!r}, got {observed_ext}"
-        )
+        assert scoped_path is not None
+        assert scoped_path.suffix == f".{expected_ext}"
 
 
 # ===========================================================================
-# TestRunTranscriptionPayloadTooLarge
+# TestRunTranscriptionBlobStoreFailure
 # ===========================================================================
 
 
-class TestRunTranscriptionPayloadTooLarge:
-    def test_audio_b64_exceeds_cap_returns_payload_too_large(
-        self, fake_api: _FakeApi, patch_scoped_path
+class TestRunTranscriptionBlobStoreFailure:
+    def test_blobstore_get_raises_returns_audio_fetch_failed(
+        self, tmp_path: Path, monkeypatch
     ) -> None:
-        # Arrange — cap is 100 bytes, audio_b64 is 200 chars
-        cap = 100
-        audio_b64 = "A" * 200
-        state = _make_state()
+        """BlobStore.get() raises → runner returns (False, 'audio_fetch_failed', None).
+
+        Negative-test: deleting the try/except around get_blobstore().get() would
+        let the exception propagate instead of returning the error tuple — test fails.
+        """
+        # Arrange
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: _RaisingBlobStore(),
+        )
+        state = _make_state(model_warm=True)
+        blob_ref = _make_blob_ref()
 
         # Act
-        ok, error_code = _run(
+        ok, error_code, scoped_path = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                cap,
+                blob_ref,
+                "req-blobfail",
+                tmp_path,
                 {},
-                "req-toobig",
-                audio_b64,
-                {},
-                trace_id="t-big",
+                trace_id="t-fail",
             )
         )
 
         # Assert
         assert ok is False
-        assert error_code == "payload_too_large"
+        assert error_code == "audio_fetch_failed"
+        assert scoped_path is None
 
-    def test_payload_too_large_does_not_call_transcribe_or_warmup(
-        self, fake_api: _FakeApi, patch_scoped_path
+    def test_blobstore_get_failure_does_not_call_transcribe(
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         # Arrange
-        cap = 10
-        audio_b64 = "B" * 200
-        state = _make_state()
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.blobs.get_blobstore",
+            lambda: _RaisingBlobStore(),
+        )
+        transcribe_calls: list = []
+        monkeypatch.setattr(
+            "voicecli.api.transcribe",
+            lambda *a, **kw: transcribe_calls.append((a, kw)),
+        )
+        state = _make_state(model_warm=True)
 
         # Act
-        ok, error_code = _run(
+        ok, error_code, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                cap,
+                _make_blob_ref(),
+                "req-blobfail-notrans",
+                tmp_path,
                 {},
-                "req-toobig2",
-                audio_b64,
-                {},
-                trace_id="t-big2",
+                trace_id="t-fn",
             )
         )
 
         # Assert
         assert ok is False
-        assert error_code == "payload_too_large"
-        assert fake_api.transcribe_calls == [], (
-            "api.transcribe must not be called for oversized payload"
-        )
-        assert fake_api.warmup_calls == [], "warmup_model must not be called for oversized payload"
+        assert error_code == "audio_fetch_failed"
+        assert transcribe_calls == [], "api.transcribe must not be called on BlobStore failure"
 
-
-# ===========================================================================
-# TestRunTranscriptionAudioDecode
-# ===========================================================================
-
-
-class TestRunTranscriptionAudioDecode:
-    def test_invalid_base64_returns_audio_decode_failed(
-        self, fake_api: _FakeApi, patch_scoped_path
+    def test_blobstore_config_error_logs_blobstore_init_failed(
+        self, tmp_path: Path, monkeypatch, caplog
     ) -> None:
-        # Arrange
-        state = _make_state()
-        bad_b64 = "not===base64@@@"
+        """SC-test-4: a raising backend factory (BlobstoreConfigError) →
+        runner logs ``blobstore_init_failed`` and returns
+        ``(False, 'blobstore_not_configured', None)``.
+
+        This distinguishes a misconfigured satellite (env var missing, ADR-068
+        violation) from a transient network/storage failure
+        (``blobstore_get_failed`` / ``audio_fetch_failed``).
+        """
+        # Arrange — make get_blobstore() raise BlobstoreConfigError on call
+        from voicecli.adapters.nats import blobs
+
+        def _raising_factory():
+            raise blobs.BlobstoreConfigError("BLOBSTORE_URL not set")
+
+        monkeypatch.setattr("voicecli.adapters.nats.blobs.get_blobstore", _raising_factory)
+        state = _make_state(model_warm=True)
 
         # Act
-        ok, error_code = _run(
-            run_transcription(
-                state,
-                "large-v3-turbo",
-                1024,
-                {},
-                "req-decode",
-                bad_b64,
-                {},
-                trace_id="t-dec",
+        with caplog.at_level("ERROR"):
+            ok, error_code, scoped_path = _run(
+                run_transcription(
+                    state,
+                    "large-v3-turbo",
+                    _make_blob_ref(),
+                    "req-cfgfail",
+                    tmp_path,
+                    {},
+                    trace_id="t-cfg",
+                )
             )
-        )
 
-        # Assert
+        # Assert — structured error code, scoped_path None, log emitted
         assert ok is False
-        assert error_code == "audio_decode_failed"
-        assert fake_api.transcribe_calls == [], (
-            "api.transcribe must not be called on decode failure"
+        assert error_code == "blobstore_not_configured"
+        assert scoped_path is None
+        assert any("blobstore_init_failed" in r.message for r in caplog.records), (
+            f"expected 'blobstore_init_failed' log record; got {[r.message for r in caplog.records]}"
         )
 
 
@@ -365,7 +473,9 @@ class TestRunTranscriptionAudioDecode:
 
 
 class TestRunTranscriptionModelLoad:
-    def test_warmup_raises_returns_model_load_failed(self, patch_scoped_path, monkeypatch) -> None:
+    def test_warmup_raises_returns_model_load_failed(
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
+    ) -> None:
         # Arrange
         warm_calls: list[bool] = []
         loaded_calls: list[str | None] = []
@@ -387,14 +497,13 @@ class TestRunTranscriptionModelLoad:
         monkeypatch.setattr("voicecli.api.transcribe", _fake_transcribe)
 
         # Act
-        ok, error_code = _run(
+        ok, error_code, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-warmfail",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t-wf",
             )
@@ -403,14 +512,14 @@ class TestRunTranscriptionModelLoad:
         # Assert
         assert ok is False
         assert error_code == "model_load_failed"
-        assert True not in warm_calls, "set_model_warm(True) must not be called when warmup fails"
-        assert not loaded_calls, "set_model_loaded must not be called when warmup fails"
-        assert transcribe_calls == [], "api.transcribe must not be called when model load fails"
+        assert True not in warm_calls, "set_model_warm(True) must not fire on warmup failure"
+        assert not loaded_calls
+        assert transcribe_calls == []
 
     def test_two_consecutive_failing_warmups_attempt_warmup_twice(
-        self, patch_scoped_path, monkeypatch
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
     ) -> None:
-        # Arrange — each call should attempt warmup; no backoff or caching of failure
+        # Arrange — no backoff on failure; each call re-attempts warmup
         warmup_attempt_count = 0
 
         def _fail_warmup(model: str) -> None:
@@ -421,24 +530,33 @@ class TestRunTranscriptionModelLoad:
         monkeypatch.setattr("voicecli.api.warmup_model", _fail_warmup)
 
         state = _make_state()
-        audio_b64 = _valid_audio_b64()
 
-        # Act — two separate calls; model_warm stays False after each failure
+        # Act
         _run(
             run_transcription(
-                state, "large-v3-turbo", 1024, {}, "req-wf-retry1", audio_b64, {}, trace_id="t1"
+                state,
+                "large-v3-turbo",
+                _make_blob_ref(),
+                "req-wf-retry1",
+                tmp_path,
+                {},
+                trace_id="t1",
             )
         )
         _run(
             run_transcription(
-                state, "large-v3-turbo", 1024, {}, "req-wf-retry2", audio_b64, {}, trace_id="t2"
+                state,
+                "large-v3-turbo",
+                _make_blob_ref(),
+                "req-wf-retry2",
+                tmp_path,
+                {},
+                trace_id="t2",
             )
         )
 
-        # Assert — each call re-attempted warmup (2 total)
-        assert warmup_attempt_count == 2, (
-            f"expected 2 warmup attempts across 2 failing calls, got {warmup_attempt_count}"
-        )
+        # Assert
+        assert warmup_attempt_count == 2
 
 
 # ===========================================================================
@@ -448,7 +566,7 @@ class TestRunTranscriptionModelLoad:
 
 class TestRunTranscriptionParamValidation:
     def test_param_validation_error_returns_param_validation_failed(
-        self, patch_scoped_path, monkeypatch
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
     ) -> None:
         # Arrange
         from voicecli.api import ParamValidationError
@@ -462,14 +580,13 @@ class TestRunTranscriptionParamValidation:
         state = _make_state()
 
         # Act
-        ok, error_code = _run(
+        ok, error_code, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-val",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t-val",
             )
@@ -487,7 +604,7 @@ class TestRunTranscriptionParamValidation:
 
 class TestRunTranscriptionGenericError:
     def test_runtime_error_returns_transcription_failed(
-        self, patch_scoped_path, monkeypatch
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
     ) -> None:
         # Arrange
         def _crash_transcribe(out_path, *, model, _skip_daemon=True, **kw):
@@ -499,14 +616,13 @@ class TestRunTranscriptionGenericError:
         state = _make_state()
 
         # Act
-        ok, error_code = _run(
+        ok, error_code, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-crash",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t-crash",
             )
@@ -524,7 +640,7 @@ class TestRunTranscriptionGenericError:
 
 class TestRunTranscriptionOverridesForwarding:
     def test_language_override_forwarded_to_transcribe(
-        self, patch_scoped_path, monkeypatch
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
     ) -> None:
         # Arrange
         captured: dict = {}
@@ -542,14 +658,13 @@ class TestRunTranscriptionOverridesForwarding:
         overrides = {"language": "fr"}
 
         # Act
-        ok, result = _run(
+        ok, result, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-fr",
-                _valid_audio_b64(),
+                tmp_path,
                 overrides,
                 trace_id="t-fr",
             )
@@ -557,11 +672,11 @@ class TestRunTranscriptionOverridesForwarding:
 
         # Assert
         assert ok is True
-        assert captured.get("language") == "fr", (
-            f"expected language='fr' forwarded to api.transcribe, got {captured}"
-        )
+        assert captured.get("language") == "fr"
 
-    def test_empty_overrides_no_extra_kwargs(self, patch_scoped_path, monkeypatch) -> None:
+    def test_empty_overrides_no_extra_kwargs(
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
+    ) -> None:
         # Arrange
         captured: dict = {}
 
@@ -577,14 +692,13 @@ class TestRunTranscriptionOverridesForwarding:
         state = _make_state()
 
         # Act
-        ok, _result = _run(
+        ok, _, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-empty-ov",
-                _valid_audio_b64(),
+                tmp_path,
                 {},
                 trace_id="t-empty",
             )
@@ -592,13 +706,12 @@ class TestRunTranscriptionOverridesForwarding:
 
         # Assert
         assert ok is True
-        # No unexpected override keys leaked in
-        for override_key in ("language", "task", "initial_prompt", "language_fallback"):
-            assert override_key not in captured, (
-                f"'{override_key}' must not appear in api.transcribe kwargs for empty overrides"
-            )
+        for key in ("language", "task", "initial_prompt", "language_fallback"):
+            assert key not in captured
 
-    def test_multiple_overrides_forwarded_together(self, patch_scoped_path, monkeypatch) -> None:
+    def test_multiple_overrides_forwarded_together(
+        self, tmp_path: Path, fake_blobstore: _FakeBlobStore, monkeypatch
+    ) -> None:
         # Arrange
         captured: dict = {}
 
@@ -620,14 +733,13 @@ class TestRunTranscriptionOverridesForwarding:
         }
 
         # Act
-        ok, result = _run(
+        ok, result, _ = _run(
             run_transcription(
                 state,
                 "large-v3-turbo",
-                1024,
-                {},
+                _make_blob_ref(),
                 "req-multi-ov",
-                _valid_audio_b64(),
+                tmp_path,
                 overrides,
                 trace_id="t-multi",
             )
