@@ -3,7 +3,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
 ![CUDA](https://img.shields.io/badge/CUDA-enabled-76B900?logo=nvidia&logoColor=white)
-![version](https://img.shields.io/badge/version-0.2.0-22c55e)
+![version](https://img.shields.io/badge/version-0.2.2-22c55e)
 
 Unified CLI for voice generation and transcription — Qwen3-TTS, Chatterbox, Faster Whisper & Kyutai STT backends.
 
@@ -84,6 +84,9 @@ voicecli listen
 
 # Dictation mode (STT daemon + overlay)
 voicecli dictate
+
+# Cross-host: synthesize via the hub TTS satellite over NATS (no local model load)
+voicecli generate --via-nats "Bonjour le monde"
 ```
 
 ## Library API
@@ -174,7 +177,26 @@ voicecli generate script.md --crossfade 50       # 50ms fade between segments
 voicecli generate script.md --plain              # ignore [tags] and <!-- directives -->
 voicecli generate article.txt --chunked          # split into separate chunk files
 voicecli generate article.txt --chunked --chunk-size 300  # ~20s chunks
+voicecli generate "Bonjour" --via-nats            # route via hub TTS satellite (no local model load)
+voicecli generate script.md --via-nats --timeout 90  # ditto, with custom NATS timeout
 ```
+
+#### `generate --via-nats` — Cross-host NATS synthesis
+
+Routes synthesis to a remote TTS satellite over NATS instead of the local socket daemon. Ideal when the GPU model runs on a server (M₁) and the caller is a non-GPU workstation/laptop. Mirror of `dictate nats` for the TTS side.
+
+```bash
+export NATS_URL="nats://192.168.1.16:4222"
+export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+
+voicecli generate --via-nats "Bonjour le monde"
+VOICECLI_VIA_NATS=1 voicecli generate "Bonjour"     # env equivalence
+voicecli generate --via-nats script.md --timeout 90  # custom request timeout
+```
+
+The reply WAV lands in `~/.voicecli/TTS/voices_out/` like the local mode — same output path resolution, same engine/voice/lang flags. V1 sends a single flattened `text` field (no per-segment multi-language). Full guide: [docs/NATS-SERVE.md#client-side](docs/NATS-SERVE.md#client-side--synthesize-from-any-host).
+
+Requires: NATS server reachable on port 4222, `voice-client` NKey identity, `voicecli nats-serve tts` running on the satellite host.
 
 | Flag | Short | Description | Default |
 |------|-------|-------------|---------|
