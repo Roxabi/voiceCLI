@@ -3,5 +3,6 @@
   "private": true,
   "scripts": {
     "dashboard": "bun .claude/run-dashboard.ts"
-  }
+  },
+  "license": "AGPL-3.0"
 }

@@ -74,6 +74,7 @@ class TtsNatsAdapter(NatsAdapterBase):
             heartbeat_subject=HEARTBEAT_SUBJECT,
             heartbeat_interval=heartbeat_interval,
             inbox_prefix="_inbox.voice-tts",
+            wait_ready=False,  # worker semantics — see NatsAdapterBase docstring
         )
         self.default_engine = default_engine
         self.max_concurrent = max_concurrent

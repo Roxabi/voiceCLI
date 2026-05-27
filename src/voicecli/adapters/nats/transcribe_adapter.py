@@ -83,6 +83,7 @@ class SttNatsAdapter(NatsAdapterBase):
             heartbeat_interval=heartbeat_interval,
             drain_timeout=drain_timeout,
             inbox_prefix="_inbox.voice-stt",
+            wait_ready=False,  # worker semantics — see NatsAdapterBase docstring
         )
         self.default_model = default_model
         self.max_concurrent = max_concurrent
