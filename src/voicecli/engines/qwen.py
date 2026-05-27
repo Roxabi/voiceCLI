@@ -7,9 +7,9 @@ import torch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voicecli.engine import TTSEngine, cuda_guard
-from voicecli.utils import to_full_language_name
-from voicecli.models import (
+from voicecli.engines.engine import TTSEngine, cuda_guard
+from voicecli.core.utils import to_full_language_name
+from voicecli.core.models import (
     QWEN_CLONE_MODEL,
     QWEN_CLONE_MODEL_SMALL,
     QWEN_MODEL,
@@ -18,7 +18,7 @@ from voicecli.models import (
 )
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 SPEAKERS = [
     "Vivian",
@@ -98,7 +98,7 @@ class QwenEngine(TTSEngine):
         default_crossfade: int = 0,
     ) -> tuple[np.ndarray, int]:
         """Generate audio per-segment with individual overrides, then concatenate."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         if method == "custom_voice":
             model = self._load_model()

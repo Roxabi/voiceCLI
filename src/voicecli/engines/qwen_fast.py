@@ -9,9 +9,9 @@ import torch
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from voicecli.engine import cuda_guard
+from voicecli.engines.engine import cuda_guard
 from voicecli.engines.qwen import QwenEngine
-from voicecli.models import (
+from voicecli.core.models import (
     QWEN_CLONE_MODEL,
     QWEN_CLONE_MODEL_SMALL,
     QWEN_MODEL,
@@ -20,7 +20,7 @@ from voicecli.models import (
 )
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 
 class QwenFastEngine(QwenEngine):
@@ -71,7 +71,7 @@ class QwenFastEngine(QwenEngine):
         default_crossfade: int = 0,
     ) -> tuple[np.ndarray, int]:
         """Generate audio per-segment with CUDA-graph-accelerated model."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         if method == "custom_voice":
             model = self._load_model()

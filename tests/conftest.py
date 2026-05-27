@@ -18,10 +18,9 @@ def mock_engine(monkeypatch):
 @pytest.fixture(autouse=True)
 def reset_model_registry():
     """Clear model_registry cache and reset config before each test to prevent state leakage."""
-    from voicecli.model_registry import model_registry
+    from voicecli.runtime.model_registry import model_registry
 
-    # Clear the cache and reset to default config
-    with model_registry._lock:
-        model_registry._cache.clear()
-        model_registry._max_cached = 2  # Reset to default
+    for name in model_registry.loaded_engines():
+        model_registry.evict(name)
+    model_registry.configure(2)
     yield

@@ -721,7 +721,7 @@ swap re-tags `:staging-prev`.
 
 The `voice-client` identity needs:
 - **publish:** `lyra.voice.stt.request`
-- **subscribe:** `_inbox.voice-client.>` (inbox_prefix is hardcoded to `_inbox.voice-client` in `nats_stt_client.py` — required by ADR-051 normalized inbox ACL)
+- **subscribe:** `_inbox.voice-client.>` (inbox_prefix is hardcoded to `_inbox.voice-client` in `transcribe_client.py` — required by ADR-051 normalized inbox ACL)
 
 ### Wrapper script + shortcut
 

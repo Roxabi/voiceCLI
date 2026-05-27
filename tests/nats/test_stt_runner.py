@@ -1,4 +1,4 @@
-"""Unit tests for voicecli.nats._stt_runner (issue #147).
+"""Unit tests for voicecli.adapters.nats._transcribe_runner (issue #147).
 
 Lifecycle invariant (pinned by spec): the adapter creates and cleans up the
 on-disk audio file. The runner writes the decoded bytes via scoped_path but
@@ -16,7 +16,9 @@ from typing import Any
 import pytest
 from _fakes import SyncExecutor
 
-from voicecli.nats._stt_runner import (
+from voicecli.runtime.transcribe import Segment, TranscriptionResult
+
+from voicecli.adapters.nats._transcribe_runner import (
     SttRunnerState,
     run_transcription,
 )
@@ -43,9 +45,9 @@ class _FakeApi:
         if self._transcribe_behavior is not None:
             return self._transcribe_behavior(out_path, model=model, **overrides)
         # Default: minimal TranscriptionResult-shaped object
-        from voicecli.transcribe import TranscriptionResult
-
-        return TranscriptionResult(text="hello", language="en", segments=[{"end": 1.5}])
+        return TranscriptionResult(
+            text="hello", language="en", segments=[Segment(end=1.5, start=0.0, text="")]
+        )
 
     def warmup_model(self, model: str) -> None:
         self.warmup_calls.append(model)
@@ -112,7 +114,7 @@ def patch_scoped_path(tmp_path, monkeypatch):
     def _impl(request_id: str, ext: str) -> Path:
         return tmp_path / f"{request_id}.{ext}"
 
-    monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _impl)
+    monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _impl)
     return _impl
 
 
@@ -234,7 +236,7 @@ class TestRunTranscriptionHappyPath:
             observed_ext.append(ext)
             return tmp_path / f"{request_id}.{ext}"
 
-        monkeypatch.setattr("voicecli.nats.tempdir.scoped_path", _capturing_scoped_path)
+        monkeypatch.setattr("voicecli.adapters.nats.tempdir.scoped_path", _capturing_scoped_path)
 
         state = _make_state()
 
@@ -379,8 +381,6 @@ class TestRunTranscriptionModelLoad:
 
         def _fake_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             transcribe_calls.append(model)
-            from voicecli.transcribe import TranscriptionResult
-
             return TranscriptionResult(text="x", language="en", segments=[])
 
         monkeypatch.setattr("voicecli.api.warmup_model", _fail_warmup)
@@ -531,9 +531,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="bonjour", language="fr", segments=[{"end": 1.0}])
+            return TranscriptionResult(
+                text="bonjour", language="fr", segments=[Segment(end=1.0, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)
@@ -567,9 +567,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="hi", language="en", segments=[{"end": 0.5}])
+            return TranscriptionResult(
+                text="hi", language="en", segments=[Segment(end=0.5, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)
@@ -604,9 +604,9 @@ class TestRunTranscriptionOverridesForwarding:
 
         def _capturing_transcribe(out_path, *, model, _skip_daemon=True, **kw):
             captured.update(kw)
-            from voicecli.transcribe import TranscriptionResult
-
-            return TranscriptionResult(text="hallo", language="de", segments=[{"end": 2.0}])
+            return TranscriptionResult(
+                text="hallo", language="de", segments=[Segment(end=2.0, start=0.0, text="")]
+            )
 
         monkeypatch.setattr("voicecli.api.warmup_model", lambda m: None)
         monkeypatch.setattr("voicecli.api.transcribe", _capturing_transcribe)

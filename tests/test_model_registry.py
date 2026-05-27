@@ -17,9 +17,9 @@ class TestConfigLoading:
     def test_load_nats_config_defaults(self, tmp_path, monkeypatch):
         """load_nats_config returns defaults when no config."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_nats_config()
@@ -30,7 +30,7 @@ class TestConfigLoading:
     def test_load_nats_config_clamps_high(self, tmp_path):
         """max_cached_engines clamped to 5 when set higher."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
         cfg = tmp_path / "voicecli.toml"
         cfg.write_text("[nats]\nmax_cached_engines = 100\n")
@@ -44,7 +44,7 @@ class TestConfigLoading:
     def test_load_nats_config_clamps_low(self, tmp_path):
         """max_cached_engines clamped to 1 when set lower."""
         # Arrange
-        from voicecli.config import load_nats_config
+        from voicecli.core.config import load_nats_config
 
         cfg = tmp_path / "voicecli.toml"
         cfg.write_text("[nats]\nmax_cached_engines = 0\n")
@@ -58,9 +58,9 @@ class TestConfigLoading:
     def test_load_tts_config_defaults(self, tmp_path, monkeypatch):
         """load_tts_config returns None for default_engine when no config."""
         # Arrange
-        from voicecli.config import load_tts_config
+        from voicecli.core.config import load_tts_config
 
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
 
         # Act
         result = load_tts_config()
@@ -75,13 +75,13 @@ class TestModelRegistryCore:
     def test_get_returns_cached_on_second_call(self):
         """Second get() for same engine returns cached instance (no reload)."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -96,7 +96,7 @@ class TestModelRegistryCore:
     def test_get_raises_for_unknown_engine(self):
         """get() for unknown engine raises ValueError with list."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
@@ -107,13 +107,13 @@ class TestModelRegistryCore:
     def test_loaded_engines_returns_cached_names(self):
         """loaded_engines() returns list of cached engine names."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -130,13 +130,13 @@ class TestModelRegistryVRAM:
     def test_evict_removes_engine_from_cache(self):
         """evict() removes specified engine from cache."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -151,13 +151,13 @@ class TestModelRegistryVRAM:
     def test_evict_is_noop_for_uncached_engine(self):
         """evict() for non-cached engine is safe no-op."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": lambda: mock_engine}
@@ -172,12 +172,12 @@ class TestModelRegistryVRAM:
     def test_ensure_vram_raises_when_cache_empty(self):
         """InsufficientVRAMError raised when cache empty and VRAM insufficient."""
         # Arrange
-        from voicecli.model_registry import InsufficientVRAMError, ModelRegistry
+        from voicecli.runtime.model_registry import InsufficientVRAMError, ModelRegistry
 
         registry = ModelRegistry()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=False),
             patch.object(
                 registry, "vram_free_mb", return_value=1000
@@ -192,14 +192,14 @@ class TestModelRegistryVRAM:
     def test_ensure_vram_evicts_until_sufficient(self):
         """_ensure_vram evicts LRU engines until VRAM sufficient."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         mock_engine1 = MagicMock()
         mock_engine2 = MagicMock()
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram") as mock_has_vram,
             patch.object(
                 registry, "vram_free_mb", return_value=1000
@@ -228,7 +228,7 @@ class TestModelRegistryThreadSafety:
     def test_concurrent_get_same_engine_loads_once(self):
         """Two concurrent get() for same engine load exactly one model."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         load_count = 0
@@ -243,7 +243,7 @@ class TestModelRegistryThreadSafety:
 
         # Mock VRAM check to always return sufficient
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {"mock": make_engine}
@@ -267,13 +267,13 @@ class TestModelRegistryThreadSafety:
     def test_concurrent_get_different_engines(self):
         """Concurrent get() for different engines both succeed."""
         # Arrange
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
         results = {}
 
         with (
-            patch("voicecli.engine._get_registry") as mock_reg,
+            patch("voicecli.engines.engine._get_registry") as mock_reg,
             patch.object(registry, "_has_vram", return_value=True),
         ):
             mock_reg.return_value = {
@@ -308,7 +308,7 @@ class TestHeartbeatEnhancement:
     def test_heartbeat_payload_includes_vram_metrics(self):
         """heartbeat_payload includes vram_free_mb and vram_status."""
         # Arrange - mock TtsNatsAdapter's heartbeat_payload
-        from voicecli.nats.tts_adapter import TtsNatsAdapter
+        from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 
         adapter = TtsNatsAdapter(default_engine="qwen-fast")
 
@@ -323,14 +323,14 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_ok_when_sufficient(self):
         """vram_status is 'ok' when > 4GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
         # Mock vram_free_mb to return high value
         with patch.object(registry, "vram_free_mb", return_value=5000):
             free_mb = registry.vram_free_mb()
-            # Determine status like tts_adapter does
+            # Determine status like synthesize_adapter does
             if free_mb >= 4096:
                 vram_status = "ok"
             elif free_mb >= 1024:
@@ -342,7 +342,7 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_constrained_when_low(self):
         """vram_status is 'constrained' when 1-4GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 
@@ -360,7 +360,7 @@ class TestHeartbeatEnhancement:
 
     def test_vram_status_critical_when_very_low(self):
         """vram_status is 'critical' when < 1GB free."""
-        from voicecli.model_registry import ModelRegistry
+        from voicecli.runtime.model_registry import ModelRegistry
 
         registry = ModelRegistry()
 

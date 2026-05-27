@@ -1,6 +1,6 @@
 """Tests for SttNatsAdapter (issue #44 T4).
 
-Mirrors the structure of test_tts_adapter.py.  All 16 cases exercise the
+Mirrors the structure of test_synthesize_adapter.py.  All 16 cases exercise the
 real SttNatsAdapter code — api.transcribe is patched at the source module
 (voicecli.api.transcribe) so actual coverage runs through the adapter.
 """
@@ -23,16 +23,16 @@ import pytest
 
 try:
     from voicecli.api import ParamValidationError
-    from voicecli.nats.config import DEFAULT_MODEL
-    from voicecli.nats.queue_groups import STT_WORKERS
-    from voicecli.nats.stt_adapter import (
+    from voicecli.adapters.nats.config import DEFAULT_MODEL
+    from voicecli.adapters.nats.queue_groups import STT_WORKERS
+    from voicecli.adapters.nats.transcribe_adapter import (
         HEARTBEAT_SUBJECT,
         SUBJECT,
         SttNatsAdapter,
         _duration_from_segments,
         _ext_from_mime,
     )
-    from voicecli.transcribe import TranscriptionResult
+    from voicecli.runtime.transcribe import Segment, TranscriptionResult
 
     _IMPORT_ERROR: ImportError | None = None
 except ImportError as _e:
@@ -50,7 +50,9 @@ except ImportError as _e:
 
 def _require_imports() -> None:
     if _IMPORT_ERROR is not None:
-        pytest.fail(f"voicecli.nats.stt_adapter not yet implemented (RED): {_IMPORT_ERROR}")
+        pytest.fail(
+            f"voicecli.adapters.nats.transcribe_adapter not yet implemented (RED): {_IMPORT_ERROR}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ def _fake_result(
     return TranscriptionResult(
         text=text,
         language=language,
-        segments=[{"start": 0.0, "end": end, "text": text}],
+        segments=[Segment(start=0.0, end=end, text=text)],
     )
 
 
@@ -133,7 +135,7 @@ def _patch_transcribe(
     Pass either ``mock_result`` (return_value) or ``side_effect`` — not both.
     Passing both raises TypeError to prevent silent mis-configuration.
 
-    _stt_runner.py does ``from voicecli import api`` (module reference, not a
+    _transcribe_runner.py does ``from voicecli import api`` (module reference, not a
     name copy), so ``api.transcribe`` resolves through ``voicecli.api``.
     Patching the source directly is sufficient and avoids the order-dependent
     ``_mod.api = _api`` namespace mutation.
@@ -152,7 +154,7 @@ def _patch_scoped_path(tmp_path: Path):
         p = tmp_path / f"{request_id}.{ext}"
         return p
 
-    return patch("voicecli.nats.stt_adapter.scoped_path", side_effect=_impl)
+    return patch("voicecli.adapters.nats.transcribe_adapter.scoped_path", side_effect=_impl)
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +282,37 @@ class TestSttNatsAdapter:
         asyncio.run(adapter.handle(msg, payload))
 
         # Assert
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    # ------------------------------------------------------------------
+    # Case 5b: wrong-type override fields yield malformed_request
+    # ------------------------------------------------------------------
+    def test_malformed_language_detection_threshold_type(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["language_detection_threshold"] = "high"
+
+        asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+
+    def test_malformed_language_detection_segments_bool(self, tmp_path: Path) -> None:
+        _require_imports()
+        adapter = _make_adapter(max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["language_detection_segments"] = True
+
+        asyncio.run(adapter.handle(msg, payload))
+
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
@@ -554,7 +587,7 @@ class TestSttNatsAdapter:
                 side_effect=_slow_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.transcribe_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     msg1, msg2 = MockMsg(), MockMsg()
@@ -743,7 +776,7 @@ class TestSttNatsAdapter:
                 return TranscriptionResult(
                     text="ok",
                     language="en",
-                    segments=[{"start": 0.0, "end": 1.5, "text": "ok"}],
+                    segments=[Segment(start=0.0, end=1.5, text="ok")],
                 )
 
             with patch(
@@ -751,7 +784,7 @@ class TestSttNatsAdapter:
                 side_effect=_gated_transcribe,
             ):
                 with patch(
-                    "voicecli.nats.stt_adapter.scoped_path",
+                    "voicecli.adapters.nats.transcribe_adapter.scoped_path",
                     side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
                 ):
                     handle_task = asyncio.create_task(adapter.handle(msg, payload))

@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from voicecli.markdown import (
+from voicecli.api.markdown import (
     _parse_comment_kvs,
     compose_instruct,
     parse_frontmatter,

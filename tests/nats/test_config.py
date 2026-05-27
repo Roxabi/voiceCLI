@@ -1,4 +1,4 @@
-"""Tests for voicecli.nats.config resolvers (issues #49, #61).
+"""Tests for voicecli.adapters.nats.config resolvers (issues #49, #61).
 
 Covers:
   * _resolve_engine — CLI arg wins; VOICECLI_ENGINE > LYRA_TTS_ENGINE > toml > DEFAULT_ENGINE;
@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    from voicecli.nats.config import (
+    from voicecli.adapters.nats.config import (
         DEFAULT_ENGINE,
         DEFAULT_MODEL,
         _resolve_engine,
@@ -30,7 +30,7 @@ except ImportError as _e:
 
 def _require_imports() -> None:
     if _IMPORT_ERROR is not None:
-        pytest.fail(f"voicecli.nats.config not yet implemented (RED): {_IMPORT_ERROR}")
+        pytest.fail(f"voicecli.adapters.nats.config not yet implemented (RED): {_IMPORT_ERROR}")
 
 
 class TestResolveEngine:
@@ -98,7 +98,7 @@ class TestResolveEngine:
         monkeypatch.delenv("VOICECLI_ENGINE", raising=False)
         monkeypatch.delenv("LYRA_TTS_ENGINE", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_tts_config",
+            "voicecli.core.config.load_tts_config",
             lambda: {"default_engine": "toml-engine"},
         )
 
@@ -114,7 +114,7 @@ class TestResolveEngine:
         monkeypatch.delenv("VOICECLI_ENGINE", raising=False)
         monkeypatch.delenv("LYRA_TTS_ENGINE", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_tts_config",
+            "voicecli.core.config.load_tts_config",
             lambda: {"default_engine": None},
         )
 
@@ -135,7 +135,7 @@ class TestResolveEngine:
         def _raise():
             raise RuntimeError("config file not found")
 
-        monkeypatch.setattr("voicecli.config.load_tts_config", _raise)
+        monkeypatch.setattr("voicecli.core.config.load_tts_config", _raise)
 
         # Act — must not raise; exception is swallowed
         result = _resolve_engine(None)
@@ -172,7 +172,7 @@ class TestResolveModel:
         # Arrange — no env var; load_config returns stt.model
         monkeypatch.delenv("VOICECLI_MODEL", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_config",
+            "voicecli.core.config.load_config",
             lambda: {"stt": {"model": "toml-model"}},
         )
 
@@ -187,7 +187,7 @@ class TestResolveModel:
         # Arrange — no env var; toml has no stt.model entry
         monkeypatch.delenv("VOICECLI_MODEL", raising=False)
         monkeypatch.setattr(
-            "voicecli.config.load_config",
+            "voicecli.core.config.load_config",
             lambda: {},
         )
 
@@ -207,7 +207,7 @@ class TestResolveModel:
         def _raise():
             raise RuntimeError("config file not found")
 
-        monkeypatch.setattr("voicecli.config.load_config", _raise)
+        monkeypatch.setattr("voicecli.core.config.load_config", _raise)
 
         # Act — must not raise; exception is swallowed
         result = _resolve_model(None)

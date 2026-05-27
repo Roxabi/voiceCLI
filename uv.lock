@@ -1696,7 +1696,7 @@ wheels = [
 [[package]]
 name = "roxabi-contracts"
 version = "0.4.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging#e99cc6adec4097929bdab9afed0c15c2bbf23724" }
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging#7a21ce8e1199147c083e5f65b0ed35cfddf6e892" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -1704,7 +1704,7 @@ dependencies = [
 [[package]]
 name = "roxabi-nats"
 version = "0.4.1"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging#e99cc6adec4097929bdab9afed0c15c2bbf23724" }
+source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging#7a21ce8e1199147c083e5f65b0ed35cfddf6e892" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
@@ -2204,7 +2204,6 @@ all = [
     { name = "nkeys" },
     { name = "nvidia-ml-py" },
     { name = "qwen-tts" },
-    { name = "roxabi-contracts" },
     { name = "roxabi-nats" },
     { name = "torch" },
     { name = "torchaudio" },
@@ -2216,7 +2215,6 @@ nats = [
     { name = "nats-py" },
     { name = "nkeys" },
     { name = "nvidia-ml-py" },
-    { name = "roxabi-contracts" },
     { name = "roxabi-nats" },
 ]
 overlay = [
@@ -2265,7 +2263,6 @@ requires-dist = [
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts", marker = "extra == 'tts'" },
-    { name = "roxabi-contracts", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging" },
     { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },

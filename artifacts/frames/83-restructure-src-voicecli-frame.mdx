@@ -1,0 +1,57 @@
+---
+title: Restructure src/voicecli/ into layer sub-packages
+issue: 83
+status: approved
+tier: F-full
+date: 2026-05-22
+---
+
+## Problem
+
+`src/voicecli/` has **37 top-level `.py` files** against a folder-size budget of **12** (`.claude/stack.yml` → `quality_gates.folder_size.max_files`). The breach has *grown* since issue creation (was 19), driven by file-length splits that landed siblings at the top level (e.g. `overlay.py` → `overlay_audio.py` + `overlay_draw.py`; `markdown.py` → `_markdown_directives.py` + `markdown_types.py`; `daemon.py` → `daemon_protocol.py` + `model_registry.py`).
+
+The architectural anchor — [ADR-003 — Axis of Decomposition](../../docs/architecture/adr/003-axis-of-decomposition.mdx) (`axial: true`) — declares the **layer** as the primary decomposition axis, with modality (TTS/STT) as the non-primary axis. Today's flat top-level mixes layers (cli, runtime, ports, adapters, ui) and modalities (stt_*, tts implied) in one directory, which both breaks the budget and erodes the discoverability of the layer boundary.
+
+File-length aspect of the parent scope is **closed** (all five LOC offenders are now under budget); only the folder-size aspect remains and has regressed.
+
+## Who
+
+- **Primary:** voiceCLI maintainers + AI agents reading the codebase. A flat 37-file directory forces every reader to scan top-level filenames to infer architecture; a layer-named sub-package layout lets a reader (or `ls`) answer "where does X live" by layer name.
+- **Secondary:** the quality-gate system itself — folder-size budget exists to prevent exactly this drift; an exemption row would silently disable it.
+
+## Constraints
+
+- **ADR-003 axial constraint:** sub-packages MUST be **layer-named** (`ports/`, `adapters/`, `runtime/`, `ui/`, `cli/`), ¬modality-named (`tts/`, `stt/` as siblings holding the same concerns). axial-adr-review will flag any new file matching `src/voicecli/**/[^/]*(tts|stt|sts)[^/]*\.py` at sibling-axis position.
+- **Public API stable:** `from voicecli import generate, clone, transcribe` MUST continue to work. Re-exports via `voicecli/__init__.py` only — no callers updated.
+- **Engine registry intact:** `voicecli.engine._get_registry()` must still discover all engines after moves.
+- **Quality gates:** `tools/file_exemptions.txt` + `tools/folder_exemptions.txt` rows pointing to #83 MUST be removed in the same PR (¬left behind).
+- **CHANGELOG:** any `from voicecli.<module> import …` paths that move MUST be documented.
+- **Deploy paths:** `deploy/Dockerfile.tts`, `deploy/Dockerfile.stt`, `deploy/entrypoint.sh`, Quadlet units — any references to internal module paths must be re-checked.
+
+## Out of Scope
+
+- Renaming or merging engines (already extracted into `voicecli.engines/`).
+- Behavior changes — pure restructure, ¬functional refactor.
+- New abstractions or feature flags ("backwards-compat shims" beyond the `__init__.py` re-exports).
+- Touching `nats/`, `ports/`, `adapters/`, `engines/` — already layer-shaped; ¬churn them.
+- Modality-axis sub-packages (anti-pattern per ADR-003).
+
+## Premise Validity
+
+**Success in 6 months:** `src/voicecli/` top-level stays ≤12 files; adding a new module lands in a layer sub-package by default (¬top-level); new contributors describe the layout from `ls src/voicecli/` without consulting docs.
+
+**Failure in 6 months:** top-level file count drifts back above 12 within 6 months despite the folder-size gate (i.e. exemptions get added rather than packages); OR import-shim cruft (`from voicecli.X import …` shims at module bodies) is still present after 6 months instead of being removed.
+
+**Simplest alternative:** keep top-level flat + raise `folder_size.max_files` from 12 → 40 (∨ add a folder exemption row for `src/voicecli/`).
+**Why not simplest:** defeats the whole point of the budget — silently accepts the N×M trap ADR-003 was written to prevent; signals to future contributors that flat is fine; loses the layer axis as a discoverability anchor; quality gate becomes a rubber stamp.
+
+## Complexity
+
+**Tier: F-full** — single domain (backend restructure), but wide blast radius across ~37 modules, all test imports, deploy entrypoints, and docs; ADR-003 axial constraint adds a hard correctness check; analyze step is genuinely useful to enumerate per-module target layer + import-shim strategy before specing.
+
+Signals observed:
+- 37 files to move across 5–7 candidate layer packages.
+- Imports referenced across `tests/`, `deploy/`, `docs/`, plugin SKILL.md files.
+- Hard ADR-003 review check (axial-adr-review) at PR time.
+- Multiple existing sub-packages (`engines/`, `nats/`, `ports/`, `adapters/`) interact with the moves; risk of accidental cross-axis duplication.
+- Parent #79 closed (quality-gate seed merged) — runway clear.

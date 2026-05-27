@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from voicecli.api_chunked import clone_chunked, generate_chunked, write_done
+from voicecli.api.chunked import clone_chunked, generate_chunked, write_done
 
 
 def test_generate_chunked_returns_three_chunk_paths(tmp_path):
@@ -12,7 +12,7 @@ def test_generate_chunked_returns_three_chunk_paths(tmp_path):
     eng = MagicMock()
     eng.generate.side_effect = lambda text, voice, p, **kw: p.write_bytes(b"\x00") or p
 
-    with patch("voicecli.utils.smart_chunk", return_value=["a", "b", "c"]):
+    with patch("voicecli.core.utils.smart_chunk", return_value=["a", "b", "c"]):
         paths = generate_chunked(
             eng,
             "abc",
@@ -39,7 +39,7 @@ def test_clone_chunked_returns_three_chunk_paths(tmp_path):
     eng = MagicMock()
     eng.clone.side_effect = lambda text, ref, p, ref_text=None, **kw: p.write_bytes(b"\x00") or p
 
-    with patch("voicecli.utils.smart_chunk", return_value=["a", "b", "c"]):
+    with patch("voicecli.core.utils.smart_chunk", return_value=["a", "b", "c"]):
         paths = clone_chunked(
             eng,
             "abc",

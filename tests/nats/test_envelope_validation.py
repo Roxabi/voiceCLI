@@ -1,10 +1,10 @@
-"""Unit tests for voicecli.nats._validation (issue #147)."""
+"""Unit tests for voicecli.adapters.nats._validation (issue #147)."""
 
 from __future__ import annotations
 
 import pytest
 
-from voicecli.nats._validation import (
+from voicecli.adapters.nats._validation import (
     validate_stt_request,
     validate_tts_request,
 )

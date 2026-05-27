@@ -1,1 +1,1 @@
-{ "title": "ADRs", "pages": ["001-output-path-trust-model", "002-vram-model-management"] }
+{ "title": "ADRs", "pages": ["001-output-path-trust-model", "002-vram-model-management", "003-axis-of-decomposition"] }

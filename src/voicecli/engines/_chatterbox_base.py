@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voicecli.engine import TTSEngine
-from voicecli.utils import split_sentences
+from voicecli.engines.engine import TTSEngine
+from voicecli.core.utils import split_sentences
 
 if TYPE_CHECKING:
-    from voicecli.markdown import Segment
+    from voicecli.api.markdown import Segment
 
 
 class ChatterboxBase(TTSEngine):
@@ -55,7 +55,7 @@ class ChatterboxBase(TTSEngine):
         default_crossfade: int = 0,
     ) -> np.ndarray:
         """Generate audio per-segment with individual overrides, then concatenate."""
-        from voicecli.utils import concat_audio
+        from voicecli.core.utils import concat_audio
 
         all_wavs: list[np.ndarray] = []
         for i, seg in enumerate(segments):

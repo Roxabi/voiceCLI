@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from voicecli.config import apply_nats_env_from_config, load_nats_config
+from voicecli.core.config import apply_nats_env_from_config, load_nats_config
 
 
 def _write_toml(tmp_path: Path, body: str) -> Path:
@@ -48,7 +48,7 @@ class TestLoadNatsConfig:
     def test_no_config_file_returns_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force _find_config to find nothing so the test isn't perturbed by a
         # real voicecli.toml in the dev's home directory.
-        monkeypatch.setattr("voicecli.config._find_config", lambda: None)
+        monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
         result = load_nats_config(None)
         assert result["max_cached_engines"] == 2
         assert "url" not in result

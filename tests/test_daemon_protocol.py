@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from voicecli.daemon_protocol import recv_json
+from voicecli.runtime.wire_protocol import recv_json
 
 
 class _FakeSock:
@@ -60,7 +60,7 @@ def test_recv_json_default_cap_is_finite():
     assert isinstance(default, int) or default is None, "max_msg default must be int or None"
     # The task says DEFAULT_MAX_MSG will be introduced; assert on it if present.
     try:
-        from voicecli.daemon_protocol import DEFAULT_MAX_MSG  # type: ignore[attr-defined]
+        from voicecli.runtime.wire_protocol import DEFAULT_MAX_MSG  # type: ignore[attr-defined]
 
         assert isinstance(DEFAULT_MAX_MSG, int)
         assert DEFAULT_MAX_MSG > 0

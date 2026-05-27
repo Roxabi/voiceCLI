@@ -129,7 +129,7 @@ class TestConcurrentGenerate:
         tight per-call deadline verified via wall-clock.
         """
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-concurrent.sock"
         mock_engine = _make_mock_engine(delay=0.5)  # 500 ms per synthesis
@@ -220,7 +220,7 @@ class TestPingFastPath:
         be >> 50 ms.
         """
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-ping.sock"
 
@@ -296,7 +296,7 @@ class TestErrorIsolation:
         to timeout this test will fail, proving the queue is necessary.
         """
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-error.sock"
 
@@ -380,7 +380,7 @@ class TestValidationErrors:
     def test_unknown_action(self, tmp_path):
         """Unknown action returns status=error with 'Unknown' in the message."""
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-val-unknown.sock"
         mock_engine = _make_mock_engine()
@@ -404,7 +404,7 @@ class TestValidationErrors:
     def test_missing_engine(self, tmp_path):
         """Request without 'engine' returns status=error with 'engine' in the message."""
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-val-engine.sock"
         mock_engine = _make_mock_engine()
@@ -427,7 +427,7 @@ class TestValidationErrors:
     def test_missing_text(self, tmp_path):
         """Request without 'text' returns status=error with 'text' in the message."""
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-val-text.sock"
         mock_engine = _make_mock_engine()
@@ -450,7 +450,7 @@ class TestValidationErrors:
     def test_clone_without_ref_audio(self, tmp_path):
         """Clone action without ref_audio returns status=error with 'ref_audio' in the message."""
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-val-clone.sock"
         mock_engine = _make_mock_engine()
@@ -474,7 +474,7 @@ class TestValidationErrors:
     def test_malformed_json_daemon_survives(self, tmp_path):
         """Daemon survives a malformed JSON payload — next ping still returns status=ok."""
         # Arrange
-        import voicecli.daemon as daemon_mod
+        import voicecli.runtime.daemon as daemon_mod
 
         sock_path = tmp_path / "tts-val-json.sock"
         mock_engine = _make_mock_engine()

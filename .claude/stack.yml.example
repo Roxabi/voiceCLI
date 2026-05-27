@@ -1,6 +1,4 @@
 # .claude/stack.yml — dev-core stack configuration
-# DO NOT commit this file. Add .claude/stack.yml to .gitignore.
-# Commit .claude/stack.yml.example instead.
 schema_version: "1.0"
 
 runtime: python
@@ -23,15 +21,19 @@ build:
 testing:
   unit: pytest
 
+lsp:
+  enabled: true
+  server: pyright
+
 deploy:
-  platform: none
+  platform: quadlet
 
 commands:
   dev: uv run voicecli
   test: uv run pytest
   lint: uv run ruff check .
   format: uv run ruff format .
-  typecheck: uv run ruff check --select=PYI .
+  typecheck: uv run pyright
   install: uv sync
 
 artifacts:
@@ -60,3 +62,7 @@ quality_gates:
   import_layers:
     enabled: true
     stage: pre-push
+  duplicate_test_basenames:
+    enabled: true
+    script: tools/check_duplicate_test_basenames.sh
+    source: pyproject.toml [tool.pytest.ini_options].testpaths

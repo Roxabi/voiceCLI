@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from voicecli.engines.chatterbox import ChatterboxEngine
 from voicecli.engines.chatterbox_turbo import ChatterboxTurboEngine
-from voicecli.markdown_types import Segment
+from voicecli.api.markdown_types import Segment
 
 
 def _seg(language: str | None = None) -> Segment:

@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from voicecli import nats_recorder
+from voicecli.ui import nats_mic_recorder
 
 
 def test_start_recording_error_includes_log_path(tmp_path: Path) -> None:
@@ -29,16 +29,16 @@ def test_start_recording_error_includes_log_path(tmp_path: Path) -> None:
     fake_proc.pid = 99999
 
     with (
-        patch.object(nats_recorder, "STATE_DIR", fake_state_dir),
-        patch.object(nats_recorder, "STATE_FILE", fake_state_file),
-        patch.object(nats_recorder, "LOG_DIR", fake_log_dir),
-        patch.object(nats_recorder, "RECORDER_LOG", fake_log_dir / "recorder.log"),
-        patch.object(nats_recorder, "is_recording", return_value=False),
+        patch.object(nats_mic_recorder, "STATE_DIR", fake_state_dir),
+        patch.object(nats_mic_recorder, "STATE_FILE", fake_state_file),
+        patch.object(nats_mic_recorder, "LOG_DIR", fake_log_dir),
+        patch.object(nats_mic_recorder, "RECORDER_LOG", fake_log_dir / "recorder.log"),
+        patch.object(nats_mic_recorder, "is_recording", return_value=False),
         patch("subprocess.Popen", return_value=fake_proc),
         patch("time.sleep"),  # skip the 100 ms poll sleeps
     ):
         # Act: state file never gets written → poll loop exhausts → error
-        result = nats_recorder.start_recording(model="large-v3-turbo")
+        result = nats_mic_recorder.start_recording(model="large-v3-turbo")
 
     # Assert
     assert "error" in result

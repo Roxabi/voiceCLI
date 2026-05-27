@@ -233,14 +233,14 @@ def _run_adapter(case_name: str, payload: dict) -> bytes:
 
 
 async def _run_tts(payload: dict) -> bytes:
-    from voicecli.nats.tts_adapter import TtsNatsAdapter
+    from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 
     adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
     adapter._executor = _SyncExecutor()  # type: ignore[assignment]
     msg = _FakeMsg()
     _setup_adapter(adapter, msg)
 
-    with patch("voicecli.engine._get_registry", return_value={"mock": object()}):
+    with patch("voicecli.engines.engine._get_registry", return_value={"mock": object()}):
         await adapter.handle(msg, payload)
 
     assert msg._published, "No reply published by TTS adapter"
@@ -248,7 +248,7 @@ async def _run_tts(payload: dict) -> bytes:
 
 
 async def _run_stt(payload: dict) -> bytes:
-    from voicecli.nats.stt_adapter import SttNatsAdapter
+    from voicecli.adapters.nats.transcribe_adapter import SttNatsAdapter
 
     adapter = SttNatsAdapter(default_model="large-v3-turbo", max_concurrent=1)
     adapter._executor = _SyncExecutor()  # type: ignore[assignment]

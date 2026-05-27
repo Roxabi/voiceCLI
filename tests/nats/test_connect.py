@@ -66,9 +66,9 @@ class TestNkeyEnvVarResolution:
         monkeypatch.setenv("NATS_NKEY_SEED_PATH", str(seed_file))
 
         with (
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -91,9 +91,9 @@ class TestNkeyEnvVarResolution:
         monkeypatch.delenv("NATS_NKEY_SEED_PATH", raising=False)
 
         with (
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -116,7 +116,7 @@ class TestVramGuard:
 
         monkeypatch.setenv("NATS_URL", "nats://localhost:4222")
 
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="live"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="live"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
         assert result.exit_code == 78, result.output
@@ -132,9 +132,9 @@ class TestVramGuard:
         monkeypatch.setenv("NATS_URL", "nats://localhost:4222")
 
         with (
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="stale"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="stale"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ),
         ):
@@ -163,9 +163,9 @@ class TestSttConnect:
         monkeypatch.setenv("NATS_NKEY_SEED_PATH", str(seed_file))
 
         with (
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -189,7 +189,7 @@ class TestMissingNatsUrl:
 
         monkeypatch.delenv("NATS_URL", raising=False)
 
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
         assert result.exit_code == 2, result.output
@@ -204,7 +204,7 @@ class TestMissingNatsUrl:
 
         monkeypatch.delenv("NATS_URL", raising=False)
 
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
         assert result.exit_code == 2, result.output
@@ -225,7 +225,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
         # Assert
@@ -243,7 +243,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
         # Assert
@@ -261,7 +261,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "http://localhost:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
         # Assert
@@ -284,9 +284,9 @@ class TestNatsUrlSchemeValidation:
         # Act
         with (
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -314,9 +314,9 @@ class TestNatsUrlSchemeValidation:
         # Act
         with (
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.tts_adapter.TtsNatsAdapter.run",
+                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -344,9 +344,9 @@ class TestNatsUrlSchemeValidation:
         # Act
         with (
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
@@ -369,7 +369,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="live"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="live"):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
 
         # Assert — VRAM guard wins; scheme check is never reached
@@ -387,7 +387,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "ws://attacker.host:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="live"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="live"):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
         # Assert — VRAM guard wins; scheme check is never reached
@@ -405,7 +405,7 @@ class TestNatsUrlSchemeValidation:
         monkeypatch.setenv("NATS_URL", "http://localhost:4222")
 
         # Act
-        with patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"):
+        with patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
 
         # Assert
@@ -428,9 +428,9 @@ class TestNatsUrlSchemeValidation:
         # Act
         with (
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
-            patch("voicecli.nats.config._probe_socket_daemon", return_value="absent"),
+            patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.nats.stt_adapter.SttNatsAdapter.run",
+                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
                 new_callable=AsyncMock,
             ) as mock_run,
         ):
