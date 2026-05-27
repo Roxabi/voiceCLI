@@ -1,6 +1,6 @@
 """E2E round-trip tests for STT + TTS NATS satellites.
 
-Two test tiers:
+Three test tiers:
 
 1. ``test_nats_roundtrip`` — docker-compose stack (session-scoped fixtures);
    skips on machines without Docker. Tests the full satellite pipeline.
@@ -9,6 +9,11 @@ Two test tiers:
    Exercises the STT adapter + runner + BlobStore put→get hop using a shared
    FakeBlobStore injected via monkeypatch. Validates V2 contract: the adapter
    accepts a ``blob_ref`` payload, runner fetches bytes, returns ``text``.
+
+3. ``test_tts_roundtrip_via_fake_blobstore`` — in-process; no Docker, no NATS.
+   Exercises the TTS adapter + runner + BlobStore put hop. Engine writes WAV,
+   runner PUTs to FakeBlobStore, response carries ``blob_ref``. Validates V2
+   egress contract symmetrically with the STT case.
 """
 
 from __future__ import annotations
@@ -43,28 +48,42 @@ def test_nats_roundtrip(nkey_seed: tuple[Path, str], compose_stack: dict) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.stt
 def test_stt_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """STT adapter + runner V2 roundtrip: put→get via shared FakeBlobStore.
 
-    Simulates what transcribe_client.py does (put bytes → BlobRef) and what
-    the STT adapter + runner do (get bytes from BlobRef → transcribe → text).
+    Validates V2 BlobStore plumbing: the adapter accepts a ``blob_ref`` payload,
+    the runner fetches bytes via ``get_blobstore().get``, and ``api.transcribe``
+    runs against the fetched scoped_path. Both ends share the same
+    ``FakeBlobStore`` instance so the put→get hop is genuine.
 
-    Uses the same FakeBlobStore instance for both ends so put→get shares state,
-    exactly as the spec requires for in-process E2E (T13).
-
-    The VOICECLI_ENABLE_MOCK_ENGINE env var gates the mock Whisper engine that
-    returns a deterministic result without loading a real model.
+    ``api.transcribe`` is mocked so the test runs without ``faster_whisper``
+    installed — the point is the BlobStore plumbing, not the Whisper model.
     """
     # Arrange — shared FakeBlobStore
     fake_store = FakeBlobStore()
 
-    # Patch get_blobstore in both the blobs module (adapter + runner) and in
-    # transcribe_client so they all share the same in-memory store.
     monkeypatch.setattr(
         "voicecli.adapters.nats.blobs.get_blobstore",
         lambda: fake_store,
     )
+
+    # Mock api.transcribe so the test doesn't need faster_whisper installed.
+    # The runner imports `from voicecli import api` and calls api.transcribe(...)
+    # synchronously inside an executor. We capture what bytes the runner wrote
+    # (proving the put→get hop worked) and return a deterministic result.
+    captured_paths: list[Path] = []
+
+    def _fake_transcribe(audio_path, *args, **kwargs):
+        captured_paths.append(Path(audio_path))
+        from voicecli.runtime.transcribe import TranscriptionResult
+
+        return TranscriptionResult(
+            text="hello from fake",
+            language="en",
+            segments=[],
+        )
+
+    monkeypatch.setattr("voicecli.api.transcribe", _fake_transcribe)
 
     # Build a minimal silent WAV payload and PUT it into FakeBlobStore
     # (simulating what transcribe_client.transcribe_via_nats would do).
@@ -150,3 +169,104 @@ def test_stt_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.Mo
     assert blob_ref_obj.store_key in fake_store.get_calls, (
         "runner did not call BlobStore.get — blob_ref hop was skipped"
     )
+
+
+# ---------------------------------------------------------------------------
+# In-process TTS E2E via shared FakeBlobStore (no Docker, no NATS) — T18
+# ---------------------------------------------------------------------------
+
+
+def test_tts_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TTS adapter + runner V2 roundtrip: synthesize → put → blob_ref.
+
+    Symmetric with the STT case: ``api.generate`` is mocked to write a stub
+    WAV; runner PUTs bytes to FakeBlobStore; adapter builds TtsResponse with
+    ``blob_ref``. No bytes-fetch hop on the TTS side — the consumer (lyra
+    subscriber) does the get later.
+    """
+    # Arrange — shared FakeBlobStore
+    fake_store = FakeBlobStore()
+    monkeypatch.setattr(
+        "voicecli.adapters.nats.blobs.get_blobstore",
+        lambda: fake_store,
+    )
+
+    # Build a minimal but valid silent WAV (runner reads it via wave.open for duration).
+    import io
+    import wave
+
+    _wav_buf = io.BytesIO()
+    with wave.open(_wav_buf, "wb") as _wf:
+        _wf.setnchannels(1)
+        _wf.setsampwidth(2)
+        _wf.setframerate(22050)
+        _wf.writeframes(b"\x00\x00" * 100)
+    minimal_wav = _wav_buf.getvalue()
+
+    # Register a mock engine in the registry so adapter's _engine_available check passes.
+    # The adapter imports _get_registry fresh from voicecli.engines.engine on each check,
+    # so we patch the module attribute (mirrors test_tts_adapter.py convention).
+    class _FakeEngine:
+        name = "mock"
+
+        def generate(self, text: str, voice, output_path: Path, **kwargs) -> Path:
+            Path(output_path).write_bytes(minimal_wav)
+            return output_path
+
+    monkeypatch.setattr(
+        "voicecli.engines.engine._get_registry",
+        lambda: {"mock": _FakeEngine},
+    )
+
+    # Mock api.generate (runner-level) to write the same minimal WAV.
+    def _fake_generate(text: str, *, engine: str, output: Path, **kwargs):
+        Path(output).write_bytes(minimal_wav)
+
+    monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+
+    # Build TtsRequest payload (V2 — text-only request, blob_ref comes back in response)
+    request_id = uuid.uuid4().hex
+    payload = {
+        "contract_version": "1",
+        "request_id": request_id,
+        "trace_id": "e2e-tts-trace-001",
+        "text": "hello world",
+        "engine": "mock",
+    }
+
+    # Import _fakes via its full path (tests/nats/ not on sys.path in e2e).
+    import importlib.util
+    from pathlib import Path as _Path
+
+    _fakes_path = _Path(__file__).parent.parent / "nats" / "_fakes.py"
+    _spec = importlib.util.spec_from_file_location("_fakes_e2e_tts", _fakes_path)
+    _fakes_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+    _spec.loader.exec_module(_fakes_mod)  # type: ignore[union-attr]
+    FakeMsg = _fakes_mod.FakeMsg
+    FakeNatsConn = _fakes_mod.FakeNatsConn
+
+    from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
+
+    adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+    msg = FakeMsg()
+    adapter._nc = FakeNatsConn(msg)
+
+    asyncio.run(adapter.handle(msg, payload))
+
+    # Assert response carries blob_ref (not audio_b64)
+    reply = msg.last_reply()
+    assert reply["ok"] is True, f"TTS roundtrip failed: {reply}"
+    assert reply["request_id"] == request_id
+    assert "audio_b64" not in reply, "V2 must not carry inline audio bytes"
+    assert "blob_ref" in reply
+    assert reply["blob_ref"]["store_key"].startswith("sha256:")
+    assert reply["blob_ref"]["mime"] == "audio/wav"
+
+    # Verify BlobStore.put was called with the synthesized WAV bytes
+    assert len(fake_store.put_calls) == 1
+    put_call = fake_store.put_calls[0]
+    assert put_call["mime"] == "audio/wav"
+    assert put_call["source"] == "voicecli"
+    # FakeBlobStore stores bytes under store_key in _blobs; assert hop content
+    stored = fake_store._blobs[put_call["store_key"]]
+    assert stored == minimal_wav
