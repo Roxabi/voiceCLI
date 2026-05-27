@@ -1,12 +1,18 @@
-"""Stub hub: publishes one TTS + one STT request, awaits replies, asserts ADR-044 schema."""
+"""Stub hub: publishes one TTS + one STT request, awaits replies, asserts ADR-044 schema.
+
+Also exposes FakeBlobStore — an in-memory async BlobStore for unit-level E2E tests
+that exercise the put→get hop without a real HTTP service.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import struct
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +22,93 @@ from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 
 TTS_REQUEST_SUBJECT = VOICE_SUBJECTS.tts_request
 STT_REQUEST_SUBJECT = VOICE_SUBJECTS.stt_request
+
+# ---------------------------------------------------------------------------
+# FakeBlobStore — in-memory, async, sha256-keyed
+# ---------------------------------------------------------------------------
+
+
+class FakeBlobStore:
+    """Dict-backed async BlobStore for in-process E2E testing.
+
+    Implements the same async interface as HttpBlobStore:
+    - put(data, *, mime, source, **_) → FakeBlobRef (duck-type with store_key)
+    - get(store_key) → bytes
+
+    Keys are sha256 hex digests of the stored bytes, prefixed "sha256:".
+    """
+
+    def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
+        self.put_calls: list[dict] = []
+        self.get_calls: list[str] = []
+
+    async def put(self, data: bytes, *, mime: str, source: str, **_: object) -> "_FakeBlobRef":
+        store_key = f"sha256:{hashlib.sha256(data).hexdigest()}"
+        self._blobs[store_key] = data
+        self.put_calls.append({"store_key": store_key, "mime": mime, "source": source})
+        return _FakeBlobRef(
+            store_key=store_key,
+            mime=mime,
+            size=len(data),
+            source=source,
+            content_hash=hashlib.sha256(data).hexdigest(),
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def get(self, store_key: str) -> bytes:
+        self.get_calls.append(store_key)
+        return self._blobs[store_key]
+
+
+class _FakeBlobRef:
+    """Minimal BlobRef duck-type returned by FakeBlobStore.put().
+
+    Mirrors the fields accessed by the runner and transcribe_client:
+    store_key, mime, size, source, content_hash, created_at.
+    Also supports model_dump(exclude=...) for the ContractsBlobRef bridge.
+    """
+
+    def __init__(
+        self,
+        *,
+        store_key: str,
+        mime: str,
+        size: int,
+        source: str,
+        content_hash: str,
+        created_at: datetime,
+    ) -> None:
+        self.store_key = store_key
+        self.mime = mime
+        self.size = size
+        self.source = source
+        self.content_hash = content_hash
+        self.created_at = created_at
+        self.id = None
+        self.is_sentinel = False
+
+    def model_dump(self, *, exclude: set | None = None) -> dict:
+        """Pydantic-compatible dump for ContractsBlobRef.model_validate()."""
+        d = {
+            "store_key": self.store_key,
+            "mime": self.mime,
+            "size": self.size,
+            "source": self.source,
+            "content_hash": self.content_hash,
+            "created_at": self.created_at,
+            "filename": None,
+            "platform_ref": None,
+            "platform_message_id": None,
+            "id": self.id,
+            "is_sentinel": self.is_sentinel,
+        }
+        if exclude:
+            for k in exclude:
+                d.pop(k, None)
+        return d
+
+
 REPLY_TIMEOUT = 30.0
 # Pre-built image: containers start in seconds, no inline uv sync.
 SUBSCRIBER_WAIT = 60.0
