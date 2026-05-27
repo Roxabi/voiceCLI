@@ -48,16 +48,15 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
-      - name: Install minimal e2e deps
-        # Host only drives docker compose + publishes via NATS client.
-        # Satellites install the full voicecli extra inside containers.
-        # roxabi-contracts pulled in for stub_hub's voice.SUBJECTS import (audit #162).
-        # roxabi-blobs pulled in for the in-process tests that exercise the
-        # BlobStore plumbing via monkeypatched FakeBlobStore (#144 T13, T18).
-        run: |
-          uv pip install --system pytest "nats-py>=2.6,<3" "nkeys>=0.1" \
-            "roxabi-contracts @ git+https://github.com/Roxabi/lyra.git@staging#subdirectory=packages/roxabi-contracts" \
-            "roxabi-blobs @ git+https://github.com/Roxabi/lyra.git@staging#subdirectory=packages/roxabi-blobs"
+      - name: Install e2e deps
+        # The in-process V2 tests (test_*_roundtrip_via_fake_blobstore, #144 T13/T18)
+        # import the real synthesize_adapter + transcribe_adapter, which pull
+        # roxabi_nats + roxabi_blobs + roxabi_contracts. Installing the editable
+        # nats extra is the cleanest way to get the full transitive set in one
+        # shot (no torch/whisper bloat — those live in other extras).
+        # Original docker tests still work — they only need pytest + the NATS
+        # client deps already inside the nats extra.
+        run: uv pip install --system pytest -e ".[nats]"
       - name: Seed-leak lint
         run: |
           if find tests/e2e/ \( -name '*.seed' -o -name '*.nk' \) | grep .; then
