@@ -7,13 +7,13 @@ No daemon, no heartbeats — just request/reply.
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from roxabi_contracts.blob_ref import BlobRef as ContractsBlobRef
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttRequest, SttResponse
@@ -60,16 +60,25 @@ async def transcribe_via_nats(
 
     try:
         request_id = str(uuid4())
-        audio_b64 = base64.b64encode(wav_bytes).decode("ascii")
+
+        from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
+
+        blobs_ref = await get_blobstore().put(
+            wav_bytes,
+            mime="audio/wav",
+            source="voicecli",
+        )
+        blob_ref = ContractsBlobRef.model_validate(
+            blobs_ref.model_dump(exclude={"id", "is_sentinel"})
+        )
 
         request = SttRequest(
             contract_version=CONTRACT_VERSION,
             trace_id=request_id,
             issued_at=datetime.now(timezone.utc),
             request_id=request_id,
-            audio_b64=audio_b64,
+            blob_ref=blob_ref,
             model=model,
-            mime_type="audio/wav",
             language=language,
             initial_prompt=initial_prompt,
             task=task,
