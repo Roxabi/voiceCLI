@@ -1,3 +1,4 @@
+# pyright: reportOptionalCall=false, reportInvalidTypeForm=false
 """Tests for SttNatsAdapter (V2 — BlobRef contract, issue #144 T12).
 
 All cases exercise the real SttNatsAdapter code.  api.transcribe is patched at
@@ -9,6 +10,11 @@ V2 changes vs V1:
 - Runner owns scoped-path creation; adapter receives scoped_path via 3-tuple.
 - ``audio_decode_failed`` error code replaced by ``audio_fetch_failed``.
 - ``payload_too_large`` / ``audio_decode_failed`` tests removed (no b64 path).
+
+Pyright directives at top: optional-import pattern (SttNatsAdapter = None when
+deps missing) is intentional — _require_imports() gates at runtime. Pyright
+can't narrow through the gate so we silence the resulting OptionalCall +
+InvalidTypeForm noise file-wide.
 """
 
 from __future__ import annotations
