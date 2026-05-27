@@ -37,7 +37,12 @@ from typing import Callable
 
 from roxabi_blobs import BlobRef
 
-from voicecli.adapters.nats._audio_utils import _duration_from_segments, _ext_from_mime
+from voicecli.adapters.nats._audio_utils import (
+    MAX_AUDIO_BYTES,
+    _duration_from_segments,
+    _ext_from_mime,
+)
+from voicecli.adapters.nats.blobs import BlobstoreConfigError
 
 log = logging.getLogger(__name__)
 
@@ -75,15 +80,47 @@ async def run_transcription(
     """
     from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
 
+    # Two-gate size cap: reject obviously-too-large payloads BEFORE the HTTP
+    # round-trip (cheap, trusts the remote-supplied size) and again AFTER
+    # download (defense against an under-reporting sender). Same byte budget as
+    # the pre-V2 audio_b64 pathway (MAX_AUDIO_BYTES from _audio_utils.py).
+    if blob_ref.size > MAX_AUDIO_BYTES:
+        log.warning(
+            "payload_too_large",
+            extra={
+                "request_id": request_id,
+                "blob_size": blob_ref.size,
+                "max": MAX_AUDIO_BYTES,
+            },
+        )
+        return (False, "payload_too_large", None)
+
     # Fetch audio bytes from BlobStore.
     try:
         wav_bytes = await get_blobstore().get(blob_ref.store_key)
+    except BlobstoreConfigError as e:
+        log.error(
+            "blobstore_init_failed",
+            extra={"request_id": request_id, "err": str(e)},
+        )
+        return (False, "blobstore_not_configured", None)
     except Exception as e:  # noqa: BLE001
         log.warning(
             "blobstore_get_failed",
             extra={"request_id": request_id, "err": str(e)},
         )
         return (False, "audio_fetch_failed", None)
+
+    if len(wav_bytes) > MAX_AUDIO_BYTES:
+        log.warning(
+            "payload_too_large",
+            extra={
+                "request_id": request_id,
+                "actual_bytes": len(wav_bytes),
+                "max": MAX_AUDIO_BYTES,
+            },
+        )
+        return (False, "payload_too_large", None)
 
     # Runner owns scoped-path creation: derive ext from blob_ref.mime.
     ext = _ext_from_mime(blob_ref.mime)

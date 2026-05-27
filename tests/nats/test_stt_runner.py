@@ -424,6 +424,48 @@ class TestRunTranscriptionBlobStoreFailure:
         assert error_code == "audio_fetch_failed"
         assert transcribe_calls == [], "api.transcribe must not be called on BlobStore failure"
 
+    def test_blobstore_config_error_logs_blobstore_init_failed(
+        self, tmp_path: Path, monkeypatch, caplog
+    ) -> None:
+        """SC-test-4: a raising backend factory (BlobstoreConfigError) →
+        runner logs ``blobstore_init_failed`` and returns
+        ``(False, 'blobstore_not_configured', None)``.
+
+        This distinguishes a misconfigured satellite (env var missing, ADR-068
+        violation) from a transient network/storage failure
+        (``blobstore_get_failed`` / ``audio_fetch_failed``).
+        """
+        # Arrange — make get_blobstore() raise BlobstoreConfigError on call
+        from voicecli.adapters.nats import blobs
+
+        def _raising_factory():
+            raise blobs.BlobstoreConfigError("BLOBSTORE_URL not set")
+
+        monkeypatch.setattr("voicecli.adapters.nats.blobs.get_blobstore", _raising_factory)
+        state = _make_state(model_warm=True)
+
+        # Act
+        with caplog.at_level("ERROR"):
+            ok, error_code, scoped_path = _run(
+                run_transcription(
+                    state,
+                    "large-v3-turbo",
+                    _make_blob_ref(),
+                    "req-cfgfail",
+                    tmp_path,
+                    {},
+                    trace_id="t-cfg",
+                )
+            )
+
+        # Assert — structured error code, scoped_path None, log emitted
+        assert ok is False
+        assert error_code == "blobstore_not_configured"
+        assert scoped_path is None
+        assert any("blobstore_init_failed" in r.message for r in caplog.records), (
+            f"expected 'blobstore_init_failed' log record; got {[r.message for r in caplog.records]}"
+        )
+
 
 # ===========================================================================
 # TestRunTranscriptionModelLoad

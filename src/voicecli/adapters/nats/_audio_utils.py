@@ -18,6 +18,12 @@ log = logging.getLogger(__name__)
 # Safety cap to prevent memory blowup from crafted or misrouted large payloads.
 MAX_AUDIO_B64_LEN = 25 * 1024 * 1024  # 25 MB
 
+# Raw bytes cap for BlobRef payloads (post-V2 BlobStore.get path). Matches the
+# per-request memory budget the satellite was sized for (RTX 3080, 10 GB VRAM,
+# shared with TTS daemon). Enforced at two gates: pre-fetch on blob_ref.size
+# and post-fetch on the materialised buffer length.
+MAX_AUDIO_BYTES = 25 * 1024 * 1024  # 25 MB
+
 _MIME_TO_EXT: dict[str, str] = {
     "audio/wav": "wav",
     "audio/x-wav": "wav",

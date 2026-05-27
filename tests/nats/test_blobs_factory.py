@@ -2,8 +2,8 @@
 
 Covers the public contract of the module-level singleton factory:
 - Singleton caching: consecutive calls return the same instance.
-- ADR-068 enforcement: non-'http' backend raises ValueError mentioning ADR-068.
-- Missing env vars: absent BLOBSTORE_URL / BLOBSTORE_BEARER_TOKEN raise KeyError.
+- ADR-068 enforcement: non-'http' backend raises BlobstoreConfigError mentioning ADR-068.
+- Missing env vars: absent BLOBSTORE_URL / BLOBSTORE_BEARER_TOKEN raise BlobstoreConfigError.
 
 Every test resets blobs._INSTANCE via an autouse fixture to prevent
 cross-test pollution from the module-level cache.
@@ -126,7 +126,7 @@ class TestADR068Enforcement:
     def test_flat_fs_backend_raises_value_error_mentioning_adr068(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """BLOBSTORE_BACKEND='flat-fs' must raise ValueError naming ADR-068.
+        """BLOBSTORE_BACKEND='flat-fs' must raise BlobstoreConfigError naming ADR-068.
 
         Negative-test: if the guard ('if backend != "http"') is removed from
         get_blobstore(), this test fails — the guard is load-bearing.
@@ -135,7 +135,7 @@ class TestADR068Enforcement:
         monkeypatch.setenv("BLOBSTORE_BACKEND", "flat-fs")
 
         # Act + Assert
-        with pytest.raises(ValueError, match="ADR-068"):
+        with pytest.raises(blobs.BlobstoreConfigError, match="ADR-068"):
             blobs.get_blobstore()
 
     def test_empty_backend_raises_value_error_mentioning_adr068(
@@ -150,7 +150,7 @@ class TestADR068Enforcement:
         monkeypatch.delenv("BLOBSTORE_BACKEND", raising=False)
 
         # Act + Assert
-        with pytest.raises(ValueError, match="ADR-068"):
+        with pytest.raises(blobs.BlobstoreConfigError, match="ADR-068"):
             blobs.get_blobstore()
 
     def test_arbitrary_non_http_backend_raises_value_error(
@@ -161,7 +161,7 @@ class TestADR068Enforcement:
         monkeypatch.setenv("BLOBSTORE_BACKEND", "local-disk")
 
         # Act + Assert
-        with pytest.raises(ValueError, match="ADR-068"):
+        with pytest.raises(blobs.BlobstoreConfigError, match="ADR-068"):
             blobs.get_blobstore()
 
 
@@ -172,11 +172,13 @@ class TestADR068Enforcement:
 
 class TestMissingEnvVars:
     @pytest.mark.usefixtures("_fake_http_blobstore")
-    def test_missing_blobstore_url_raises_key_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """BLOBSTORE_URL absent → KeyError.
+    def test_missing_blobstore_url_raises_config_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BLOBSTORE_URL absent → BlobstoreConfigError naming the missing var.
 
-        os.environ["BLOBSTORE_URL"] raises KeyError when the key does not exist;
-        get_blobstore() must not swallow it.
+        get_blobstore() catches the underlying KeyError and re-raises as a typed
+        BlobstoreConfigError so callers can distinguish config vs network failure.
         """
         # Arrange
         monkeypatch.setenv("BLOBSTORE_BACKEND", "http")
@@ -184,14 +186,14 @@ class TestMissingEnvVars:
         monkeypatch.setenv("BLOBSTORE_BEARER_TOKEN", "tok")
 
         # Act + Assert
-        with pytest.raises(KeyError):
+        with pytest.raises(blobs.BlobstoreConfigError, match="BLOBSTORE_URL"):
             blobs.get_blobstore()
 
     @pytest.mark.usefixtures("_fake_http_blobstore")
-    def test_missing_blobstore_bearer_token_raises_key_error(
+    def test_missing_blobstore_bearer_token_raises_config_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """BLOBSTORE_BEARER_TOKEN absent → KeyError.
+        """BLOBSTORE_BEARER_TOKEN absent → BlobstoreConfigError naming the missing var.
 
         Symmetric to the URL test — both env vars are mandatory for http backend.
         """
@@ -201,5 +203,5 @@ class TestMissingEnvVars:
         monkeypatch.delenv("BLOBSTORE_BEARER_TOKEN", raising=False)
 
         # Act + Assert
-        with pytest.raises(KeyError):
+        with pytest.raises(blobs.BlobstoreConfigError, match="BLOBSTORE_BEARER_TOKEN"):
             blobs.get_blobstore()

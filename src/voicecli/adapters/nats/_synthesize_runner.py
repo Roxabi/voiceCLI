@@ -168,14 +168,24 @@ async def run_synthesis(
         duration_ms = wav_duration_ms(out_path)
         waveform_b64 = wav_waveform_b64(out_path)
 
-        from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
+        from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+            BlobstoreConfigError,
+            blob_ref_to_contract,
+            get_blobstore,
+        )
 
         try:
-            blob_ref = await get_blobstore().put(
+            blobs_ref = await get_blobstore().put(
                 out_path.read_bytes(),
                 mime="audio/wav",
                 source="voicecli",
             )
+        except BlobstoreConfigError as e:
+            log.error(
+                "blobstore_init_failed",
+                extra={"request_id": request_id, "err": str(e)},
+            )
+            return False, "blobstore_not_configured"
         except Exception as e:
             log.warning(
                 "blobstore_put_failed",
@@ -183,10 +193,11 @@ async def run_synthesis(
             )
             return False, "audio_store_failed"
 
+        # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef via the helper
+        # centralised in blobs.py (single source of truth for the producer-only
+        # field exclusion set).
         fields: dict[str, Any] = {
-            # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef: drop the
-            # producer-only fields the contract rejects (extra="forbid").
-            "blob_ref": blob_ref.model_dump(exclude={"id", "is_sentinel"}),
+            "blob_ref": blob_ref_to_contract(blobs_ref).model_dump(),
             "mime_type": "audio/wav",
             "duration_ms": duration_ms,
         }

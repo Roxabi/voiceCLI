@@ -208,7 +208,7 @@ Slices land **atomically in one PR** (atomic-merge constraint with lyra#1067 —
 - [ ] STT adapter test (`tests/nats/test_stt_adapter.py`) passes with `BlobStore.get` mock.
 - [ ] TTS adapter test (`tests/nats/test_tts_adapter.py`) passes with `BlobStore.put` mock.
 - [ ] E2E roundtrip test (`tests/e2e/test_nats_roundtrip.py`) passes against in-memory `BlobStore` backend.
-- [ ] Adapter startup logs `blobstore_init_failed` when `get_blobstore()` raises, verified by a unit test that injects a raising backend factory.
+- [ ] First-request init failure logs `blobstore_init_failed` when `get_blobstore()` raises `BlobstoreConfigError` (lazy-first-call pattern per `engine.py:_get_registry()` — `get_blobstore()` is intentionally not invoked from upstream `roxabi_nats` adapter `__aenter__` per line 176). Verified by `test_stt_runner.test_blobstore_config_error_logs_blobstore_init_failed` + `test_tts_runner.test_blobstore_config_error_logs_blobstore_init_failed`, which inject a raising backend factory and assert both the log record and the structured `blobstore_not_configured` error code. Install-time empty-token guard in `deploy/install.sh` catches the most common misconfig before first request.
 - [ ] Golden wire-compat fixtures (`tests/nats/test_golden_wire_compat.py`) regenerated for V2; old `audio_b64` golden bytes deleted (not retained as fallback).
 
 ### Quality gates
@@ -228,7 +228,7 @@ Slices land **atomically in one PR** (atomic-merge constraint with lyra#1067 —
 | `BlobStore.get` returns `None` / raises | Return `(False, "audio_fetch_failed")` from runner; adapter publishes error response with same envelope shape as today's `audio_decode_failed` |
 | `BlobStore.put` raises after engine succeeded | Return `(False, "audio_store_failed")` from runner; engine output discarded with tempfile (existing scoped-cleanup path) |
 | `blob_ref` field missing on incoming `SttRequest` | `MalformedRequestError("blob_ref must be a BlobRef")` — same path as current `audio_b64` validation |
-| BlobStore backend unreachable at adapter startup | Adapter `__aenter__` raises → systemd restart loop (Quadlet `RestartSec=10`) — surface in logs as `blobstore_init_failed` |
+| BlobStore misconfigured (env var missing / ADR-068 violation) | First-request `get_blobstore()` raises `BlobstoreConfigError` → runner logs `blobstore_init_failed` and replies `blobstore_not_configured` (per-request, not satellite-fatal). Operator catches at install-time via `deploy/install.sh` empty-token guard. Network unreachable falls through to `audio_fetch_failed` / `audio_store_failed`. |
 | Concurrent satellite + local CLI on same host | BlobStore client is process-local; no shared state with local CLI; CLI does not consume BlobStore |
 | Existing in-flight `audio_b64` messages at deploy time | No backwards compat — atomic deploy with lyra side; in-flight V1 messages get `MalformedRequestError` and are dead-lettered (acceptable per atomic-landing decision) |
 | RTX 3080 VRAM contention | Unchanged — BlobStore is CPU/disk only. No new VRAM cost. |

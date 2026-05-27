@@ -2,12 +2,18 @@
 
 Also exposes FakeBlobStore — an in-memory async BlobStore for unit-level E2E tests
 that exercise the put→get hop without a real HTTP service.
+
+V2 wire shape (post #144): TTS reply carries ``blob_ref`` (not ``audio_b64``);
+STT request carries ``blob_ref`` instead of ``audio_b64``. ``_run()`` uses the
+in-process ``FakeBlobStore`` for the STT request side. The TTS reply blob_ref
+is asserted structurally — the docker satellite would PUT into a real BlobStore
+that this stub does not provide (deferred until lyra#1067 lands a compose
+BlobStore service).
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import struct
@@ -148,7 +154,7 @@ def _silent_wav_bytes() -> bytes:
     return header + bytes(data_size)
 
 
-_SILENT_WAV_B64 = base64.b64encode(_silent_wav_bytes()).decode("ascii")
+_SILENT_WAV_BYTES = _silent_wav_bytes()
 
 
 async def _round_trip(nc: Any, subject: str, payload: dict) -> dict:
@@ -171,14 +177,14 @@ async def _round_trip(nc: Any, subject: str, payload: dict) -> dict:
 
 
 def _assert_reply(reply: dict, request_id: str, payload_key: str) -> None:
-    """Assert ADR-044 reply envelope fields.
+    """Assert ADR-044 reply envelope fields (V2 wire shape).
 
     Checks:
     - contract_version == "1"
     - request_id echoed back
     - ok is True
     - payload_key present and non-None
-    - If payload_key == "audio_b64": decoded bytes start with b"RIFF"
+    - If payload_key == "blob_ref": dict has store_key with sha256 prefix
     """
     assert reply.get("contract_version") == "1", f"contract_version mismatch. full reply: {reply}"
     assert reply.get("request_id") == request_id, (
@@ -188,15 +194,21 @@ def _assert_reply(reply: dict, request_id: str, payload_key: str) -> None:
     assert payload_key in reply and reply[payload_key] is not None, (
         f"payload_key {payload_key!r} missing or None. full reply: {reply}"
     )
-    if payload_key == "audio_b64":
-        decoded = base64.b64decode(reply["audio_b64"])
-        assert decoded[:4] == b"RIFF", (
-            f"audio_b64 does not decode to a WAV (missing RIFF header). full reply: {reply}"
+    if payload_key == "blob_ref":
+        blob_ref = reply["blob_ref"]
+        assert isinstance(blob_ref, dict), f"blob_ref is not a dict: {blob_ref!r}"
+        store_key = blob_ref.get("store_key", "")
+        assert isinstance(store_key, str) and store_key.startswith("sha256:"), (
+            f"blob_ref.store_key must be 'sha256:<hex>'; got {store_key!r}"
         )
 
 
 async def _run(seed_path: Path, nats_url: str) -> None:
-    """Connect to NATS, send one TTS + one STT request, assert both replies."""
+    """Connect to NATS, send one TTS + one STT request, assert both replies.
+
+    V2 wire shape: STT carries blob_ref (PUT into the in-process FakeBlobStore
+    on the requester side); TTS reply is asserted to carry blob_ref.
+    """
     nc = await nats.connect(
         servers=nats_url,
         nkeys_seed=str(seed_path),
@@ -212,15 +224,21 @@ async def _run(seed_path: Path, nats_url: str) -> None:
             "engine": "mock",
         }
         tts_reply = await _round_trip(nc, TTS_REQUEST_SUBJECT, tts_payload)
-        _assert_reply(tts_reply, tts_request_id, "audio_b64")
+        _assert_reply(tts_reply, tts_request_id, "blob_ref")
 
         # --- STT round-trip ---
+        # PUT the WAV into a local FakeBlobStore and forward the resulting
+        # blob_ref. A real lyra-side satellite would GET via the BlobStore
+        # service in the compose stack (provided once lyra#1067 lands).
+        fake_store = FakeBlobStore()
+        stt_blob_ref = await fake_store.put(
+            _SILENT_WAV_BYTES, mime="audio/wav", source="voicecli-stub-hub"
+        )
         stt_request_id = uuid.uuid4().hex
         stt_payload = {
             "contract_version": "1",
             "request_id": stt_request_id,
-            "audio_b64": _SILENT_WAV_B64,
-            "mime_type": "audio/wav",
+            "blob_ref": stt_blob_ref.model_dump(exclude={"id", "is_sentinel"}),
             "model": "mock",
         }
         stt_reply = await _round_trip(nc, STT_REQUEST_SUBJECT, stt_payload)

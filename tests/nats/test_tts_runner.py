@@ -372,6 +372,46 @@ class TestRunSynthesisBlobStorePutFailure:
             "deleting the inner blobstore guard would yield 'synthesis_failed'"
         )
 
+    def test_blobstore_config_error_logs_blobstore_init_failed(
+        self, tmp_path: Path, fake_api: _FakeApi, monkeypatch, caplog
+    ) -> None:
+        """SC-test-4 (TTS side): a raising backend factory
+        (``BlobstoreConfigError``) → runner logs ``blobstore_init_failed`` and
+        returns ``(False, 'blobstore_not_configured')``.
+
+        Symmetric with the STT runner test. Distinguishes a misconfigured
+        satellite (ADR-068 violation, missing env var) from a transient PUT
+        failure (``audio_store_failed``).
+        """
+        # Arrange — engine succeeds (writes the WAV), then get_blobstore() raises
+        from voicecli.adapters.nats import blobs
+
+        def _raising_factory():
+            raise blobs.BlobstoreConfigError("BLOBSTORE_BEARER_TOKEN not set")
+
+        monkeypatch.setattr("voicecli.adapters.nats.blobs.get_blobstore", _raising_factory)
+        out_path = tmp_path / "req-cfgfail.wav"
+        wav_bytes = _make_silent_wav_bytes()
+
+        def _behavior(text, *, engine, output, **kw):
+            output.write_bytes(wav_bytes)
+
+        fake_api._behavior = _behavior
+        state = _make_state()
+
+        # Act
+        with caplog.at_level("ERROR"):
+            ok, error_code = _run(
+                run_synthesis(state, {}, "req-cfgfail", "Hello", "mock", out_path, trace_id="t-cfg")
+            )
+
+        # Assert — structured error code + log emitted
+        assert ok is False
+        assert error_code == "blobstore_not_configured"
+        assert any("blobstore_init_failed" in r.message for r in caplog.records), (
+            f"expected 'blobstore_init_failed' log; got {[r.message for r in caplog.records]}"
+        )
+
     def test_put_raises_does_not_call_put_twice(
         self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
     ) -> None:

@@ -84,28 +84,50 @@ async def synthesize_via_nats(
         )
 
         payload = request.model_dump_json(exclude_none=True).encode("utf-8")
-        reply = await nc.request(SUBJECT, payload, timeout=timeout)
+        try:
+            reply = await nc.request(SUBJECT, payload, timeout=timeout)
+        except asyncio.TimeoutError:
+            log.warning("NATS TTS request timed out after %ss", timeout)
+            return {"error": f"request timed out after {timeout}s"}
+
         tts_response = TtsResponse.model_validate_json(reply.data)
 
-        if tts_response.ok:
-            assert tts_response.blob_ref is not None, "V2 contract requires blob_ref"
-            assert tts_response.mime_type is not None
-            assert tts_response.duration_ms is not None
-            # Fetch the synthesized audio bytes from the BlobStore (V2 contract).
-            from voicecli.adapters.nats.blobs import get_blobstore  # noqa: PLC0415
-
-            audio_bytes = await get_blobstore().get(tts_response.blob_ref.store_key)
-            return {
-                "audio": audio_bytes,
-                "mime_type": tts_response.mime_type,
-                "duration_ms": tts_response.duration_ms,
-            }
-        else:
+        if not tts_response.ok:
             return {"error": tts_response.error or "synthesis failed"}
 
-    except asyncio.TimeoutError:
-        log.warning("NATS TTS request timed out after %ss", timeout)
-        return {"error": f"request timed out after {timeout}s"}
+        # V2 contract: response carries blob_ref + metadata; fetch bytes via the
+        # BlobStore. Explicit guards rather than `assert` because asserts are
+        # stripped under `python -O` — a malformed satellite reply would then
+        # silently pass through and trip a misleading AttributeError downstream.
+        if tts_response.blob_ref is None:
+            return {"error": "malformed_response: missing blob_ref (V2 contract)"}
+        if tts_response.mime_type is None:
+            return {"error": "malformed_response: missing mime_type"}
+        if tts_response.duration_ms is None:
+            return {"error": "malformed_response: missing duration_ms"}
+
+        # Blobstore fetch lives outside the NATS-timeout try block above so a
+        # HTTP timeout / config error gets a distinct, actionable error code.
+        from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+            BlobstoreConfigError,
+            get_blobstore,
+        )
+
+        try:
+            audio_bytes = await get_blobstore().get(tts_response.blob_ref.store_key)
+        except BlobstoreConfigError as e:
+            log.error("blobstore_init_failed: %s", e)
+            return {"error": f"blobstore_not_configured: {e}"}
+        except Exception as e:
+            log.exception("blobstore_fetch_failed")
+            return {"error": f"blobstore_fetch_failed: {e}"}
+
+        return {
+            "audio": audio_bytes,
+            "mime_type": tts_response.mime_type,
+            "duration_ms": tts_response.duration_ms,
+        }
+
     except Exception as e:
         log.exception("NATS TTS request failed")
         return {"error": str(e)}
@@ -113,5 +135,5 @@ async def synthesize_via_nats(
         try:
             await nc.drain()
             await nc.close()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — best-effort cleanup; drain/close errors are unactionable here
+            log.debug("NATS drain/close error", exc_info=True)

@@ -51,12 +51,11 @@ jobs:
       - name: Install e2e deps
         # The in-process V2 tests (test_*_roundtrip_via_fake_blobstore, #144 T13/T18)
         # import the real synthesize_adapter + transcribe_adapter, which pull
-        # roxabi_nats + roxabi_blobs + roxabi_contracts. Installing the editable
-        # nats extra is the cleanest way to get the full transitive set in one
-        # shot (no torch/whisper bloat — those live in other extras).
-        # Original docker tests still work — they only need pytest + the NATS
-        # client deps already inside the nats extra.
-        run: uv pip install --system pytest -e ".[nats]"
+        # roxabi_nats + roxabi_blobs + roxabi_contracts. `uv sync --extra nats`
+        # honours uv.lock so the git-pinned roxabi-* deps stay at the commits
+        # the rest of CI ran against — prior `uv pip install --system -e .[nats]`
+        # resolved transitively from PyPI/git HEAD and could silently drift.
+        run: uv sync --extra nats
       - name: Seed-leak lint
         run: |
           if find tests/e2e/ \( -name '*.seed' -o -name '*.nk' \) | grep .; then
@@ -69,7 +68,7 @@ jobs:
         # compose file expects.
         run: docker build -f deploy/Dockerfile.mock -t ghcr.io/roxabi/voicecli-mock:staging .
       - name: Run E2E tests
-        run: pytest tests/e2e/ -v
+        run: uv run pytest tests/e2e/ -v
       - name: Dump compose logs on failure
         if: failure()
         # Use -p (project name) instead of -f (compose file) so the step
