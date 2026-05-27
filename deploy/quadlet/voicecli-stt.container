@@ -20,6 +20,9 @@ UserNS=keep-id:uid=1501,gid=1501
 # Big-bang NATS consolidation: connect to shared lyra-nats on roxabi.network.
 Environment=NATS_URL=nats://lyra-nats:4222
 Environment=NATS_NKEY_SEED_PATH=/run/secrets/voicecli-nats-stt.seed
+Environment=BLOBSTORE_BACKEND=http
+Environment=BLOBSTORE_URL=http://lyra-hub:8080
+EnvironmentFile=%h/.voicecli/env/blobstore.env
 HealthCmd=pgrep -f voicecli
 HealthInterval=30s
 NoNewPrivileges=true

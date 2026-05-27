@@ -80,6 +80,7 @@ fi
 run mkdir -p "$QUADLET_DIR"
 run mkdir -p "${HOME}/.cache/huggingface" "${HOME}/.cache/voicecli"
 run mkdir -p "${HOME}/.roxabi/voicecli/env"
+run mkdir -p "${HOME}/.voicecli/env"
 
 # ── Env stubs (S6) ────────────────────────────────────────────────────────────
 for role in stt tts; do
@@ -94,6 +95,19 @@ EOF
         echo "Keep ${env_file} (exists)"
     fi
 done
+
+# ── Blobstore env stub ────────────────────────────────────────────────────────
+blobstore_env="${HOME}/.voicecli/env/blobstore.env"
+if [[ ! -f "$blobstore_env" ]]; then
+    run bash -c "cat > '${blobstore_env}'" <<'EOF'
+# voiceCLI blobstore credentials (ADR-068)
+# Fill in the bearer token issued by the lyra blobstore service.
+BLOBSTORE_BEARER_TOKEN=
+EOF
+    echo "Created ${blobstore_env}"
+else
+    echo "Keep ${blobstore_env} (exists)"
+fi
 
 # ── 3. Copy Quadlet units ─────────────────────────────────────────────────────
 
