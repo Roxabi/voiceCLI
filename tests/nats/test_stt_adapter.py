@@ -1,19 +1,25 @@
-"""Tests for SttNatsAdapter (issue #44 T4).
+"""Tests for SttNatsAdapter (V2 — BlobRef contract, issue #144 T12).
 
-Mirrors the structure of test_synthesize_adapter.py.  All 16 cases exercise the
-real SttNatsAdapter code — api.transcribe is patched at the source module
-(voicecli.api.transcribe) so actual coverage runs through the adapter.
+All cases exercise the real SttNatsAdapter code.  api.transcribe is patched at
+the source module so actual coverage runs through the adapter and runner.
+
+V2 changes vs V1:
+- Payloads carry ``blob_ref`` (dict) instead of ``audio_b64`` (str).
+- Runner fetches audio bytes from BlobStore (mocked via blobs.get_blobstore).
+- Runner owns scoped-path creation; adapter receives scoped_path via 3-tuple.
+- ``audio_decode_failed`` error code replaced by ``audio_fetch_failed``.
+- ``payload_too_large`` / ``audio_decode_failed`` tests removed (no b64 path).
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -56,43 +62,78 @@ def _require_imports() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fakes
+# ---------------------------------------------------------------------------
+
+from _fakes import FakeMsg as MockMsg  # noqa: E402
+from _fakes import FakeNatsConn  # noqa: E402
+
+from roxabi_blobs import BlobRef  # noqa: E402
+
+_NOW = datetime.now(timezone.utc)
+
+
+def _make_blob_ref(
+    *,
+    store_key: str = "sha256:deadbeef",
+    mime: str = "audio/wav",
+    size: int = 32,
+    source: str = "test",
+    content_hash: str = "deadbeef",
+) -> BlobRef:
+    return BlobRef(
+        store_key=store_key,
+        mime=mime,
+        size=size,
+        source=source,
+        content_hash=content_hash,
+        created_at=_NOW,
+    )
+
+
+class _FakeBlobStore:
+    """Async BlobStore that returns minimal WAV-ish bytes for any store_key."""
+
+    def __init__(self, data: bytes = b"\x00" * 32) -> None:
+        self._data = data
+
+    async def get(self, store_key: str) -> bytes:
+        return self._data
+
+
+class _RaisingBlobStore:
+    async def get(self, store_key: str) -> bytes:
+        raise RuntimeError("blobstore_unreachable")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-# Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
-# every existing MockMsg() call site keeps working unchanged.
-from _fakes import FakeMsg as MockMsg  # noqa: E402
-from _fakes import FakeNatsConn  # noqa: E402
-
-
 def _setup_adapter(adapter: "SttNatsAdapter", msg: MockMsg) -> None:
-    """Set up adapter with mock NATS connection for testing.
-
-    The SDK's reply() method requires _nc to be set. This helper
-    sets up a FakeNatsConn that forwards publishes to msg.respond().
-    """
-    adapter._nc = FakeNatsConn(msg)  # noqa: E402
-
-
-def _valid_audio_b64() -> str:
-    """Return a valid base64-encoded minimal WAV-ish byte blob."""
-    return base64.b64encode(b"\x00" * 16).decode()
+    adapter._nc = FakeNatsConn(msg)
 
 
 def _valid_payload(
     *,
     request_id: str = "req-001",
-    audio_b64: str | None = None,
+    blob_ref: BlobRef | None = None,
     contract_version: str = "1",
-    mime_type: str = "audio/wav",
     trace_id: str | None = "test-trace-001",
 ) -> dict:
+    ref = blob_ref if blob_ref is not None else _make_blob_ref()
     payload: dict = {
         "contract_version": contract_version,
         "request_id": request_id,
-        "audio_b64": audio_b64 if audio_b64 is not None else _valid_audio_b64(),
-        "mime_type": mime_type,
+        "blob_ref": {
+            "store_key": ref.store_key,
+            "mime": ref.mime,
+            "size": ref.size,
+            "source": ref.source,
+            "content_hash": ref.content_hash,
+            "created_at": ref.created_at.isoformat(),
+        },
     }
     if trace_id is not None:
         payload["trace_id"] = trace_id
@@ -118,9 +159,6 @@ def _make_adapter(**kwargs) -> "SttNatsAdapter":
     }
     defaults.update(kwargs)
     adapter = SttNatsAdapter(**defaults)
-    # Short-circuit the model warm-up step so tests don't pull faster_whisper/torch
-    # into sys.modules. Tests that need to exercise warm-up failure patch
-    # `voicecli.transcribe._load_model` to raise.
     adapter._model_warm = True
     return adapter
 
@@ -130,16 +168,6 @@ def _patch_transcribe(
     *,
     side_effect=None,
 ):
-    """Context manager: patch api.transcribe at the source module.
-
-    Pass either ``mock_result`` (return_value) or ``side_effect`` — not both.
-    Passing both raises TypeError to prevent silent mis-configuration.
-
-    _transcribe_runner.py does ``from voicecli import api`` (module reference, not a
-    name copy), so ``api.transcribe`` resolves through ``voicecli.api``.
-    Patching the source directly is sufficient and avoids the order-dependent
-    ``_mod.api = _api`` namespace mutation.
-    """
     if mock_result is not None and side_effect is not None:
         raise TypeError("_patch_transcribe: pass either mock_result or side_effect, not both")
     if side_effect is not None:
@@ -147,14 +175,15 @@ def _patch_transcribe(
     return patch("voicecli.api.transcribe", return_value=mock_result)
 
 
-def _patch_scoped_path(tmp_path: Path):
-    """Redirect scoped_path to tmp_path so tests don't touch /tmp/voicecli-nats."""
+def _patch_blobstore(store=None):
+    """Patch blobs.get_blobstore to return *store* (defaults to _FakeBlobStore)."""
+    s = store if store is not None else _FakeBlobStore()
+    return patch("voicecli.adapters.nats.blobs.get_blobstore", return_value=s)
 
-    def _impl(request_id: str, ext: str) -> Path:
-        p = tmp_path / f"{request_id}.{ext}"
-        return p
 
-    return patch("voicecli.adapters.nats.transcribe_adapter.scoped_path", side_effect=_impl)
+def _patch_temp_root(tmp_path: Path):
+    """Redirect TEMP_ROOT so runner writes into tmp_path."""
+    return patch("voicecli.adapters.nats.transcribe_adapter.TEMP_ROOT", tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -174,9 +203,10 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-001")
 
-        with _patch_transcribe(_fake_result()) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
         # Assert
         reply = msg.last_reply()
@@ -200,9 +230,10 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-notrace", trace_id=None)
 
-        with _patch_transcribe(_fake_result()) as _:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
         reply = msg.last_reply()
         assert reply["ok"] is True
@@ -211,13 +242,22 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 2: missing request_id
     # ------------------------------------------------------------------
-    def test_malformed_request_id_missing(self, tmp_path: Path) -> None:
+    def test_malformed_request_id_missing(self) -> None:
         _require_imports()
-        # Arrange
+        # Arrange — blob_ref present but request_id absent
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        payload = {"audio_b64": _valid_audio_b64()}
+        payload = {
+            "blob_ref": {
+                "store_key": "sha256:x",
+                "mime": "audio/wav",
+                "size": 32,
+                "source": "test",
+                "content_hash": "x",
+                "created_at": _NOW.isoformat(),
+            }
+        }
 
         asyncio.run(adapter.handle(msg, payload))
 
@@ -232,9 +272,8 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 3: request_id with invalid characters
     # ------------------------------------------------------------------
-    def test_malformed_request_id_bad_chars(self, tmp_path: Path) -> None:
+    def test_malformed_request_id_bad_chars(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
@@ -243,45 +282,39 @@ class TestSttNatsAdapter:
 
         asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
-        # request_id echoed as first 64 chars of the bad value
         assert reply["request_id"] == bad_id[:64]
 
     # ------------------------------------------------------------------
-    # Case 4: audio_b64 key absent
+    # Case 4: blob_ref key absent
     # ------------------------------------------------------------------
-    def test_malformed_audio_b64_missing(self, tmp_path: Path) -> None:
+    def test_malformed_blob_ref_missing(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        payload = {"contract_version": "1", "request_id": "req-noaudio"}
+        payload = {"contract_version": "1", "request_id": "req-noblob"}
 
         asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
 
     # ------------------------------------------------------------------
-    # Case 5: audio_b64 is not a string
+    # Case 5: blob_ref is not a dict
     # ------------------------------------------------------------------
-    def test_malformed_audio_b64_not_str(self, tmp_path: Path) -> None:
+    def test_malformed_blob_ref_not_dict(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        payload = {"contract_version": "1", "request_id": "req-badtype", "audio_b64": 123}
+        payload = {"contract_version": "1", "request_id": "req-badtype", "blob_ref": "notadict"}
 
         asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
@@ -289,7 +322,7 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 5b: wrong-type override fields yield malformed_request
     # ------------------------------------------------------------------
-    def test_malformed_language_detection_threshold_type(self, tmp_path: Path) -> None:
+    def test_malformed_language_detection_threshold_type(self) -> None:
         _require_imports()
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
@@ -303,7 +336,7 @@ class TestSttNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
 
-    def test_malformed_language_detection_segments_bool(self, tmp_path: Path) -> None:
+    def test_malformed_language_detection_segments_bool(self) -> None:
         _require_imports()
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
@@ -318,24 +351,29 @@ class TestSttNatsAdapter:
         assert reply["error"] == "malformed_request"
 
     # ------------------------------------------------------------------
-    # Case 6: base64 decode failure — transcribe must NOT be called
+    # Case 6 (V2): BlobStore.get raises → audio_fetch_failed
     # ------------------------------------------------------------------
-    def test_audio_decode_failed(self, tmp_path: Path) -> None:
+    def test_audio_fetch_failed_when_blobstore_raises(self, tmp_path: Path) -> None:
+        """BlobStore.get() raises → adapter replies audio_fetch_failed.
+
+        Negative-test: removing the try/except in run_transcription around
+        get_blobstore().get() would propagate the exception rather than
+        returning the error tuple — this test would then fail on missing reply.
+        """
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
-        payload = _valid_payload(audio_b64="!!!not-base64!!!")
+        payload = _valid_payload(request_id="req-fetchfail")
 
-        with _patch_transcribe(_fake_result()) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore(_RaisingBlobStore()):
+            with _patch_transcribe(_fake_result()) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
-        assert reply["error"] == "audio_decode_failed"
+        assert reply["error"] == "audio_fetch_failed"
         mock_transcribe.assert_not_called()
 
     # ------------------------------------------------------------------
@@ -343,21 +381,16 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_transcription_failed(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-boom")
 
-        with patch(
-            "voicecli.api.transcribe",
-            side_effect=RuntimeError("model OOM"),
-        ):
-            with _patch_scoped_path(tmp_path):
-                # Must not raise — adapter swallows the exception
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with patch("voicecli.api.transcribe", side_effect=RuntimeError("model OOM")):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "transcription_failed"
@@ -367,17 +400,16 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_contract_version_defensive(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-999", contract_version="999")
 
-        with _patch_transcribe(_fake_result()) as _:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert — succeeds; reply stamps contract_version "1"
         reply = msg.last_reply()
         assert reply["ok"] is True
         assert reply["contract_version"] == "1"
@@ -387,18 +419,17 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_request_id_echoed(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         rid = "my-unique-req-42"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=rid)
 
-        with _patch_transcribe(_fake_result()) as _:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         assert reply["request_id"] == rid
 
@@ -407,25 +438,21 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_language_forced_echoed(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-fr")
         payload["language"] = "fr"
-
         mock_result = _fake_result(language="fr")
 
-        with _patch_transcribe(mock_result) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(mock_result) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert reply
         reply = msg.last_reply()
         assert reply["ok"] is True
         assert reply["language"] == "fr"
-
-        # Assert api.transcribe called with language="fr"
         call_kwargs = mock_transcribe.call_args.kwargs
         assert call_kwargs.get("language") == "fr"
 
@@ -434,7 +461,6 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_overrides_applied(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
@@ -446,11 +472,11 @@ class TestSttNatsAdapter:
         payload["initial_prompt"] = "Hallo. Hier ist deutscher Text mit Zeichensetzung."
         payload["task"] = "transcribe"
 
-        with _patch_transcribe(_fake_result(language="de")) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result(language="de")) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         call_kwargs = mock_transcribe.call_args.kwargs
         assert call_kwargs.get("language") == "de"
         assert call_kwargs.get("language_detection_threshold") == pytest.approx(0.7)
@@ -469,11 +495,12 @@ class TestSttNatsAdapter:
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-bad-task")
-        payload["task"] = "summarize"  # not in {"transcribe", "translate"}
+        payload["task"] = "summarize"
 
-        with _patch_transcribe(_fake_result()):
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
         reply = msg.last_reply()
         assert reply["ok"] is False
@@ -484,7 +511,6 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_overrides_no_leakage(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange — same adapter instance, two sequential calls
         adapter = _make_adapter(max_concurrent=2)
         msg1, msg2 = MockMsg(), MockMsg()
         _setup_adapter(adapter, msg1)
@@ -497,24 +523,19 @@ class TestSttNatsAdapter:
         payload1["language_fallback"] = "en"
 
         payload2 = _valid_payload(request_id="req-no-overrides")
-        # payload2 has NO override fields
 
-        with patch(
-            "voicecli.api.transcribe",
-            return_value=_fake_result(),
-        ) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg1, payload1))
-                asyncio.run(adapter.handle(msg2, payload2))
+        with _patch_blobstore():
+            with patch("voicecli.api.transcribe", return_value=_fake_result()) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg1, payload1))
+                    asyncio.run(adapter.handle(msg2, payload2))
 
-        # Assert call 1 had overrides
         kwargs1 = mock_transcribe.call_args_list[0].kwargs
         assert kwargs1.get("language") == "de"
         assert kwargs1.get("language_detection_threshold") == pytest.approx(0.8)
         assert kwargs1.get("language_detection_segments") == 5
         assert kwargs1.get("language_fallback") == "en"
 
-        # Assert call 2 did NOT leak any override keys
         kwargs2 = mock_transcribe.call_args_list[1].kwargs
         assert "language" not in kwargs2
         assert "language_detection_threshold" not in kwargs2
@@ -539,7 +560,6 @@ class TestSttNatsAdapter:
 
     # ------------------------------------------------------------------
     # Case 14: heartbeat payload includes all required fields
-    # VRAM fields (vram_used_mb, vram_total_mb) dropped in SDK migration.
     # ------------------------------------------------------------------
     def test_heartbeat_fields(self) -> None:
         _require_imports()
@@ -567,44 +587,33 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     def test_max_concurrent_limit(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange — track order of entry/exit to confirm no overlap.
-        # api.transcribe runs via run_in_executor (sync thread), so the mock
-        # must be a plain synchronous function, not a coroutine.
         enter_times: list[float] = []
         exit_times: list[float] = []
 
         def _slow_transcribe(*args, **kwargs):
             enter_times.append(time.monotonic())
-            time.sleep(0.05)  # blocking sleep — correct for a thread-pool mock
+            time.sleep(0.05)
             exit_times.append(time.monotonic())
             return _fake_result()
 
         adapter = _make_adapter(max_concurrent=1)
 
         async def _run() -> None:
-            with patch(
-                "voicecli.api.transcribe",
-                side_effect=_slow_transcribe,
-            ):
-                with patch(
-                    "voicecli.adapters.nats.transcribe_adapter.scoped_path",
-                    side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
-                ):
-                    msg1, msg2 = MockMsg(), MockMsg()
-                    _setup_adapter(adapter, msg1)
-                    _setup_adapter(adapter, msg2)
-                    p1 = _valid_payload(request_id="req-c1")
-                    p2 = _valid_payload(request_id="req-c2")
-                    # Fire both concurrently — semaphore serialises them
-                    await asyncio.gather(
-                        adapter.handle(msg1, p1),
-                        adapter.handle(msg2, p2),
-                    )
+            with _patch_blobstore():
+                with patch("voicecli.api.transcribe", side_effect=_slow_transcribe):
+                    with _patch_temp_root(tmp_path):
+                        msg1, msg2 = MockMsg(), MockMsg()
+                        _setup_adapter(adapter, msg1)
+                        _setup_adapter(adapter, msg2)
+                        p1 = _valid_payload(request_id="req-c1")
+                        p2 = _valid_payload(request_id="req-c2")
+                        await asyncio.gather(
+                            adapter.handle(msg1, p1),
+                            adapter.handle(msg2, p2),
+                        )
 
         asyncio.run(_run())
 
-        # With max_concurrent=1, the second request must not enter before
-        # the first has exited — i.e. enter_times[1] >= exit_times[0].
         assert len(enter_times) == 2
         assert len(exit_times) == 2
         assert enter_times[1] >= exit_times[0], (
@@ -614,16 +623,14 @@ class TestSttNatsAdapter:
     # ------------------------------------------------------------------
     # Case 16: reject_when_full=True → capacity_exceeded
     # ------------------------------------------------------------------
-    def test_reject_when_full(self, tmp_path: Path) -> None:
+    def test_reject_when_full(self) -> None:
         _require_imports()
-        # Arrange
         adapter = _make_adapter(max_concurrent=1, reject_when_full=True)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-cap")
 
         async def _run() -> None:
-            # Hold the semaphore to simulate an in-flight request
             await adapter._sem.acquire()  # type: ignore[attr-defined]
             try:
                 await adapter.handle(msg, payload)
@@ -632,20 +639,19 @@ class TestSttNatsAdapter:
 
         asyncio.run(_run())
 
-        # Assert
         reply = msg.last_reply()
         assert reply["ok"] is False
         assert reply["error"] == "capacity_exceeded"
 
     # ------------------------------------------------------------------
-    # Case 17: temp file cleaned up on successful transcription
+    # Case 17: inbound audio mode 0o600 (runner owns file creation)
     # ------------------------------------------------------------------
     def test_inbound_audio_written_with_mode_0o600(self, tmp_path: Path) -> None:
-        """Issue #60: inbound audio must be 0o600 on disk, not world-readable 0o644.
+        """Runner must chmod the fetched audio file to 0o600.
 
-        Intercepts `Path.write_bytes` to widen mode to 0o644 after the adapter's
-        own write, so the assertion proves the adapter's explicit `chmod(0o600)`
-        closes the gap — not that umask happened to already be 0o077.
+        The original _write_bytes_leak trick is preserved: we widen the mode to
+        0o644 just after write_bytes, then assert the runner's chmod(0o600)
+        closed the gap.
         """
         _require_imports()
         import os
@@ -656,8 +662,6 @@ class TestSttNatsAdapter:
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
-        temp_file = tmp_path / f"{request_id}.wav"
-
         observed: dict[str, int] = {}
 
         def _sniff_transcribe(audio_path, **kwargs):
@@ -667,81 +671,68 @@ class TestSttNatsAdapter:
         original_write_bytes = Path.write_bytes
 
         def _write_bytes_leak(self: Path, data: bytes) -> int:
-            """Simulate the pre-fix vulnerable state: file lands 0o644 on disk."""
             result = original_write_bytes(self, data)
-            if self == temp_file:
+            if self.name.startswith(request_id):
                 self.chmod(0o644)
             return result
 
-        with (
-            patch("voicecli.api.transcribe", side_effect=_sniff_transcribe),
-            patch.object(Path, "write_bytes", _write_bytes_leak),
-            _patch_scoped_path(tmp_path),
-        ):
-            asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with (
+                patch("voicecli.api.transcribe", side_effect=_sniff_transcribe),
+                patch.object(Path, "write_bytes", _write_bytes_leak),
+                _patch_temp_root(tmp_path),
+            ):
+                asyncio.run(adapter.handle(msg, payload))
 
         assert msg.last_reply()["ok"] is True
-        assert not temp_file.exists()  # cleanup still works
         assert "mode" in observed, "api.transcribe was never called — sniff never ran"
         assert observed["mode"] == 0o600, (
-            f"inbound audio mode at transcribe was "
-            f"{oct(observed['mode'])}, expected 0o600 (issue #60)"
+            f"inbound audio mode at transcribe was {oct(observed['mode'])}, expected 0o600"
         )
 
     def test_temp_file_cleaned_up_on_success(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         request_id = "req-clean-ok"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
-        temp_file = tmp_path / f"{request_id}.wav"
 
-        with _patch_transcribe(_fake_result()) as _:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert — temp file removed after successful reply
-        assert not temp_file.exists()
+        # Assert — no leftover temp files under tmp_path
+        leftover = list(tmp_path.iterdir())
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
 
     # ------------------------------------------------------------------
     # Case 18: temp file cleaned up even when api.transcribe raises
     # ------------------------------------------------------------------
     def test_temp_file_cleaned_up_on_failure(self, tmp_path: Path) -> None:
         _require_imports()
-        # Arrange
         request_id = "req-clean-fail"
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=request_id)
-        temp_file = tmp_path / f"{request_id}.wav"
 
-        with patch(
-            "voicecli.api.transcribe",
-            side_effect=RuntimeError("kaboom"),
-        ):
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with patch("voicecli.api.transcribe", side_effect=RuntimeError("kaboom")):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert — temp file removed even when transcription fails
-        assert not temp_file.exists()
+        leftover = list(tmp_path.iterdir())
+        assert leftover == [], f"Temp files not cleaned up on failure: {leftover}"
 
     # ------------------------------------------------------------------
     # Case 22 (F12): heartbeat continues firing while inference is in-flight
     # ------------------------------------------------------------------
     def test_heartbeat_continues_during_inference(self, tmp_path: Path) -> None:
-        """The heartbeat loop keeps firing while transcription is in-flight.
+        """Heartbeat loop keeps firing while transcription is in-flight.
 
-        Deterministic gate: transcription runs inside ``run_in_executor`` so
-        it blocks on a ``threading.Event`` that is set once the heartbeat
-        publisher has been called at least ``target_heartbeats`` times. If
-        the loop stops firing, the gate never sets and ``wait_for`` below
-        times out with a clean failure. No wall-clock bounds.
-
-        Floor ``target_heartbeats = 3`` catches "fires once at entry"; no
-        ceiling — a fast runner is not a bug.
+        Blocks on a threading.Event tripped after target_heartbeats fires.
         """
         _require_imports()
 
@@ -756,8 +747,6 @@ class TestSttNatsAdapter:
             _setup_adapter(adapter, msg)
             payload = _valid_payload(request_id="req-hb")
 
-            # Wrap the FakeNatsConn.publish set up by _setup_adapter to count
-            # heartbeat publishes and trip the gate once the floor is hit.
             original_publish = adapter._nc.publish  # type: ignore[union-attr]
 
             async def _counting_publish(subject: str, data: bytes) -> None:
@@ -770,7 +759,6 @@ class TestSttNatsAdapter:
 
             adapter._nc.publish = _counting_publish  # type: ignore[union-attr, method-assign]
 
-            # Blocks until the heartbeat loop proves liveness via the gate
             def _gated_transcribe(*args, **kwargs):
                 gate.wait(timeout=5.0)
                 return TranscriptionResult(
@@ -779,51 +767,42 @@ class TestSttNatsAdapter:
                     segments=[Segment(start=0.0, end=1.5, text="ok")],
                 )
 
-            with patch(
-                "voicecli.api.transcribe",
-                side_effect=_gated_transcribe,
-            ):
-                with patch(
-                    "voicecli.adapters.nats.transcribe_adapter.scoped_path",
-                    side_effect=lambda rid, ext: tmp_path / f"{rid}.{ext}",
-                ):
-                    handle_task = asyncio.create_task(adapter.handle(msg, payload))
-                    hb_task = asyncio.create_task(adapter._heartbeat_loop())  # type: ignore[attr-defined]
-                    try:
-                        await asyncio.wait_for(handle_task, timeout=5.0)
-                    finally:
-                        hb_task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await hb_task
+            with _patch_blobstore():
+                with patch("voicecli.api.transcribe", side_effect=_gated_transcribe):
+                    with _patch_temp_root(tmp_path):
+                        handle_task = asyncio.create_task(adapter.handle(msg, payload))
+                        hb_task = asyncio.create_task(adapter._heartbeat_loop())  # type: ignore[attr-defined]
+                        try:
+                            await asyncio.wait_for(handle_task, timeout=5.0)
+                        finally:
+                            hb_task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await hb_task
 
         asyncio.run(_run())
 
-        # Assert — gate was tripped, proving target_heartbeats fired
         assert heartbeat_count >= target_heartbeats, (
             f"heartbeat loop did not fire enough: got {heartbeat_count}, "
             f"expected >= {target_heartbeats}"
         )
 
     # ------------------------------------------------------------------
-    # Case 22: request_id length boundary — 127/128 accepted, 129 rejected
+    # Validation error code
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # Validation error code (issue fix/nats-tts-newlines)
-    # ------------------------------------------------------------------
-
     def test_value_error_from_transcribe_yields_param_validation_failed(
         self, tmp_path: Path
     ) -> None:
-        """ValueError from api.transcribe → param_validation_failed (not transcription_failed)."""
+        """ValueError from api.transcribe → param_validation_failed."""
         _require_imports()
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id="req-stt-valerr")
 
-        with _patch_transcribe(side_effect=ParamValidationError("invalid language: xx")):
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(side_effect=ParamValidationError("invalid language: xx")):
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
         reply = msg.last_reply()
         assert reply["ok"] is False
@@ -837,18 +816,17 @@ class TestSttNatsAdapter:
         self, tmp_path: Path, rid_len: int, expected_ok: bool
     ) -> None:
         _require_imports()
-        # Arrange
         rid = "a" * rid_len
         adapter = _make_adapter(max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload(request_id=rid)
 
-        with _patch_transcribe(_fake_result()) as mock_transcribe:
-            with _patch_scoped_path(tmp_path):
-                asyncio.run(adapter.handle(msg, payload))
+        with _patch_blobstore():
+            with _patch_transcribe(_fake_result()) as mock_transcribe:
+                with _patch_temp_root(tmp_path):
+                    asyncio.run(adapter.handle(msg, payload))
 
-        # Assert
         reply = msg.last_reply()
         if expected_ok:
             assert reply.get("error") is None

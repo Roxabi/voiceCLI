@@ -1,6 +1,8 @@
-"""Unit tests for voicecli.adapters.nats._validation (issue #147)."""
+"""Unit tests for voicecli.adapters.nats._validation (V2 — BlobRef, issue #144 T12)."""
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 import pytest
 
@@ -16,6 +18,8 @@ from voicecli.adapters.nats._validation import (
 _AVAILABLE = {"mock", "qwen-fast"}
 _engine_available = lambda e: e in _AVAILABLE  # noqa: E731
 
+_NOW_ISO = datetime.now(timezone.utc).isoformat()
+
 
 def _valid_tts_payload(**overrides: object) -> dict:
     base: dict = {
@@ -26,10 +30,24 @@ def _valid_tts_payload(**overrides: object) -> dict:
     return base
 
 
+def _valid_blob_ref_dict(**overrides: object) -> dict:
+    """Build a minimal valid blob_ref dict for STT payloads."""
+    base: dict = {
+        "store_key": "sha256:deadbeef",
+        "mime": "audio/wav",
+        "size": 1024,
+        "source": "test",
+        "content_hash": "deadbeef",
+        "created_at": _NOW_ISO,
+    }
+    base.update(overrides)
+    return base
+
+
 def _valid_stt_payload(**overrides: object) -> dict:
     base: dict = {
         "request_id": "req-001",
-        "audio_b64": "AAAA",
+        "blob_ref": _valid_blob_ref_dict(),
     }
     base.update(overrides)
     return base
@@ -307,8 +325,8 @@ class TestValidateSttRequest:
     # -----------------------------------------------------------------------
 
     def test_missing_request_id_returns_malformed(self) -> None:
-        # Arrange
-        payload = {"audio_b64": "AAAA"}
+        # Arrange — blob_ref present but request_id absent
+        payload = {"blob_ref": _valid_blob_ref_dict()}
         # Act
         result = validate_stt_request(payload)
         # Assert
@@ -348,10 +366,16 @@ class TestValidateSttRequest:
         assert result.error_code is None
 
     # -----------------------------------------------------------------------
-    # audio_b64 validation
+    # blob_ref validation (V2 — replaces audio_b64 checks)
     # -----------------------------------------------------------------------
 
-    def test_missing_audio_b64_returns_malformed(self) -> None:
+    def test_missing_blob_ref_returns_malformed(self) -> None:
+        """blob_ref absent → malformed_request.
+
+        Negative-test: if the `if not isinstance(raw_ref, dict)` guard in
+        SttRequest.from_payload() were removed, this test would succeed even
+        without a blob_ref field — test would pass vacuously and fail here.
+        """
         # Arrange
         payload: dict = {"request_id": "req-001"}
         # Act
@@ -359,30 +383,44 @@ class TestValidateSttRequest:
         # Assert
         assert result.error_code == "malformed_request"
 
-    def test_audio_b64_not_a_string_returns_malformed(self) -> None:
+    def test_blob_ref_not_a_dict_returns_malformed(self) -> None:
+        """blob_ref that is not a dict → malformed_request.
+
+        Negative-test: removing the `isinstance(raw_ref, dict)` guard allows
+        a string blob_ref to pass the check — this test catches the regression.
+        """
         # Arrange
-        payload = _valid_stt_payload(audio_b64=123)
+        payload = _valid_stt_payload(blob_ref="not-a-dict")
         # Act
         result = validate_stt_request(payload)
         # Assert
         assert result.error_code == "malformed_request"
 
-    def test_audio_b64_none_returns_malformed(self) -> None:
+    def test_blob_ref_none_returns_malformed(self) -> None:
         # Arrange
-        payload = _valid_stt_payload(audio_b64=None)
+        payload = _valid_stt_payload(blob_ref=None)
         # Act
         result = validate_stt_request(payload)
         # Assert
         assert result.error_code == "malformed_request"
 
-    def test_audio_b64_empty_string_returns_malformed(self) -> None:
-        # Arrange — empty-string audio_b64 reaches the `not audio_b64`
-        # truthiness branch; pins that named edge case.
-        payload = _valid_stt_payload(audio_b64="")
+    def test_blob_ref_missing_required_field_returns_malformed(self) -> None:
+        # Arrange — store_key absent from blob_ref dict
+        bad_ref = _valid_blob_ref_dict()
+        del bad_ref["store_key"]
+        payload = _valid_stt_payload(blob_ref=bad_ref)
         # Act
         result = validate_stt_request(payload)
         # Assert
         assert result.error_code == "malformed_request"
+
+    def test_valid_blob_ref_passes(self) -> None:
+        # Arrange
+        payload = _valid_stt_payload()
+        # Act
+        result = validate_stt_request(payload)
+        # Assert
+        assert result.error_code is None
 
     # -----------------------------------------------------------------------
     # optional field type validation (parametrized)
