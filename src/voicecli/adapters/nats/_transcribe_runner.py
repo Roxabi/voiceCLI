@@ -124,6 +124,8 @@ async def run_transcription(
 
     # Runner owns scoped-path creation: derive ext from blob_ref.mime.
     ext = _ext_from_mime(blob_ref.mime)
+    scoped_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    scoped_dir.chmod(0o700)
     scoped_path = scoped_dir / f"{request_id}.{ext.lstrip('.')}"
 
     try:
