@@ -59,7 +59,8 @@ class TestGetDataDir:
     def test_resolves_tilde_in_env_var(self, monkeypatch, tmp_path):
         env_dir = tmp_path / "env_override"
         env_dir.mkdir()
-        monkeypatch.setenv("VOICECLI_DATA_DIR", str(env_dir))
+        monkeypatch.setenv("VOICECLI_DATA_DIR", "~/env_override")
+        monkeypatch.setattr("os.path.expanduser", lambda p: str(tmp_path) if p == "~" else p)
         assert get_data_dir() == env_dir
 
 
@@ -86,3 +87,12 @@ class TestFindConfig:
         monkeypatch.setattr("voicecli.config.VOICECLI_DIR", tmp_path / "nonexistent", raising=False)
         monkeypatch.chdir(tmp_path)
         assert _find_config() is None
+
+    def test_walks_up_from_subdirectory(self, monkeypatch, tmp_path):
+        subdir = tmp_path / "sub" / "dir"
+        subdir.mkdir(parents=True)
+        config = tmp_path / "voicecli.toml"
+        config.write_text("[defaults]\nlanguage = 'French'\n")
+        monkeypatch.setattr("voicecli.config.VOICECLI_DIR", tmp_path / "nonexistent", raising=False)
+        monkeypatch.chdir(subdir)
+        assert _find_config() == config
