@@ -688,13 +688,44 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is False
         assert reply["error"] == "malformed_request"
 
-    def test_malformed_speed_type(self, tmp_path: Path) -> None:
+    def test_string_speed_accepted(self, tmp_path: Path) -> None:
+        """String speed (e.g. 'ultra fast speaking') must be ACCEPTED — not malformed_request.
+
+        speed is a free-text style hint per roxabi-contracts TtsRequest.speed: str | None.
+        The old float-only validation was a local type drift that caused every lyra agent
+        TTS request with a string speed to be rejected.
+        """
         _require_imports()
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
         msg = MockMsg()
         _setup_adapter(adapter, msg)
         payload = _valid_payload()
-        payload["speed"] = "fast"
+        payload["speed"] = "ultra fast speaking"
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            with patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True, f"string speed should be accepted, got: {reply}"
+
+    def test_non_str_speed_returns_malformed_request(self, tmp_path: Path) -> None:
+        """Non-str speed (int, float, list, …) must still be rejected as malformed_request."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload()
+        payload["speed"] = 1.5  # numeric — no longer valid
 
         with patch(
             "voicecli.engines.engine._get_registry",
@@ -1222,10 +1253,11 @@ class TestTtsNatsAdapter:
     def test_existing_five_fields_still_forwarded(self, tmp_path: Path) -> None:
         _require_imports()
         # Regression check — the V1 field set must keep flowing after #47.
+        # speed is a str per contract (free-text style hint, e.g. "ultra fast speaking").
         payload = _valid_payload() | {
             "language": "en",
             "voice": "alice",
-            "speed": 1.1,
+            "speed": "ultra fast speaking",
             "exaggeration": 0.7,
             "cfg_weight": 0.5,
         }
@@ -1233,7 +1265,7 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is True
         assert kwargs.get("language") == "en"
         assert kwargs.get("voice") == "alice"
-        assert kwargs.get("speed") == 1.1
+        assert kwargs.get("speed") == "ultra fast speaking"
         assert kwargs.get("exaggeration") == 0.7
         assert kwargs.get("cfg_weight") == 0.5
 

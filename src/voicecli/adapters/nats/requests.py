@@ -120,7 +120,7 @@ class TtsRequest:
     engine: str | None = None
     language: str | None = None
     voice: str | None = None
-    speed: float | None = None
+    speed: str | None = None
     exaggeration: float | None = None
     cfg_weight: float | None = None
     accent: str | None = None
@@ -148,8 +148,8 @@ class TtsRequest:
             raise MalformedRequestError("engine must be a str or None")
 
         speed = payload.get("speed")
-        if speed is not None and (not isinstance(speed, (int, float)) or isinstance(speed, bool)):
-            raise MalformedRequestError("speed must be int or float (not bool)")
+        if speed is not None and not isinstance(speed, str):
+            raise MalformedRequestError("speed must be a str")
 
         exaggeration = payload.get("exaggeration")
         if exaggeration is not None and (
@@ -225,7 +225,7 @@ class TtsRequest:
             engine=engine,
             language=language,
             voice=voice,
-            speed=float(speed) if speed is not None else None,
+            speed=speed,
             exaggeration=float(exaggeration) if exaggeration is not None else None,
             cfg_weight=float(cfg_weight) if cfg_weight is not None else None,
             accent=accent,

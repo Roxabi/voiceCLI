@@ -745,11 +745,12 @@ class TestRunSynthesisKwargForwarding:
         "payload,expected_present,expected_absent",
         [
             # All OPTIONAL_KWARGS present → all forwarded
+            # speed is str per roxabi-contracts TtsRequest (free-text style hint).
             (
                 {
                     "language": "en",
                     "voice": "alice",
-                    "speed": 1.1,
+                    "speed": "ultra fast speaking",
                     "exaggeration": 0.7,
                     "cfg_weight": 0.5,
                     "accent": "british",
@@ -759,7 +760,7 @@ class TestRunSynthesisKwargForwarding:
                 {
                     "language": "en",
                     "voice": "alice",
-                    "speed": 1.1,
+                    "speed": "ultra fast speaking",
                     "exaggeration": 0.7,
                     "cfg_weight": 0.5,
                     "accent": "british",
