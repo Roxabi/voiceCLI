@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.errors import WorkerError
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
@@ -33,15 +34,18 @@ def _engine_available(engine: str) -> bool:
     return engine in _get_registry()
 
 
-def _err_tts(trace_id: str, request_id: str, error: str) -> bytes:
+def _err_tts(trace_id: str, request_id: str, worker_error: WorkerError) -> bytes:
     if not request_id:
+        # model_construct bypasses validation for the malformed-request edge case
+        # where request_id is empty (which normally fails min_length=1).
         m = TtsResponse.model_construct(
             contract_version=CONTRACT_VERSION,
             trace_id=trace_id,
             issued_at=datetime.now(timezone.utc),
             ok=False,
             request_id="",
-            error=error,
+            error=worker_error.code,
+            worker_error=worker_error,
         )
     else:
         m = TtsResponse(
@@ -50,9 +54,31 @@ def _err_tts(trace_id: str, request_id: str, error: str) -> bytes:
             issued_at=datetime.now(timezone.utc),
             ok=False,
             request_id=request_id,
-            error=error,
+            error=worker_error.code,
+            worker_error=worker_error,
         )
     return m.model_dump_json(exclude_none=True).encode()
+
+
+# Minimal mapping from validation error-code strings → WorkerError.
+# Keeps adapter callsites clean without over-engineering a registry.
+_VALIDATION_ERRORS: dict[str, WorkerError] = {
+    "malformed_request": WorkerError(
+        code="malformed_request",
+        message="Request payload is malformed or missing required fields",
+        retryable=False,
+    ),
+    "engine_unavailable": WorkerError(
+        code="engine_unavailable",
+        message="Requested TTS engine is not available",
+        retryable=True,
+    ),
+    "capacity_exceeded": WorkerError(
+        code="capacity_exceeded",
+        message="Worker is at capacity; retry later",
+        retryable=True,
+    ),
+}
 
 
 class TtsNatsAdapter(NatsAdapterBase):
@@ -122,7 +148,7 @@ class TtsNatsAdapter(NatsAdapterBase):
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         if not request_id:
-            await self.reply(msg, _err_tts(trace_id, "", "malformed_request"))
+            await self.reply(msg, _err_tts(trace_id, "", _VALIDATION_ERRORS["malformed_request"]))
             return
 
         outcome = validate_tts_request(
@@ -131,7 +157,15 @@ class TtsNatsAdapter(NatsAdapterBase):
             engine_available=_engine_available,
         )
         if outcome.error_code is not None:
-            await self.reply(msg, _err_tts(trace_id, request_id, outcome.error_code))
+            we = _VALIDATION_ERRORS.get(
+                outcome.error_code,
+                WorkerError(
+                    code=outcome.error_code,
+                    message=outcome.error_code.replace("_", " ").capitalize(),
+                    retryable=False,
+                ),
+            )
+            await self.reply(msg, _err_tts(trace_id, request_id, we))
             return
         text = outcome.cleaned_text
         engine = outcome.engine
@@ -141,7 +175,9 @@ class TtsNatsAdapter(NatsAdapterBase):
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(msg, _err_tts(trace_id, request_id, "capacity_exceeded"))
+                await self.reply(
+                    msg, _err_tts(trace_id, request_id, _VALIDATION_ERRORS["capacity_exceeded"])
+                )
                 return
             try:
                 await self._run_synthesis(msg, payload, request_id, text, engine, trace_id=trace_id)
@@ -163,17 +199,38 @@ class TtsNatsAdapter(NatsAdapterBase):
     ) -> None:
         out_path = scoped_path(request_id, "wav")
         try:
-            ok, result = await run_synthesis(
-                self._runner_state,
-                payload,
-                request_id,
-                text,
-                engine,
-                out_path,
-                trace_id=trace_id,
-            )
+            try:
+                ok, result = await run_synthesis(
+                    self._runner_state,
+                    payload,
+                    request_id,
+                    text,
+                    engine,
+                    out_path,
+                    trace_id=trace_id,
+                )
+            except Exception as exc:
+                # Safety net: run_synthesis should never raise (it returns WorkerError on
+                # failure), but guard here so nothing ever escapes to _dispatch uncaught.
+                log.exception(
+                    "synthesis_safety_net_triggered",
+                    extra={"request_id": request_id},
+                )
+                await self.reply(
+                    msg,
+                    _err_tts(
+                        trace_id,
+                        request_id,
+                        WorkerError(
+                            code="synthesis_failed",
+                            message=type(exc).__name__,
+                            retryable=False,
+                        ),
+                    ),
+                )
+                return
             if not ok:
-                # result is the error_code string
+                # result is a WorkerError
                 await self.reply(msg, _err_tts(trace_id, request_id, result))  # type: ignore[arg-type]
                 return
             # result is the fields dict

@@ -3,5 +3,10 @@
   "error": "malformed_request",
   "ok": false,
   "request_id": "req-engsp",
-  "trace_id": "trace-tts-6"
+  "trace_id": "trace-tts-6",
+  "worker_error": {
+    "code": "malformed_request",
+    "message": "Request payload is malformed or missing required fields",
+    "retryable": false
+  }
 }

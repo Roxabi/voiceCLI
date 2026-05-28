@@ -24,6 +24,8 @@ from typing import Any
 import pytest
 from tests.nats._fakes import _BLOBSTORE_PATCH_PATH, _FakeBlobRef, SyncExecutor
 
+from roxabi_contracts.errors import WorkerError
+
 from voicecli.adapters.nats._synthesize_runner import (
     NAMED_KWARGS,
     OPTIONAL_KWARGS,
@@ -281,7 +283,7 @@ class TestRunSynthesisBlobStorePutFailure:
     def test_put_raises_returns_audio_store_failed(
         self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
     ) -> None:
-        """BlobStore.put raises → runner returns (False, "audio_store_failed").
+        """BlobStore.put raises → runner returns (False, WorkerError(code="audio_store_failed")).
 
         Negative-test: if the try/except around get_blobstore().put() is removed,
         the exception propagates to the outer except and yields "synthesis_failed" —
@@ -303,13 +305,14 @@ class TestRunSynthesisBlobStorePutFailure:
         state = _make_state()
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, {}, "req-storefail", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "audio_store_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "audio_store_failed"
 
     def test_put_raises_after_engine_success_not_synthesis_failed(
         self, tmp_path: Path, fake_api: _FakeApi, monkeypatch
@@ -336,14 +339,15 @@ class TestRunSynthesisBlobStorePutFailure:
         state = _make_state()
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, {}, "req-storefail2", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert — must be audio_store_failed, not synthesis_failed
         assert ok is False
-        assert error_code == "audio_store_failed", (
-            f"expected 'audio_store_failed' but got {error_code!r}; "
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "audio_store_failed", (
+            f"expected 'audio_store_failed' but got {worker_error.code!r}; "
             "deleting the inner blobstore guard would yield 'synthesis_failed'"
         )
 
@@ -376,13 +380,14 @@ class TestRunSynthesisBlobStorePutFailure:
 
         # Act
         with caplog.at_level("ERROR"):
-            ok, error_code = _run(
+            ok, worker_error = _run(
                 run_synthesis(state, {}, "req-cfgfail", "Hello", "mock", out_path, trace_id="t-cfg")
             )
 
         # Assert — structured error code + log emitted
         assert ok is False
-        assert error_code == "blobstore_not_configured"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "blobstore_not_configured"
         assert any("blobstore_init_failed" in r.message for r in caplog.records), (
             f"expected 'blobstore_init_failed' log; got {[r.message for r in caplog.records]}"
         )
@@ -467,13 +472,14 @@ class TestRunSynthesisFallbackLanguage:
         payload = {"language": "en", "fallback_language": "en"}
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, payload, "req-same", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "param_validation_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "param_validation_failed"
         assert calls == 1
 
     def test_no_retry_when_fallback_missing(
@@ -495,13 +501,14 @@ class TestRunSynthesisFallbackLanguage:
         payload = {"language": "en"}  # no fallback_language
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, payload, "req-nofb", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "param_validation_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "param_validation_failed"
         assert calls == 1
 
     def test_both_primary_and_fallback_fail_returns_param_validation_failed(
@@ -523,13 +530,14 @@ class TestRunSynthesisFallbackLanguage:
         payload = {"language": "zz", "fallback_language": "xx"}
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, payload, "req-fbfail", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "param_validation_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "param_validation_failed"
         assert call_languages == ["zz", "xx"]
 
     def test_fallback_call_uses_fallback_language_kwarg(
@@ -589,13 +597,16 @@ class TestRunSynthesisErrors:
         )
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, {}, "req-rt", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "synthesis_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "synthesis_failed"
+        assert worker_error.retryable is False
+        assert worker_error.message == "RuntimeError"
         # set_model_loaded fires BEFORE synthesis (intentional design — pinned here so a
         # refactor that moves the call after-success would not silently pass this test).
         assert recorded == ["mock"], (
@@ -619,13 +630,15 @@ class TestRunSynthesisErrors:
         )
 
         # Act
-        ok, error_code = _run(
+        ok, worker_error = _run(
             run_synthesis(state, {}, "req-exc", "Hello", "mock", out_path, trace_id="t1")
         )
 
         # Assert
         assert ok is False
-        assert error_code == "synthesis_failed"
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "synthesis_failed"
+        assert worker_error.retryable is False
         # set_model_loaded fires BEFORE synthesis (intentional design — pinned here so a
         # refactor that moves the call after-success would not silently pass this test).
         assert recorded == ["mock"], (
@@ -719,6 +732,7 @@ class TestRunSynthesisChunkedOutput:
 
         # Assert
         assert ok is True
+        assert isinstance(result, dict)
         assert "blob_ref" in result
 
 
@@ -961,3 +975,107 @@ class TestConstantSets:
     def test_named_kwargs_contains_expected_fields(self) -> None:
         expected = {"chunked", "chunk_size", "segment_gap", "crossfade"}
         assert set(NAMED_KWARGS) == expected
+
+
+# ===========================================================================
+# TestRunSynthesisWorkerError — structured WorkerError on failure paths
+# ===========================================================================
+
+
+class TestRunSynthesisWorkerError:
+    def test_unknown_voice_returns_structured_worker_error(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """ValueError('Unknown voice ...') → (False, WorkerError(code='unknown_voice')).
+
+        Verifies: code='unknown_voice', retryable=False, message contains the voice
+        name, and detail carries the full exception text (incl. available list).
+        """
+        out_path = tmp_path / "req-uvce.wav"
+
+        def _fake_generate(text, *, engine, output, **kw):
+            raise ValueError("Unknown voice 'Cherry'. Available: ['Alice', 'Bob']")
+
+        monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+        state = _make_state()
+
+        ok, worker_error = _run(
+            run_synthesis(state, {}, "req-uvce", "Hello", "mock", out_path, trace_id="t1")
+        )
+
+        assert ok is False
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "unknown_voice"
+        assert worker_error.retryable is False
+        assert "Cherry" in worker_error.message
+        assert worker_error.detail is not None
+        assert "Available" in worker_error.detail
+
+    def test_unknown_voice_does_not_escape_run_synthesis(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """run_synthesis must never raise — unknown voice is caught and returned."""
+        out_path = tmp_path / "req-uvne.wav"
+
+        def _fake_generate(text, *, engine, output, **kw):
+            raise ValueError("Unknown voice 'Ghost'. Available: ['Alice']")
+
+        monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+        state = _make_state()
+
+        # Must not raise; must return (False, WorkerError)
+        result = _run(
+            run_synthesis(state, {}, "req-uvne", "Hello", "mock", out_path, trace_id="t1")
+        )
+        assert result[0] is False
+        assert isinstance(result[1], WorkerError)
+
+    def test_non_unknown_voice_value_error_returns_synthesis_failed(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """A ValueError not starting with 'Unknown voice' → synthesis_failed, not unknown_voice."""
+        out_path = tmp_path / "req-veouf.wav"
+
+        def _fake_generate(text, *, engine, output, **kw):
+            raise ValueError("some other problem")
+
+        monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+        state = _make_state()
+
+        ok, worker_error = _run(
+            run_synthesis(state, {}, "req-veouf", "Hello", "mock", out_path, trace_id="t1")
+        )
+
+        assert ok is False
+        assert isinstance(worker_error, WorkerError)
+        assert worker_error.code == "synthesis_failed"
+        assert worker_error.retryable is False
+
+    def test_all_failure_paths_return_worker_error_instances(
+        self, tmp_path: Path, monkeypatch, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """Smoke-test: every failure code from run_synthesis is a WorkerError, never a str."""
+        from voicecli.api import ParamValidationError
+
+        cases: list[tuple[str, Exception]] = [
+            ("req-pve", ParamValidationError("bad param")),
+            ("req-rte", RuntimeError("OOM")),
+            ("req-uve", ValueError("Unknown voice 'X'. Available: []")),
+            ("req-vge", ValueError("generic value error")),
+        ]
+
+        for req_id, exc_to_raise in cases:
+            out_path = tmp_path / f"{req_id}.wav"
+
+            def _fake_generate(text, *, engine, output, exc=exc_to_raise, **kw):
+                raise exc
+
+            monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+            state = _make_state()
+            ok, result = _run(
+                run_synthesis(state, {}, req_id, "Hello", "mock", out_path, trace_id="t1")
+            )
+            assert ok is False, f"{req_id}: expected ok=False"
+            assert isinstance(result, WorkerError), (
+                f"{req_id}: expected WorkerError, got {type(result).__name__!r} ({result!r})"
+            )

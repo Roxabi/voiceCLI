@@ -1605,3 +1605,113 @@ class TestTtsNatsAdapter:
         assert reply["ok"] is True
         # V2: blob_ref present
         assert "blob_ref" in reply
+
+    # ------------------------------------------------------------------
+    # WorkerError structured error field — populated on all failure paths
+    # ------------------------------------------------------------------
+
+    def test_err_tts_sets_both_error_and_worker_error(self, tmp_path: Path) -> None:
+        """Every error reply must carry both flat 'error' (code) and structured 'worker_error'."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-we-both")
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path, raises=RuntimeError("boom"))},
+        ):
+            with patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        # Flat error field for back-compat
+        assert reply["error"] == "synthesis_failed"
+        # Structured worker_error must be present and consistent
+        assert "worker_error" in reply
+        assert reply["worker_error"]["code"] == "synthesis_failed"
+        assert reply["worker_error"]["retryable"] is False
+
+    def test_unknown_voice_returns_structured_unknown_voice_error(self, tmp_path: Path) -> None:
+        """ValueError('Unknown voice ...') from engine → wire error='unknown_voice' + worker_error."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-unkv") | {"voice": "Cherry"}
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        def _fake_generate(*args, **kwargs):
+            raise ValueError("Unknown voice 'Cherry'. Available: ['Alice', 'Bob']")
+
+        with (
+            patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ),
+            patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
+            patch("voicecli.api.generate", side_effect=_fake_generate),
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "unknown_voice"
+        assert "worker_error" in reply
+        we = reply["worker_error"]
+        assert we["code"] == "unknown_voice"
+        assert we["retryable"] is False
+        assert "Cherry" in we["message"]
+        assert we.get("detail") is not None
+        assert "Available" in we["detail"]
+
+    def test_malformed_request_reply_carries_worker_error(self, tmp_path: Path) -> None:
+        """Malformed-request (missing request_id) reply carries structured worker_error."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = {"text": "Hello", "engine": "mock"}  # no request_id
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "malformed_request"
+        assert "worker_error" in reply
+        assert reply["worker_error"]["code"] == "malformed_request"
+        assert reply["worker_error"]["retryable"] is False
+
+    def test_engine_unavailable_reply_carries_worker_error(self, tmp_path: Path) -> None:
+        """engine_unavailable error reply carries structured worker_error."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(engine="ghost-engine")
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "engine_unavailable"
+        assert "worker_error" in reply
+        assert reply["worker_error"]["code"] == "engine_unavailable"

@@ -3,5 +3,10 @@
   "error": "malformed_request",
   "ok": false,
   "request_id": "req-allnl",
-  "trace_id": "trace-tts-5"
+  "trace_id": "trace-tts-5",
+  "worker_error": {
+    "code": "malformed_request",
+    "message": "Request payload is malformed or missing required fields",
+    "retryable": false
+  }
 }

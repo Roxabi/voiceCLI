@@ -3,5 +3,10 @@
   "error": "malformed_request",
   "ok": false,
   "request_id": "../escape",
-  "trace_id": "trace-tts-2"
+  "trace_id": "trace-tts-2",
+  "worker_error": {
+    "code": "malformed_request",
+    "message": "Request payload is malformed or missing required fields",
+    "retryable": false
+  }
 }

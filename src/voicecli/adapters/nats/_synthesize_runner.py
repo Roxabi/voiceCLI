@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from roxabi_contracts.errors import WorkerError
+
 from voicecli.adapters.nats.wav_utils import (
     cleanup_chunks,
     collect_chunked_output,
@@ -69,10 +71,10 @@ async def run_synthesis(
     out_path: Path,
     *,
     trace_id: str,
-) -> tuple[bool, dict | str]:
+) -> tuple[bool, dict | WorkerError]:
     """Run a single TTS synthesis request on the state executor.
 
-    Returns (True, fields_dict) on success or (False, error_code_str) on failure.
+    Returns (True, fields_dict) on success or (False, WorkerError) on failure.
     The caller (TtsNatsAdapter) owns out_path cleanup via a finally block; this
     function never deletes out_path.
     """
@@ -147,13 +149,44 @@ async def run_synthesis(
                             "after_fallback": True,
                         },
                     )
-                    return False, "param_validation_failed"
+                    return False, WorkerError(
+                        code="param_validation_failed",
+                        message="TTS parameter validation failed",
+                        retryable=False,
+                    )
             else:
                 log.warning(
                     "param_validation_failed",
                     extra={"request_id": request_id, "reason": str(exc)[:200]},
                 )
-                return False, "param_validation_failed"
+                return False, WorkerError(
+                    code="param_validation_failed",
+                    message="TTS parameter validation failed",
+                    retryable=False,
+                )
+        except ValueError as exc:
+            msg_str = str(exc)
+            if msg_str.startswith("Unknown voice"):
+                # Extract voice name from the error message for the user-facing message.
+                # Full message: "Unknown voice 'Cherry'. Available: [...]"
+                # detail carries the available speakers so the caller can pick one.
+                log.warning(
+                    "unknown_voice",
+                    extra={"request_id": request_id, "error": msg_str[:400]},
+                )
+                return False, WorkerError(
+                    code="unknown_voice",
+                    message=msg_str.split(".")[0],  # "Unknown voice 'Cherry'"
+                    retryable=False,
+                    detail=msg_str,
+                )
+            # Non-"Unknown voice" ValueError — treat as generic synthesis failure.
+            log.exception("synthesis_failed", extra={"request_id": request_id})
+            return False, WorkerError(
+                code="synthesis_failed",
+                message=type(exc).__name__,
+                retryable=False,
+            )
 
         # If the engine ran in chunked mode it writes {stem}_NNN.wav files
         # plus a {stem}.done sentinel instead of {stem}.wav directly.
@@ -186,13 +219,21 @@ async def run_synthesis(
                 "blobstore_init_failed",
                 extra={"request_id": request_id, "err": str(e)},
             )
-            return False, "blobstore_not_configured"
+            return False, WorkerError(
+                code="blobstore_not_configured",
+                message="BlobStore not configured",
+                retryable=False,
+            )
         except Exception as e:
             log.warning(
                 "blobstore_put_failed",
                 extra={"request_id": request_id, "err": str(e)},
             )
-            return False, "audio_store_failed"
+            return False, WorkerError(
+                code="audio_store_failed",
+                message="Audio storage failed",
+                retryable=True,
+            )
 
         # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef via the helper
         # centralised in blobs.py (single source of truth for the producer-only
@@ -208,12 +249,20 @@ async def run_synthesis(
                 "blobstore_ref_invalid",
                 extra={"request_id": request_id, "err": str(e)},
             )
-            return False, "audio_store_failed"
+            return False, WorkerError(
+                code="audio_store_failed",
+                message="Audio storage reference invalid",
+                retryable=True,
+            )
         if waveform_b64 is not None:
             fields["waveform_b64"] = waveform_b64
 
         return True, fields
 
-    except Exception:
+    except Exception as exc:
         log.exception("synthesis_failed", extra={"request_id": request_id})
-        return False, "synthesis_failed"
+        return False, WorkerError(
+            code="synthesis_failed",
+            message=type(exc).__name__,
+            retryable=False,
+        )

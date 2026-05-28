@@ -3,5 +3,10 @@
   "error": "engine_unavailable",
   "ok": false,
   "request_id": "req-noeng",
-  "trace_id": "trace-tts-8"
+  "trace_id": "trace-tts-8",
+  "worker_error": {
+    "code": "engine_unavailable",
+    "message": "Requested TTS engine is not available",
+    "retryable": true
+  }
 }
