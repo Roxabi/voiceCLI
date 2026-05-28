@@ -55,6 +55,7 @@ async def transcribe_via_nats(
     # config/network error surfaces with its own structured code — not mistaken
     # for a NATS timeout by the catch-all below.
     from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+        BlobRefValidationError,
         BlobstoreConfigError,
         blob_ref_to_contract,
         get_blobstore,
@@ -66,14 +67,16 @@ async def transcribe_via_nats(
             mime="audio/wav",
             source="voicecli",
         )
+        blob_ref = blob_ref_to_contract(blobs_ref)
+    except BlobRefValidationError as e:
+        log.error("blobstore_ref_invalid: %s", e)
+        return {"error": f"blobstore_ref_invalid: {e}"}
     except BlobstoreConfigError as e:
         log.error("blobstore_init_failed: %s", e)
         return {"error": f"blobstore_not_configured: {e}"}
     except Exception as e:
         log.exception("blobstore_put_failed")
         return {"error": f"blobstore_put_failed: {e}"}
-
-    blob_ref = blob_ref_to_contract(blobs_ref)
 
     try:
         nc = await nats_connect(nats_url, inbox_prefix="_inbox.voice-client")

@@ -17,7 +17,8 @@ from typing import Generator
 
 import pytest
 
-from _fakes import FakeMsg, bound_but_closed_socket, spawn_unix_listener
+from tests.nats._fakes import FakeMsg, bound_but_closed_socket, spawn_unix_listener
+from voicecli.adapters.nats.blobs import reset_blobstore_for_tests
 
 __all__ = [
     "FakeMsg",
@@ -25,6 +26,12 @@ __all__ = [
     "live_socket_path",
     "stale_socket_path",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _reset_blobstore() -> None:
+    """Reset the blobstore singleton before each test for isolation."""
+    reset_blobstore_for_tests()
 
 
 @pytest.fixture(autouse=True)

@@ -71,8 +71,7 @@ def _require_imports() -> None:
 # Fakes
 # ---------------------------------------------------------------------------
 
-from _fakes import FakeMsg as MockMsg  # noqa: E402
-from _fakes import FakeNatsConn  # noqa: E402
+from tests.nats._fakes import _BLOBSTORE_PATCH_PATH, FakeMsg as MockMsg, FakeNatsConn  # noqa: E402
 
 from roxabi_blobs import BlobRef  # noqa: E402
 
@@ -81,7 +80,7 @@ _NOW = datetime.now(timezone.utc)
 
 def _make_blob_ref(
     *,
-    store_key: str = "sha256:deadbeef",
+    store_key: str = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
     mime: str = "audio/wav",
     size: int = 32,
     source: str = "test",
@@ -184,7 +183,7 @@ def _patch_transcribe(
 def _patch_blobstore(store=None):
     """Patch blobs.get_blobstore to return *store* (defaults to _FakeBlobStore)."""
     s = store if store is not None else _FakeBlobStore()
-    return patch("voicecli.adapters.nats.blobs.get_blobstore", return_value=s)
+    return patch(_BLOBSTORE_PATCH_PATH, return_value=s)
 
 
 def _patch_temp_root(tmp_path: Path):
@@ -256,7 +255,7 @@ class TestSttNatsAdapter:
         _setup_adapter(adapter, msg)
         payload = {
             "blob_ref": {
-                "store_key": "sha256:x",
+                "store_key": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
                 "mime": "audio/wav",
                 "size": 32,
                 "source": "test",

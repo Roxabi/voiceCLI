@@ -59,8 +59,7 @@ def _require_imports() -> None:
 
 # Canonical message stand-in lives in tests/nats/_fakes.py — aliased here so
 # every existing MockMsg() call site keeps working unchanged.
-from _fakes import FakeMsg as MockMsg  # noqa: E402
-from _fakes import FakeNatsConn  # noqa: E402
+from tests.nats._fakes import _BLOBSTORE_PATCH_PATH, _FakeBlobRef, FakeMsg as MockMsg, FakeNatsConn  # noqa: E402
 
 
 def _setup_adapter(adapter: TtsNatsAdapter, msg: MockMsg) -> None:
@@ -137,41 +136,6 @@ def _stub_engine_factory(
 # ---------------------------------------------------------------------------
 
 
-class _FakeBlobRef:
-    """Contract-compatible BlobRef-like object for test injection.
-
-    model_dump() returns only roxabi_contracts.BlobRef fields (no id/is_sentinel),
-    avoiding the extra="forbid" validation error that roxabi_blobs.BlobRef.model_dump()
-    would trigger on TtsResponse construction.
-    """
-
-    def __init__(
-        self,
-        *,
-        store_key: str = "sha256:testkey",
-        mime: str = "audio/wav",
-    ) -> None:
-        self._store_key = store_key
-        self._mime = mime
-
-    def model_dump(self, *, exclude: set | None = None) -> dict:  # noqa: D102
-        d = {
-            "store_key": self._store_key,
-            "content_hash": "testkey",
-            "mime": self._mime,
-            "size": 16,
-            "source": "voicecli",
-            "filename": None,
-            "platform_ref": None,
-            "platform_message_id": None,
-            "created_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
-        }
-        if exclude:
-            for k in exclude:
-                d.pop(k, None)
-        return d
-
-
 class _FakeBlobStore:
     """Async fake BlobStore for adapter tests.
 
@@ -186,7 +150,10 @@ class _FakeBlobStore:
     ) -> None:
         self.put_calls: list[dict] = []
         self._raise_on_put = raise_on_put
-        self._blob_ref = blob_ref or _FakeBlobRef()
+        self._blob_ref = blob_ref or _FakeBlobRef(
+            store_key="sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1",
+            content_hash="testkey",
+        )
 
     async def put(
         self,
@@ -213,7 +180,7 @@ def _inject_fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction
     """
     store = _FakeBlobStore()
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: store,
     )
     return store
@@ -260,7 +227,10 @@ class TestTtsNatsAdapter:
         # V2: blob_ref present
         assert "blob_ref" in reply
         assert isinstance(reply["blob_ref"], dict)
-        assert reply["blob_ref"]["store_key"] == "sha256:testkey"
+        assert (
+            reply["blob_ref"]["store_key"]
+            == "sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1"
+        )
         assert isinstance(reply.get("duration_ms"), (int, float))
 
     def test_reply_uses_unknown_trace_id_when_absent(self, tmp_path: Path) -> None:
@@ -345,7 +315,7 @@ class TestTtsNatsAdapter:
         # Arrange — override the autouse fake with a raising one
         failing_store = _FakeBlobStore(raise_on_put=ConnectionError("blobstore down"))
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: failing_store,
         )
         adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
@@ -518,7 +488,7 @@ class TestTtsNatsAdapter:
             patch("voicecli.adapters.nats.synthesize_adapter._engine_available", return_value=True),
             patch("voicecli.api.generate", side_effect=_fake_generate),
             patch(
-                "voicecli.adapters.nats.blobs.get_blobstore",
+                _BLOBSTORE_PATCH_PATH,
                 return_value=sniffing_store,
             ),
         ):

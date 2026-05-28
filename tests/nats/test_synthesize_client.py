@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from tests.nats._fakes import _BLOBSTORE_PATCH_PATH
 from voicecli.adapters.nats import synthesize_client
 
 
@@ -103,7 +104,7 @@ def test_happy_path_returns_decoded_audio(monkeypatch: pytest.MonkeyPatch) -> No
 
     fake_blobstore = _FakeBlobStore()
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: fake_blobstore,
     )
     monkeypatch.setenv("NATS_URL", "nats://example:4222")

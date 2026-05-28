@@ -33,7 +33,7 @@ def _valid_tts_payload(**overrides: object) -> dict:
 def _valid_blob_ref_dict(**overrides: object) -> dict:
     """Build a minimal valid blob_ref dict for STT payloads."""
     base: dict = {
-        "store_key": "sha256:deadbeef",
+        "store_key": "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
         "mime": "audio/wav",
         "size": 1024,
         "source": "test",
@@ -310,7 +310,7 @@ class TestValidateTtsRequest:
             _valid_tts_payload(), default_engine="mock", engine_available=_engine_available
         )
         # Assert — frozen dataclass raises FrozenInstanceError on mutation attempt
-        with pytest.raises(Exception):  # noqa: PT011
+        with pytest.raises(AttributeError):
             result.error_code = "mutated"  # type: ignore[misc]
 
 
@@ -591,5 +591,5 @@ class TestValidateSttRequest:
         # Arrange + Act
         result = validate_stt_request(_valid_stt_payload())
         # Assert — frozen dataclass raises FrozenInstanceError on mutation attempt
-        with pytest.raises(Exception):  # noqa: PT011
+        with pytest.raises(AttributeError):
             result.error_code = "mutated"  # type: ignore[misc]

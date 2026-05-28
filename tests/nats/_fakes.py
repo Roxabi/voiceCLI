@@ -22,8 +22,11 @@ import json
 import socket
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Generator
+
+_BLOBSTORE_PATCH_PATH = "voicecli.adapters.nats.blobs.get_blobstore"
 
 
 class SyncExecutor:
@@ -40,6 +43,59 @@ class SyncExecutor:
         except BaseException as exc:  # noqa: BLE001
             f.set_exception(exc)
         return f
+
+
+class _FakeBlobRef:
+    """Contract-compatible BlobRef-like object for test injection.
+
+    model_dump() includes all fields by default; use ``exclude={'id','is_sentinel'}``
+    for contract-compatible output that avoids the ``extra="forbid"`` validation
+    error on TtsResponse construction.
+    """
+
+    def __init__(
+        self,
+        *,
+        store_key: str = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        mime: str = "audio/wav",
+        size: int = 16,
+        source: str = "voicecli",
+        content_hash: str = "default",
+        created_at: datetime | None = None,
+        id: Any | None = None,  # noqa: A002
+        is_sentinel: bool = False,
+    ) -> None:
+        self.store_key = store_key
+        self.mime = mime
+        self.size = size
+        self.source = source
+        self.content_hash = content_hash
+        self.created_at = created_at if created_at is not None else datetime(2026, 1, 1, tzinfo=UTC)
+        self.id = id
+        self.is_sentinel = is_sentinel
+
+    def model_dump(self, *, exclude: set | None = None) -> dict:
+        """Pydantic-compatible dump for ContractsBlobRef.model_validate()."""
+        created_at = self.created_at
+        if isinstance(created_at, datetime):
+            created_at = created_at.isoformat()
+        d = {
+            "store_key": self.store_key,
+            "mime": self.mime,
+            "size": self.size,
+            "source": self.source,
+            "content_hash": self.content_hash,
+            "created_at": created_at,
+            "filename": None,
+            "platform_ref": None,
+            "platform_message_id": None,
+            "id": self.id,
+            "is_sentinel": self.is_sentinel,
+        }
+        if exclude:
+            for k in exclude:
+                d.pop(k, None)
+        return d
 
 
 if TYPE_CHECKING:

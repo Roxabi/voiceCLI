@@ -1,0 +1,45 @@
+---
+title: "voiceCLI #144 polish — deferred advisories from PR #180 consensus (A2, A4, A7–A12)"
+issue: 183
+status: approved
+tier: F-lite
+date: 2026-05-28
+---
+
+## Problem
+
+PR #180 merged with a consensus split: 6 blockers + SC-test-4 + 4 cheap advisories landed in the PR; 8 remaining advisories were deferred to post-merge polish. These deferred items span singleton async-safety, store_key validation, test infrastructure refactoring, and single-file hygiene. Leaving them unresolved compounds technical debt in the NATS blobref adapter and test suite.
+
+## Who
+
+- **Primary:** voiceCLI maintainers (code quality + review velocity)
+- **Secondary:** Future contributors (cleaner test fixtures, safer runtime)
+
+## Constraints
+
+- Must not break existing CI (ruff, pyright, pytest)
+- Must not introduce new review blockers
+- Must respect the 3-bundle grouping from the consensus review
+
+## Out of Scope
+
+- Re-opening or re-litigating PR #180 design decisions
+- Changes beyond the 8 deferred advisories
+- Cross-repo changes (roxabi-blobs upstream)
+
+## Premise Validity
+
+**Success in 6 months:** All 8 items resolved, CI green, `/code-review` on the polish PR produces zero new blockers.
+
+**Failure in 6 months:** Any deferred item still unresolved OR CI/regression introduced by the polish PR.
+
+**Simplest alternative:** Skip polish and leave deferred items as-is.
+**Why not simplest:** A2 (singleton async-safety) and A4 (store_key validation) are runtime defense-in-depth; A7-A12 are test-hygiene debt that slows future PR review. Skipping them compounds cost.
+
+## Complexity
+
+**Tier: F-lite** — Clear scope, 3 bundles, no new architecture. Multi-domain (adapters + tests + e2e) but well-defined acceptance criteria.
+
+- ≤10 files across 3 bundles
+- No new patterns or dependencies
+- Bundles are independent and can be sequenced
