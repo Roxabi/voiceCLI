@@ -18,12 +18,15 @@ fail fast.
 from __future__ import annotations
 
 import os
+import re
+import threading
 from typing import Any
 
 from roxabi_blobs import HttpBlobStore
 from roxabi_contracts.blob_ref import BlobRef as ContractsBlobRef
 
 _INSTANCE: HttpBlobStore | None = None
+_LOCK = threading.Lock()
 
 # Producer-only fields on roxabi_blobs.BlobRef that the contract BlobRef rejects
 # (extra="forbid"). Drop them when bridging to the wire payload.
@@ -53,19 +56,32 @@ def get_blobstore() -> HttpBlobStore:
     """
     global _INSTANCE
     if _INSTANCE is None:
-        backend = os.environ.get("BLOBSTORE_BACKEND", "")
-        if backend != "http":
-            raise BlobstoreConfigError(
-                f"BLOBSTORE_BACKEND must be 'http' for voicecli workers (got {backend!r}); "
-                "FS-direct backend forbidden per ADR-068"
-            )
-        try:
-            url = os.environ["BLOBSTORE_URL"]
-            token = os.environ["BLOBSTORE_BEARER_TOKEN"]
-        except KeyError as e:
-            raise BlobstoreConfigError(f"required env var not set: {e.args[0]}") from e
-        _INSTANCE = HttpBlobStore(base_url=url, token=token)
+        with _LOCK:
+            if _INSTANCE is None:
+                backend = os.environ.get("BLOBSTORE_BACKEND", "")
+                if backend != "http":
+                    raise BlobstoreConfigError(
+                        f"BLOBSTORE_BACKEND must be 'http' for voicecli workers (got {backend!r}); "
+                        "FS-direct backend forbidden per ADR-068"
+                    )
+                try:
+                    url = os.environ["BLOBSTORE_URL"]
+                    token = os.environ["BLOBSTORE_BEARER_TOKEN"]
+                except KeyError as e:
+                    raise BlobstoreConfigError(f"required env var not set: {e.args[0]}") from e
+                _INSTANCE = HttpBlobStore(base_url=url, token=token)
     return _INSTANCE
+
+
+def reset_blobstore_for_tests() -> None:
+    """Reset the singleton instance for test isolation.
+
+    Safe to call between tests; the next ``get_blobstore()`` call will
+    re-initialize the instance from environment variables.
+    """
+    global _INSTANCE
+    with _LOCK:
+        _INSTANCE = None
 
 
 def blob_ref_to_contract(ref: Any) -> ContractsBlobRef:
@@ -76,4 +92,7 @@ def blob_ref_to_contract(ref: Any) -> ContractsBlobRef:
     ``is_sentinel``) must be stripped before validation. Centralized here so a
     field rename or addition upstream is a one-place fix instead of N callsites.
     """
+    store_key = getattr(ref, "store_key", "")
+    if not re.match(r"^sha256:[a-f0-9]{64}$", store_key):
+        raise ValueError(f"Invalid store_key: {store_key!r}")
     return ContractsBlobRef.model_validate(ref.model_dump(exclude=set(_PRODUCER_ONLY_FIELDS)))

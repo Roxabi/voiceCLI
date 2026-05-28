@@ -28,6 +28,7 @@ from unittest.mock import patch
 import pytest
 
 from tests.e2e.stub_hub import FakeBlobStore
+from _fakes import _BLOBSTORE_PATCH_PATH, FakeMsg, FakeNatsConn
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,8 @@ from tests.e2e.stub_hub import FakeBlobStore
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
+@pytest.mark.xfail(
+    strict=True,
     reason=(
         "Deferred until lyra#1067 (V5 lyra-side worker wiring) lands atomically. "
         "Post-V2, the satellites call HttpBlobStore.put/get which needs a real "
@@ -44,7 +46,7 @@ from tests.e2e.stub_hub import FakeBlobStore
         "the V1 audio_b64 payload shape. Both are tracked as part of the lyra-side "
         "atomic merge. In-process V2 coverage is provided by "
         "test_stt_roundtrip_via_fake_blobstore + test_tts_roundtrip_via_fake_blobstore."
-    )
+    ),
 )
 def test_nats_roundtrip(nkey_seed: tuple[Path, str], compose_stack: dict) -> None:
     """Full contract proof: hub ↔ TTS satellite, hub ↔ STT satellite."""
@@ -74,7 +76,7 @@ def test_stt_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.Mo
     fake_store = FakeBlobStore()
 
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: fake_store,
     )
 
@@ -146,18 +148,6 @@ def test_stt_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.Mo
     }
 
     # Set up the real SttNatsAdapter (model_warm=True to skip GPU warmup)
-    # Import _fakes via its full path since tests/nats/ isn't on sys.path in e2e.
-    import importlib.util
-    import sys
-    from pathlib import Path as _Path
-
-    _fakes_path = _Path(__file__).parent.parent / "nats" / "_fakes.py"
-    _spec = importlib.util.spec_from_file_location("_fakes_e2e", _fakes_path)
-    _fakes_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-    _spec.loader.exec_module(_fakes_mod)  # type: ignore[union-attr]
-    FakeMsg = _fakes_mod.FakeMsg
-    FakeNatsConn = _fakes_mod.FakeNatsConn
-
     from voicecli.adapters.nats.config import DEFAULT_MODEL
     from voicecli.adapters.nats.transcribe_adapter import SttNatsAdapter
 
@@ -198,7 +188,7 @@ def test_tts_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.Mo
     # Arrange — shared FakeBlobStore
     fake_store = FakeBlobStore()
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: fake_store,
     )
 
@@ -244,17 +234,6 @@ def test_tts_roundtrip_via_fake_blobstore(tmp_path: Path, monkeypatch: pytest.Mo
         "text": "hello world",
         "engine": "mock",
     }
-
-    # Import _fakes via its full path (tests/nats/ not on sys.path in e2e).
-    import importlib.util
-    from pathlib import Path as _Path
-
-    _fakes_path = _Path(__file__).parent.parent / "nats" / "_fakes.py"
-    _spec = importlib.util.spec_from_file_location("_fakes_e2e_tts", _fakes_path)
-    _fakes_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-    _spec.loader.exec_module(_fakes_mod)  # type: ignore[union-attr]
-    FakeMsg = _fakes_mod.FakeMsg
-    FakeNatsConn = _fakes_mod.FakeNatsConn
 
     from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
 

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _fakes import SyncExecutor
+from tests.nats._fakes import _BLOBSTORE_PATCH_PATH, _FakeBlobRef, SyncExecutor
 
 from voicecli.adapters.nats._synthesize_runner import (
     NAMED_KWARGS,
@@ -51,37 +51,6 @@ class _FakeApi:
             self._behavior(text, engine=engine, output=output, **kw)
 
 
-class _FakeBlobRef:
-    """Contract-compatible BlobRef-like object whose model_dump() satisfies
-    roxabi_contracts.BlobRef (extra="forbid") — excludes id and is_sentinel.
-
-    The real roxabi_blobs.BlobRef.model_dump() includes 'id' and 'is_sentinel'
-    which would be rejected by roxabi_contracts.BlobRef at TtsResponse construction.
-    Using this fake avoids the bridge exclusion that production code must apply.
-    """
-
-    def __init__(self, *, store_key: str = "sha256:abc123", mime: str = "audio/wav") -> None:
-        self._store_key = store_key
-        self._mime = mime
-
-    def model_dump(self, *, exclude: set | None = None) -> dict:  # noqa: D102
-        d = {
-            "store_key": self._store_key,
-            "content_hash": "abc123",
-            "mime": self._mime,
-            "size": 16,
-            "source": "voicecli",
-            "filename": None,
-            "platform_ref": None,
-            "platform_message_id": None,
-            "created_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
-        }
-        if exclude:
-            for k in exclude:
-                d.pop(k, None)
-        return d
-
-
 class _FakeBlobStore:
     """Async-compatible fake BlobStore that records put() calls."""
 
@@ -93,7 +62,10 @@ class _FakeBlobStore:
     ) -> None:
         self.put_calls: list[dict] = []
         self._raise_on_put = raise_on_put
-        self._blob_ref = blob_ref or _FakeBlobRef()
+        self._blob_ref = blob_ref or _FakeBlobRef(
+            store_key="sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1",
+            content_hash="abc123",
+        )
 
     async def put(
         self,
@@ -159,7 +131,7 @@ def fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction]
     """
     store = _FakeBlobStore()
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: store,
     )
     return store
@@ -197,7 +169,10 @@ class TestRunSynthesisHappyPath:
         assert result["mime_type"] == "audio/wav"
         assert isinstance(result["duration_ms"], int)
         # blob_ref must carry the expected store_key from the fake
-        assert result["blob_ref"]["store_key"] == "sha256:abc123"
+        assert (
+            result["blob_ref"]["store_key"]
+            == "sha256:abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1"
+        )
 
     def test_happy_path_calls_blobstore_put_with_correct_kwargs(
         self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
@@ -315,7 +290,7 @@ class TestRunSynthesisBlobStorePutFailure:
         # Arrange
         store = _FakeBlobStore(raise_on_put=ConnectionError("blobstore unreachable"))
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: store,
         )
         out_path = tmp_path / "req-storefail.wav"
@@ -348,7 +323,7 @@ class TestRunSynthesisBlobStorePutFailure:
         # Arrange — engine succeeds, then put raises
         store = _FakeBlobStore(raise_on_put=RuntimeError("network timeout"))
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: store,
         )
         out_path = tmp_path / "req-storefail2.wav"
@@ -389,7 +364,7 @@ class TestRunSynthesisBlobStorePutFailure:
         def _raising_factory():
             raise blobs.BlobstoreConfigError("BLOBSTORE_BEARER_TOKEN not set")
 
-        monkeypatch.setattr("voicecli.adapters.nats.blobs.get_blobstore", _raising_factory)
+        monkeypatch.setattr(_BLOBSTORE_PATCH_PATH, _raising_factory)
         out_path = tmp_path / "req-cfgfail.wav"
         wav_bytes = _make_silent_wav_bytes()
 
@@ -419,7 +394,7 @@ class TestRunSynthesisBlobStorePutFailure:
         # Arrange
         store = _FakeBlobStore(raise_on_put=OSError("disk full"))
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: store,
         )
         out_path = tmp_path / "req-oncefail.wav"

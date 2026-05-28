@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _fakes import SyncExecutor
+from tests.nats._fakes import _BLOBSTORE_PATCH_PATH, SyncExecutor
 
 from roxabi_blobs import BlobRef
 from voicecli.runtime.transcribe import Segment, TranscriptionResult
@@ -42,7 +42,7 @@ _NOW = datetime.now(timezone.utc)
 
 def _make_blob_ref(
     *,
-    store_key: str = "sha256:deadbeef",
+    store_key: str = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
     mime: str = "audio/wav",
     size: int = 32,
     source: str = "test",
@@ -166,7 +166,7 @@ def fake_blobstore(monkeypatch):  # pyright: ignore[reportUnusedFunction]
     """
     store = _FakeBlobStore()
     monkeypatch.setattr(
-        "voicecli.adapters.nats.blobs.get_blobstore",
+        _BLOBSTORE_PATCH_PATH,
         lambda: store,
     )
     return store
@@ -265,7 +265,9 @@ class TestRunTranscriptionHappyPath:
         """Runner calls BlobStore.get(blob_ref.store_key)."""
         # Arrange
         state = _make_state(model_warm=True)
-        blob_ref = _make_blob_ref(store_key="sha256:unique-key")
+        blob_ref = _make_blob_ref(
+            store_key="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
 
         # Act
         ok, _, _ = _run(
@@ -282,7 +284,9 @@ class TestRunTranscriptionHappyPath:
 
         # Assert — BlobStore.get called with the blob_ref store_key
         assert ok is True
-        assert fake_blobstore.get_calls == ["sha256:unique-key"]
+        assert fake_blobstore.get_calls == [
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ]
 
     def test_scoped_path_returned_on_success(
         self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
@@ -367,7 +371,7 @@ class TestRunTranscriptionBlobStoreFailure:
         """
         # Arrange
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: _RaisingBlobStore(),
         )
         state = _make_state(model_warm=True)
@@ -396,7 +400,7 @@ class TestRunTranscriptionBlobStoreFailure:
     ) -> None:
         # Arrange
         monkeypatch.setattr(
-            "voicecli.adapters.nats.blobs.get_blobstore",
+            _BLOBSTORE_PATCH_PATH,
             lambda: _RaisingBlobStore(),
         )
         transcribe_calls: list = []
@@ -441,7 +445,7 @@ class TestRunTranscriptionBlobStoreFailure:
         def _raising_factory():
             raise blobs.BlobstoreConfigError("BLOBSTORE_URL not set")
 
-        monkeypatch.setattr("voicecli.adapters.nats.blobs.get_blobstore", _raising_factory)
+        monkeypatch.setattr(_BLOBSTORE_PATCH_PATH, _raising_factory)
         state = _make_state(model_warm=True)
 
         # Act

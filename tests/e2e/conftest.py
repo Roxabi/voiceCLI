@@ -12,6 +12,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -20,6 +21,10 @@ import pytest
 
 E2E_DIR = Path(__file__).parent
 REPO_ROOT = E2E_DIR.parent.parent
+NATS_TEST_DIR = REPO_ROOT / "tests" / "nats"
+# Allow e2e tests to import shared fakes from tests/nats/_fakes.py
+sys.path.insert(0, str(NATS_TEST_DIR))
+
 COMPOSE_FILE = E2E_DIR / "docker-compose.nats.yml"
 CONF_TEMPLATE = E2E_DIR / "nats-server.conf.template"
 
