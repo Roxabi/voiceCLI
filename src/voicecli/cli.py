@@ -800,13 +800,10 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from voicecli.config import VOICECLI_DIR
-        from voicecli.utils import default_output_path
+        from voicecli.utils import STT_OUTPUT_DIR, default_output_path
 
         ext = "json" if json_output else "txt"
-        output = default_output_path(
-            prefix=audio.stem, fmt=ext, base_dir=VOICECLI_DIR / "STT" / "texts_out"
-        )
+        output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=STT_OUTPUT_DIR)
 
     output.write_text(text_out, encoding="utf-8")
     typer.echo(f"Saved to {output}", err=True)

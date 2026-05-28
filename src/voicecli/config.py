@@ -19,7 +19,13 @@ def get_data_dir() -> Path:
     """
     env = os.environ.get("VOICECLI_DATA_DIR")
     if env:
-        return Path(env).expanduser()
+        path = Path(env).expanduser()
+        if not path.is_absolute():
+            raise ValueError(f"VOICECLI_DATA_DIR must be an absolute path, got: {env}")
+        path = path.resolve()
+        if path.exists() and not path.is_dir():
+            raise ValueError(f"VOICECLI_DATA_DIR must be a directory, got: {path}")
+        return path
     new_dir = Path.home() / ".roxabi" / "voicecli"
     old_dir = Path.home() / ".voicecli"
     if new_dir.exists() or not old_dir.exists():
@@ -86,7 +92,7 @@ def load_defaults(config: Path | None = None) -> dict:
     path = config if config is not None else _find_config()
     if path is None:
         print(
-            "voicecli: no voicecli.toml found (searched ~/.voicecli/ and from CWD to $HOME); using built-in defaults",
+            f"voicecli: no voicecli.toml found (searched {VOICECLI_DIR} and from CWD to $HOME); using built-in defaults",
             file=sys.stderr,
         )
         return {}

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tomllib
 
-from voicecli.config import _find_config
+from voicecli.config import VOICECLI_DIR, _find_config
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ def load_telegram_config() -> dict[str, str]:
     path = _find_config()
     if path is None:
         raise RuntimeError(
-            "voicecli.toml not found (searched ~/.roxabi/voicecli/ and from CWD to $HOME)"
+            f"voicecli.toml not found (searched {VOICECLI_DIR} and from CWD to $HOME)"
         )
     with open(path, "rb") as f:
         data = tomllib.load(f)
