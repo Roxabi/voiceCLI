@@ -1,5 +1,4 @@
 @.claude/stack.yml
-@~/.claude/shared/global-patterns.md
 
 # VoiceCLI
 
@@ -11,7 +10,6 @@ Python 3.12 via `uv` · Typer CLI · PyTorch 2.7+ cu128 · ruff (L≤100, py312)
 
 - **Project:** VoiceCLI
 - **Before work:** `/dev #N` = single entry — picks tier (S / F-lite / F-full) + drives lifecycle
-- **Decisions:** → global patterns (@~/.claude/shared/global-patterns.md)
 - **Never:** `--force` / `--hard` / `--amend`
 - **Always:** use matching skill even w/o slash cmd
 
