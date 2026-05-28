@@ -1,7 +1,7 @@
 SHELL := /bin/bash -o pipefail
 
 QUADLET_DIR        ?= $(HOME)/.config/containers/systemd
-VOICECLI_NKEYS_DIR ?= $(HOME)/.voicecli/nkeys
+VOICECLI_NKEYS_DIR ?= $(HOME)/.roxabi/voicecli/nkeys
 DEPLOY_HOST        ?= roxabituwer
 VOICECLI_SVCS      := voicecli-tts voicecli-stt
 TTS_IMAGE          := ghcr.io/roxabi/voicecli-tts:staging
