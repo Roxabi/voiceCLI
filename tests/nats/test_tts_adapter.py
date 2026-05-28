@@ -21,7 +21,6 @@ import base64
 import contextlib
 import threading
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
