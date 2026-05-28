@@ -29,7 +29,7 @@ DOCKERFILE="Dockerfile"
 # voiceCLI has no hub — NATS is the hub; workers subscribe to the queue group.
 HUB_SERVICE=""
 ADAPTER_SERVICES="voicecli-stt voicecli-tts"
-ENV_FILES_DIR="$HOME/.voicecli/env"
+ENV_FILES_DIR="$HOME/.roxabi/voicecli/env"
 ENV_FILES=""
 LOG_FILE="$HOME/.local/state/voicecli/logs/deploy.log"
 FAIL_FILE="$HOME/.local/state/voicecli/deploy_failed_shas.txt"

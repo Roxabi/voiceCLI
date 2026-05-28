@@ -202,9 +202,9 @@ Show a summary:
 ```
 ✅ Voice cloned from: <video title if available>
 
-  Sample  : ~/.voicecli/TTS/samples/<slug>.wav  (30s · mono · 22 050 Hz)
+  Sample  : ~/.roxabi/voicecli/TTS/samples/<slug>.wav  (30s · mono · 22 050 Hz)
   Engine  : qwen-fast
-  Output  : ~/.voicecli/TTS/voices_out/...wav
+  Output  : ~/.roxabi/voicecli/TTS/voices_out/...wav
 
 To generate more with this voice:
   voicecli clone "Your text here" -e qwen-fast
