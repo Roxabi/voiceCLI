@@ -48,9 +48,9 @@ class SyncExecutor:
 class _FakeBlobRef:
     """Contract-compatible BlobRef-like object for test injection.
 
-    model_dump() returns only roxabi_contracts.BlobRef fields (no id/is_sentinel),
-    avoiding the extra="forbid" validation error that roxabi_blobs.BlobRef.model_dump()
-    would trigger on TtsResponse construction.
+    model_dump() includes all fields by default; use ``exclude={'id','is_sentinel'}``
+    for contract-compatible output that avoids the ``extra="forbid"`` validation
+    error on TtsResponse construction.
     """
 
     def __init__(

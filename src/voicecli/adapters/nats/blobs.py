@@ -42,6 +42,10 @@ class BlobstoreConfigError(RuntimeError):
     """
 
 
+class BlobRefValidationError(BlobstoreConfigError):
+    """Raised when a blob_ref field fails validation (e.g. invalid store_key)."""
+
+
 def get_blobstore() -> HttpBlobStore:
     """Return the singleton ``HttpBlobStore`` client, creating it on first call.
 
@@ -94,5 +98,5 @@ def blob_ref_to_contract(ref: Any) -> ContractsBlobRef:
     """
     store_key = getattr(ref, "store_key", "")
     if not re.match(r"^sha256:[a-f0-9]{64}$", store_key):
-        raise ValueError(f"Invalid store_key: {store_key!r}")
+        raise BlobRefValidationError(f"Invalid store_key: {store_key!r}")
     return ContractsBlobRef.model_validate(ref.model_dump(exclude=set(_PRODUCER_ONLY_FIELDS)))

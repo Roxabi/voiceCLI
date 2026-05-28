@@ -169,6 +169,7 @@ async def run_synthesis(
         waveform_b64 = wav_waveform_b64(out_path)
 
         from voicecli.adapters.nats.blobs import (  # noqa: PLC0415
+            BlobRefValidationError,
             BlobstoreConfigError,
             blob_ref_to_contract,
             get_blobstore,
@@ -196,11 +197,18 @@ async def run_synthesis(
         # Bridge roxabi_blobs.BlobRef → roxabi_contracts.BlobRef via the helper
         # centralised in blobs.py (single source of truth for the producer-only
         # field exclusion set).
-        fields: dict[str, Any] = {
-            "blob_ref": blob_ref_to_contract(blobs_ref).model_dump(),
-            "mime_type": "audio/wav",
-            "duration_ms": duration_ms,
-        }
+        try:
+            fields: dict[str, Any] = {
+                "blob_ref": blob_ref_to_contract(blobs_ref).model_dump(),
+                "mime_type": "audio/wav",
+                "duration_ms": duration_ms,
+            }
+        except BlobRefValidationError as e:
+            log.warning(
+                "blobstore_ref_invalid",
+                extra={"request_id": request_id, "err": str(e)},
+            )
+            return False, "audio_store_failed"
         if waveform_b64 is not None:
             fields["waveform_b64"] = waveform_b64
 

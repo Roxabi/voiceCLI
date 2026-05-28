@@ -30,7 +30,7 @@ __all__ = [
 
 @pytest.fixture(autouse=True)
 def _reset_blobstore() -> None:
-    """Reset the blobstore singleton after each test for isolation."""
+    """Reset the blobstore singleton before each test for isolation."""
     reset_blobstore_for_tests()
 
 
