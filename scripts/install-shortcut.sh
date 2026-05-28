@@ -95,11 +95,13 @@ if ! command -v "$BIN_DIR/voicecli" >/dev/null 2>&1; then
     warn "Run from the voiceCLI repo:  uv sync --extra nats && ln -s \"\$PWD/.venv/bin/voicecli\" $BIN_DIR/voicecli"
 fi
 
-# ── ~/.voicecli/ existence (config + nkey) ────────────────────────────────────
+# ── ~/.voicecli/ existence (config + nkey + blobstore) ──────────────────────
 TOML="$HOME/.voicecli/voicecli.toml"
 SEED="$HOME/.voicecli/nkeys/voice-client.seed"
+BLOBSTORE_ENV="$HOME/.voicecli/env/blobstore.env"
 [ -f "$TOML" ] || warn "missing $TOML — set [nats] url + nkey_seed_path before first use"
 [ -f "$SEED" ] || warn "missing nkey seed at $SEED — copy it from your hub-authorized machine (chmod 600)"
+[ -f "$BLOBSTORE_ENV" ] || warn "missing $BLOBSTORE_ENV — run deploy/install.sh on the hub or create it manually"
 
 # ── Stop here when --check-only ───────────────────────────────────────────────
 if [ "$CHECK_ONLY" -eq 1 ]; then

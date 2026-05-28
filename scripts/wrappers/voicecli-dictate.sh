@@ -8,9 +8,9 @@
 #   2. asks voicecli for the resolved NATS host:port and does a 2-s TCP probe,
 #      surfacing a desktop notification if the hub is unreachable instead of
 #      blocking on the CLI's 60-s timeout;
-#   3. delegates to `voicecli dictate nats`. NATS_URL / NATS_NKEY_SEED_PATH /
-#      mode are resolved by voicecli itself (env > `[nats]` table in
-#      voicecli.toml).
+#   3. delegates to `voicecli dictate nats`. BLOBSTORE_* / NATS_URL /
+#      NATS_NKEY_SEED_PATH / mode are resolved by voicecli itself (env > toml
+#      tables `[blobstore]` / `[nats]`).
 #
 # Overridable via env:
 #   VOICECLI_BIN   — voicecli command name or path (default: voicecli, resolved via PATH)
@@ -22,6 +22,20 @@ set -u
 # itself resolve under minimal Spawn() PATHs. ~/.local/bin is the standard
 # location for `uv tool install` / pip --user / our own symlink.
 export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:${PATH:-}"
+
+# Blobstore env file (created by deploy/install.sh). Sourced here because
+# compositor Spawn() actions do not run an interactive shell startup.
+BLOBSTORE_ENV="$HOME/.voicecli/env/blobstore.env"
+if [ -f "$BLOBSTORE_ENV" ]; then
+    # set -u safe: only export vars that are actually set in the file
+    while IFS='=' read -r key value; do
+        case "$key" in
+            BLOBSTORE_BACKEND|BLOBSTORE_URL|BLOBSTORE_BEARER_TOKEN)
+                export "$key=$value"
+                ;;
+        esac
+    done < <(grep -E '^(BLOBSTORE_BACKEND|BLOBSTORE_URL|BLOBSTORE_BEARER_TOKEN)=' "$BLOBSTORE_ENV")
+fi
 
 VOICECLI_BIN="${VOICECLI_BIN:-voicecli}"
 

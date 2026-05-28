@@ -397,12 +397,14 @@ def dictate_nats(
         load_vocab,
         vocab_to_prompt,
     )
+    from voicecli.core.config_blobstore import apply_blobstore_env_from_config
     from voicecli.ui.nats_mic_recorder import is_recording, start_recording, stop_recording
     from voicecli.adapters.nats.transcribe_client import transcribe_via_nats
     from voicecli.ui.dictate_client import notify
     from voicecli.core.dictate_modes import get_mode
     from voicecli.ui.sounds import play_ui_sound
 
+    apply_blobstore_env_from_config()
     apply_nats_env_from_config()
 
     # Resolve mode (prompt + task + optional language) like the socket daemon does.

@@ -19,6 +19,12 @@ engine = "qwen"
 #                          # Per-request engine switching is supported — the satellite
 #                          # hot-swaps engines via LRU eviction with VRAM awareness.
 
+# ── Blobstore (HTTP-backed, required for NATS STT/TTS) ─────────────────────────
+# [blobstore]
+# backend = "http"                       # must be "http" per ADR-068
+# url = "https://blobstore.hub.local"    # lyra-hub BlobStore HTTP endpoint
+# bearer_token = "your-token-here"       # issued by lyra blobstore service
+
 # ── Voxtral-specific defaults (also settable via --flow-steps / --cfg-alpha) ──
 # flow_steps = 8               # ODE solver steps (3=fast, 8=quality)  [Voxtral]
 # cfg_alpha = 1.2              # classifier-free guidance (1.2=quality, 1.0=faster)  [Voxtral]
