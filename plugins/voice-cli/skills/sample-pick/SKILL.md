@@ -137,7 +137,7 @@ $VOICECLI samples use "${SLUG}.wav"
   Source   : <input>
   Segment  : <start> → <end>  (<duration>s)
   Score    : <score>
-  Sample   : ~/.voicecli/TTS/samples/<slug>.wav
+  Sample   : ~/.roxabi/voicecli/TTS/samples/<slug>.wav
   Active   : yes
 
 To clone with this voice:

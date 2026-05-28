@@ -37,10 +37,10 @@ Pipeline (cli → markdown → api → translate → engine → utils) + LLM ski
 ## Project Layout
 
 ```
-voicecli.example.toml — template — copy → ~/.voicecli/voicecli.toml
+voicecli.example.toml — template — copy → ~/.roxabi/voicecli/voicecli.toml
 TTS/
   texts_in/         — authored .md scripts (git-tracked)
-~/.voicecli/
+~/.roxabi/voicecli/
   voicecli.toml     — user config (global, all projects)
   voicecli.vocab    — personal STT vocabulary (shared w/ Lyra)
   TTS/
@@ -89,10 +89,10 @@ Engine-specific nuances (Qwen `x_vector_only_mode`, Chatterbox chunking @ 250 ch
 
 - ¬over-engineering — thin CLI, flat + simple
 - Heavy imports (torch, qwen_tts, chatterbox, voxtral_tts) deferred to function bodies
-- Output WAV/MP3 → `~/.voicecli/TTS/voices_out/` default
-- Samples → `~/.voicecli/TTS/samples/`
-- Transcription → `~/.voicecli/STT/texts_out/` default
-- Dictate recordings → `~/.voicecli/STT/audio_in/`
+- Output WAV/MP3 → `~/.roxabi/voicecli/TTS/voices_out/` default
+- Samples → `~/.roxabi/voicecli/TTS/samples/`
+- Transcription → `~/.roxabi/voicecli/STT/texts_out/` default
+- Dictate recordings → `~/.roxabi/voicecli/STT/audio_in/`
 - Scripts authored ∈ `TTS/texts_in/` (project-local, git-tracked)
 - Override conflicts ∈ `[tool.uv] override-dependencies` ∈ pyproject.toml
 - Audio playback/record: PulseAudio CLI (paplay/parecord), ¬sounddevice

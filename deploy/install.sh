@@ -10,12 +10,12 @@
 #   --force         Re-create secrets even if they already exist (implies --replace)
 #
 # Prerequisites:
-#   - nkeys at ~/.voicecli/nkeys/voice-{stt,tts}.seed (0600)
+#   - nkeys at ~/.roxabi/voicecli/nkeys/voice-{stt,tts}.seed (0600)
 #   - podman, systemctl --user
 
 set -euo pipefail
 
-NKEYS_DIR="${HOME}/.voicecli/nkeys"
+NKEYS_DIR="${HOME}/.roxabi/voicecli/nkeys"
 QUADLET_DIR="${HOME}/.config/containers/systemd"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -80,7 +80,7 @@ fi
 run mkdir -p "$QUADLET_DIR"
 run mkdir -p "${HOME}/.cache/huggingface" "${HOME}/.cache/voicecli"
 run mkdir -p "${HOME}/.roxabi/voicecli/env"
-run mkdir -p "${HOME}/.voicecli/env"
+run mkdir -p "${HOME}/.roxabi/voicecli/env"
 
 # ── Env stubs (S6) ────────────────────────────────────────────────────────────
 for role in stt tts; do
@@ -97,7 +97,7 @@ EOF
 done
 
 # ── Blobstore env stub ────────────────────────────────────────────────────────
-blobstore_env="${HOME}/.voicecli/env/blobstore.env"
+blobstore_env="${HOME}/.roxabi/voicecli/env/blobstore.env"
 if [[ ! -f "$blobstore_env" ]]; then
     run bash -c "cat > '${blobstore_env}'" <<'EOF'
 # voiceCLI blobstore credentials (ADR-068)

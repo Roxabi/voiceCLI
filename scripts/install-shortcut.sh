@@ -10,10 +10,10 @@
 #                               [--bin-dir PATH] [--check-only] [--quiet]
 #
 # Configuration of NATS (URL, nkey seed) is left to the user:
-#   ~/.voicecli/voicecli.toml
+#   ~/.roxabi/voicecli/voicecli.toml
 #     [nats]
 #     url = "nats://hub-host:4222"
-#     nkey_seed_path = "~/.voicecli/nkeys/voice-client.seed"
+#     nkey_seed_path = "~/.roxabi/voicecli/nkeys/voice-client.seed"
 #
 # The wrapper reads those at invoke time (env still wins over the toml).
 
@@ -95,10 +95,10 @@ if ! command -v "$BIN_DIR/voicecli" >/dev/null 2>&1; then
     warn "Run from the voiceCLI repo:  uv sync --extra nats && ln -s \"\$PWD/.venv/bin/voicecli\" $BIN_DIR/voicecli"
 fi
 
-# ── ~/.voicecli/ existence (config + nkey + blobstore) ──────────────────────
-TOML="$HOME/.voicecli/voicecli.toml"
-SEED="$HOME/.voicecli/nkeys/voice-client.seed"
-BLOBSTORE_ENV="$HOME/.voicecli/env/blobstore.env"
+# ── ~/.roxabi/voicecli/ existence (config + nkey + blobstore) ──────────────────────
+TOML="$HOME/.roxabi/voicecli/voicecli.toml"
+SEED="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
+BLOBSTORE_ENV="$HOME/.roxabi/voicecli/env/blobstore.env"
 [ -f "$TOML" ] || warn "missing $TOML — set [nats] url + nkey_seed_path before first use"
 [ -f "$SEED" ] || warn "missing nkey seed at $SEED — copy it from your hub-authorized machine (chmod 600)"
 [ -f "$BLOBSTORE_ENV" ] || warn "missing $BLOBSTORE_ENV — run deploy/install.sh on the hub or create it manually"

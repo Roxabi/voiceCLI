@@ -368,7 +368,7 @@ Routes mic audio to a remote STT satellite. Toggle: first call starts, second ca
 ```bash
 # Requires env vars:
 # NATS_URL=nats://192.168.1.16:4222
-# NATS_NKEY_SEED_PATH=~/.voicecli/nkeys/voice-client.seed
+# NATS_NKEY_SEED_PATH=~/.roxabi/voicecli/nkeys/voice-client.seed
 voicecli dictate nats                                 # toggle recording
 voicecli dictate nats --lang fr                       # force French
 voicecli dictate nats --model large-v3                # override STT model

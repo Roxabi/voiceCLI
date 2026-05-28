@@ -29,16 +29,16 @@ environment (COSMIC or GNOME), checks Wayland deps, installs a wrapper to
 uv sync --extra nats
 ln -sf "$PWD/.venv/bin/voicecli" ~/.local/bin/voicecli
 
-# 2. Configure the hub in ~/.voicecli/voicecli.toml
-cat >> ~/.voicecli/voicecli.toml <<'EOF'
+# 2. Configure the hub in ~/.roxabi/voicecli/voicecli.toml
+cat >> ~/.roxabi/voicecli/voicecli.toml <<'EOF'
 [nats]
 url = "nats://your-hub-host:4222"
-nkey_seed_path = "~/.voicecli/nkeys/voice-client.seed"
+nkey_seed_path = "~/.roxabi/voicecli/nkeys/voice-client.seed"
 EOF
 
 # 3. Copy the nkey seed from a hub-authorized machine
-# scp hub-machine:~/.voicecli/nkeys/voice-client.seed ~/.voicecli/nkeys/
-chmod 700 ~/.voicecli/nkeys && chmod 600 ~/.voicecli/nkeys/voice-client.seed
+# scp hub-machine:~/.roxabi/voicecli/nkeys/voice-client.seed ~/.roxabi/voicecli/nkeys/
+chmod 700 ~/.roxabi/voicecli/nkeys && chmod 600 ~/.roxabi/voicecli/nkeys/voice-client.seed
 
 # 4. Run the installer
 ./scripts/install-shortcut.sh           # Ctrl+Space, auto-detects COSMIC/GNOME

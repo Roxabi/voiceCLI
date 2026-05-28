@@ -41,7 +41,7 @@ If it is not running, start it from the lyra repo first (`systemctl --user start
 
 ### 2. NATS nkey seeds
 
-Seeds live at `~/.voicecli/nkeys/voice-{stt,tts}.seed` on the host (ADR-055 D4).
+Seeds live at `~/.roxabi/voicecli/nkeys/voice-{stt,tts}.seed` on the host (ADR-055 D4).
 They are created once by Lyra's `gen-nkeys.sh`; relocation from the old
 `~/.lyra/nkeys/` path is covered by the runbook below.
 
@@ -115,10 +115,10 @@ Only needed once when flipping a previously-supervisord-deployed M₁ to Quadlet
 supervisorctl stop voicecli_stt voicecli_tts
 
 # 2. Move seeds from old Lyra-owned path to voiceCLI-owned path (ADR-055 D4)
-mkdir -p ~/.voicecli/nkeys
-mv ~/.lyra/nkeys/voice-stt.seed ~/.voicecli/nkeys/
-mv ~/.lyra/nkeys/voice-tts.seed ~/.voicecli/nkeys/
-chmod 600 ~/.voicecli/nkeys/*.seed
+mkdir -p ~/.roxabi/voicecli/nkeys
+mv ~/.lyra/nkeys/voice-stt.seed ~/.roxabi/voicecli/nkeys/
+mv ~/.lyra/nkeys/voice-tts.seed ~/.roxabi/voicecli/nkeys/
+chmod 600 ~/.roxabi/voicecli/nkeys/*.seed
 
 # 3. Let the deploy timer roll forward — it restarts supervisord workers
 #    pointing at the new path. No config edit required (PR #104 already shipped).
@@ -136,7 +136,7 @@ chmod 600 ~/.voicecli/nkeys/*.seed
 <summary>Cutover checklist</summary>
 
 - [x] `systemctl --user status lyra-nats` — lyra-nats is up and healthy
-- [x] `~/.voicecli/nkeys/voice-{stt,tts}.seed` exists, 0600
+- [x] `~/.roxabi/voicecli/nkeys/voice-{stt,tts}.seed` exists, 0600
 - [x] Quadlet units installed; `podman secret ls` shows voicecli-nats-{stt,tts}
 - [x] `systemctl --user start voicecli-tts voicecli-stt` succeeds; containers report `Running`
 - [x] `UserNS=keep-id` maps voicecli image `appuser` UID → host UID correctly (verify with `podman exec voicecli-stt id`)

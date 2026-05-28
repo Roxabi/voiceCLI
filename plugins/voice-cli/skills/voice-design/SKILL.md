@@ -8,7 +8,7 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 # Voice Design Skill
 
 Design a TTS voice personality through evolutionary optimization.
-Generate batches of profile variants, wait for ranking feedback between batches, iterate until convergence, then write the winning profile to `~/.voicecli/voicecli.toml`.
+Generate batches of profile variants, wait for ranking feedback between batches, iterate until convergence, then write the winning profile to `~/.roxabi/voicecli/voicecli.toml`.
 
 Audio delivery (listening, sharing) is out of scope — the skill produces MP3 files on disk and returns their paths. Playback is the user's concern.
 
@@ -22,8 +22,8 @@ Audio delivery (listening, sharing) is out of scope — the skill produces MP3 f
 | `runner_up` | dict | Second-best attrs from last cycle. |
 | `cycle_winners` | list[str] | Position label of winner per convergence cycle ("a"/"b"/"c"). For plateau detection. |
 | `VOICECLI` | str | Command to invoke voicecli (see Phase 0 auto-discovery). |
-| `VOICES_OUT` | str | Output dir — default `~/.voicecli/TTS/voices_out` (expand `~` to absolute). |
-| `CONFIG` | str | Config file — default `~/.voicecli/voicecli.toml` (expand `~` to absolute). |
+| `VOICES_OUT` | str | Output dir — default `~/.roxabi/voicecli/TTS/voices_out` (expand `~` to absolute). |
+| `CONFIG` | str | Config file — default `~/.roxabi/voicecli/voicecli.toml` (expand `~` to absolute). |
 
 ---
 
@@ -44,8 +44,8 @@ else
 fi
 
 # 2. Resolve paths (expand ~ explicitly)
-VOICES_OUT="$HOME/.voicecli/TTS/voices_out"
-CONFIG="$HOME/.voicecli/voicecli.toml"
+VOICES_OUT="$HOME/.roxabi/voicecli/TTS/voices_out"
+CONFIG="$HOME/.roxabi/voicecli/voicecli.toml"
 
 # 3. Sanity checks
 [ -f "$CONFIG" ] && echo "OK — config: $CONFIG" || echo "WARN — no $CONFIG (will be created on first save)"
@@ -262,7 +262,7 @@ After updating `cycle_winners`:
    B) No — leave uncommitted
    ```
 
-   Note: `$CONFIG` lives in `~/.voicecli/` (user config — typically not tracked by a repo). Default to B unless the user deliberately versions their voicecli config.
+   Note: `$CONFIG` lives in `~/.roxabi/voicecli/` (user config — typically not tracked by a repo). Default to B unless the user deliberately versions their voicecli config.
 
    If A: run `git add` on `$CONFIG` (from whichever repo tracks it) then `git commit` with the message above plus the standard co-author footer.
 

@@ -33,9 +33,9 @@ class TestLoadNatsConfig:
         assert result["nkey_seed_path"] == "/abs/seed"
 
     def test_seed_path_tilde_expansion(self, tmp_path: Path) -> None:
-        cfg = _write_toml(tmp_path, '[nats]\nnkey_seed_path = "~/.voicecli/nkeys/seed"\n')
+        cfg = _write_toml(tmp_path, '[nats]\nnkey_seed_path = "~/.roxabi/voicecli/nkeys/seed"\n')
         result = load_nats_config(cfg)
-        assert result["nkey_seed_path"] == str(Path.home() / ".voicecli/nkeys/seed")
+        assert result["nkey_seed_path"] == str(Path.home() / ".roxabi/voicecli/nkeys/seed")
 
     def test_keys_absent_when_unset(self, tmp_path: Path) -> None:
         cfg = _write_toml(tmp_path, "[nats]\n")
@@ -100,8 +100,8 @@ class TestApplyNatsEnvFromConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("NATS_NKEY_SEED_PATH", raising=False)
-        cfg = _write_toml(tmp_path, '[nats]\nnkey_seed_path = "~/.voicecli/nkeys/seed"\n')
+        cfg = _write_toml(tmp_path, '[nats]\nnkey_seed_path = "~/.roxabi/voicecli/nkeys/seed"\n')
         apply_nats_env_from_config(cfg)
         import os
 
-        assert os.environ["NATS_NKEY_SEED_PATH"] == str(Path.home() / ".voicecli/nkeys/seed")
+        assert os.environ["NATS_NKEY_SEED_PATH"] == str(Path.home() / ".roxabi/voicecli/nkeys/seed")

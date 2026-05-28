@@ -15,4 +15,4 @@ env_file = "~/.roxabi/voicecli/env/tts.env"
 host_roles = ["voice-worker"]
 
 [secrets]
-blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.voicecli/env/blobstore.env" }
+blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.roxabi/voicecli/env/blobstore.env" }

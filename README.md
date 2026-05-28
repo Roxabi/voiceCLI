@@ -133,11 +133,11 @@ Public API (`__all__`): `generate`, `generate_async`, `clone`, `clone_async`, `t
 
 Optional file (gitignored). Sets default values so you don't pass flags every time.
 
-**Discovery**: voicecli checks `~/.voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. The canonical location is `~/.voicecli/voicecli.toml` — accessible from any project. A warning is printed to stderr if no file is found anywhere.
+**Discovery**: voicecli checks `~/.roxabi/voicecli/voicecli.toml` first, then walks up from CWD to `$HOME` as fallback. The canonical location is `~/.roxabi/voicecli/voicecli.toml` — accessible from any project. A warning is printed to stderr if no file is found anywhere.
 
 ```bash
-mkdir -p ~/.voicecli
-cp voicecli.example.toml ~/.voicecli/voicecli.toml   # then edit to taste
+mkdir -p ~/.roxabi/voicecli
+cp voicecli.example.toml ~/.roxabi/voicecli/voicecli.toml   # then edit to taste
 ```
 
 ```toml
@@ -187,14 +187,14 @@ Routes synthesis to a remote TTS satellite over NATS instead of the local socket
 
 ```bash
 export NATS_URL="nats://192.168.1.16:4222"
-export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+export NATS_NKEY_SEED_PATH="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
 
 voicecli generate --via-nats "Bonjour le monde"
 VOICECLI_VIA_NATS=1 voicecli generate "Bonjour"     # env equivalence
 voicecli generate --via-nats script.md --timeout 90  # custom request timeout
 ```
 
-The reply WAV lands in `~/.voicecli/TTS/voices_out/` like the local mode — same output path resolution, same engine/voice/lang flags. V1 sends a single flattened `text` field (no per-segment multi-language). Full guide: [docs/NATS-SERVE.md#client-side](docs/NATS-SERVE.md#client-side--synthesize-from-any-host).
+The reply WAV lands in `~/.roxabi/voicecli/TTS/voices_out/` like the local mode — same output path resolution, same engine/voice/lang flags. V1 sends a single flattened `text` field (no per-segment multi-language). Full guide: [docs/NATS-SERVE.md#client-side](docs/NATS-SERVE.md#client-side--synthesize-from-any-host).
 
 Requires: NATS server reachable on port 4222, `voice-client` NKey identity, `voicecli nats-serve tts` running on the satellite host.
 
@@ -278,7 +278,7 @@ voicecli transcribe audio.wav -o result.txt     # save to file
 |------|-------|-------------|---------|
 | `--model` | `-m` | Whisper model | `large-v3-turbo` |
 | `--lang` | `-l` | Force language code | auto-detect |
-| `--output` | `-o` | Save text to file | `~/.voicecli/STT/texts_out/` |
+| `--output` | `-o` | Save text to file | `~/.roxabi/voicecli/STT/texts_out/` |
 | `--json` | | JSON output with timestamps | off |
 
 Available models: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
@@ -330,7 +330,7 @@ Routes mic audio to a remote STT satellite over NATS. Ideal when the STT model r
 
 ```bash
 export NATS_URL="nats://192.168.1.16:4222"
-export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+export NATS_NKEY_SEED_PATH="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
 voicecli dictate nats          # first press: start recording (start_mic.wav)
 voicecli dictate nats          # second press: stop + transcribe (stop_mic.wav)
 ```

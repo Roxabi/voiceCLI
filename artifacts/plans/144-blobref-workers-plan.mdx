@@ -306,7 +306,7 @@ All instances within caps (|tasks| ≤4, subjects ≤2, ops ≤50).
   ```ini
   Environment=BLOBSTORE_BACKEND=http
   Environment=BLOBSTORE_URL=http://lyra-hub:8080
-  EnvironmentFile=%h/.voicecli/env/blobstore.env
+  EnvironmentFile=%h/.roxabi/voicecli/env/blobstore.env
   ```
 - **Verify:** `grep -c BLOBSTORE_BACKEND deploy/quadlet/voicecli-{tts,stt}.container`
 - **Expected:** both files return 1
@@ -328,7 +328,7 @@ All instances within caps (|tasks| ≤4, subjects ≤2, ops ≤50).
 - **Snippet:**
   ```toml
   [secrets]
-  blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.voicecli/env/blobstore.env" }
+  blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.roxabi/voicecli/env/blobstore.env" }
   ```
 - **Verify:** `grep -c blobstore_bearer_token deploy/quadlet.toml`
 - **Expected:** ≥1

@@ -4,7 +4,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
-SAMPLES_DIR = Path.home() / ".voicecli" / "TTS" / "samples"
+from voicecli.core.config import VOICECLI_DIR
+
+SAMPLES_DIR = VOICECLI_DIR / "TTS" / "samples"
 ACTIVE_FILE = SAMPLES_DIR / ".active"
 
 

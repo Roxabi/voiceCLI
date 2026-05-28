@@ -45,7 +45,7 @@ Toggle pattern — same shortcut starts and stops recording. Audio is sent to a 
 # ~/.local/bin/voicecli-dictate-nats
 #!/bin/bash
 export NATS_URL="nats://192.168.1.16:4222"
-export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+export NATS_NKEY_SEED_PATH="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
 exec /home/mickael/.local/bin/voicecli dictate nats
 ```
 
@@ -68,7 +68,7 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
 ### Prerequisites
 
 - `NATS_URL` pointing to M₁ (port 4222 must be reachable on the LAN)
-- `voice-client.seed` at `~/.voicecli/nkeys/voice-client.seed` (NKey identity with `lyra.voice.stt.request` publish + `_inbox.voice-client.>` subscribe)
+- `voice-client.seed` at `~/.roxabi/voicecli/nkeys/voice-client.seed` (NKey identity with `lyra.voice.stt.request` publish + `_inbox.voice-client.>` subscribe)
 - `voicecli nats-serve stt` running on M₁ (via `voicecli-stt.service` Quadlet)
 
 ### UI sounds

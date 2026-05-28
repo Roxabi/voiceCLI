@@ -25,7 +25,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:${PATH:-}"
 
 # Blobstore env file (created by deploy/install.sh). Sourced here because
 # compositor Spawn() actions do not run an interactive shell startup.
-BLOBSTORE_ENV="$HOME/.voicecli/env/blobstore.env"
+BLOBSTORE_ENV="$HOME/.roxabi/voicecli/env/blobstore.env"
 if [ -f "$BLOBSTORE_ENV" ]; then
     # set -u safe: only export vars that are actually set in the file
     while IFS='=' read -r key value; do

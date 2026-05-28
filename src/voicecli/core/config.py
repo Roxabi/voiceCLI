@@ -8,7 +8,7 @@ import tomllib
 from typing import Any, Callable
 from pathlib import Path
 
-VOICECLI_DIR = Path.home() / ".voicecli"
+VOICECLI_DIR = Path.home() / ".roxabi" / "voicecli"
 
 
 def _parse_bool(value: object) -> bool:
@@ -43,7 +43,7 @@ _KNOWN_DEFAULTS: dict[str, Callable[..., Any]] = {
 
 
 def _find_config() -> Path | None:
-    """Look for voicecli.toml in ~/.voicecli/, then walk up from CWD to $HOME."""
+    """Look for voicecli.toml in ~/.roxabi/voicecli/, then walk up from CWD to $HOME."""
     canonical = VOICECLI_DIR / "voicecli.toml"
     if canonical.is_file():
         return canonical
@@ -59,7 +59,7 @@ def _find_config() -> Path | None:
 
 
 def load_defaults(config: Path | None = None) -> dict:
-    """Load [defaults] from voicecli.toml, checking ~/.voicecli/ then walking up from CWD to $HOME. Returns empty dict if not found.
+    """Load [defaults] from voicecli.toml, checking ~/.roxabi/voicecli/ then walking up from CWD to $HOME. Returns empty dict if not found.
 
     Args:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
@@ -67,7 +67,7 @@ def load_defaults(config: Path | None = None) -> dict:
     path = config if config is not None else _find_config()
     if path is None:
         print(
-            "voicecli: no voicecli.toml found (searched ~/.voicecli/ and from CWD to $HOME); using built-in defaults",
+            "voicecli: no voicecli.toml found (searched ~/.roxabi/voicecli/ and from CWD to $HOME); using built-in defaults",
             file=sys.stderr,
         )
         return {}
@@ -114,7 +114,7 @@ _KNOWN_STT: dict[str, type] = {
 
 
 def load_vocab(vocab: Path | None = None) -> list[str]:
-    """Load personal vocabulary from ~/.voicecli/voicecli.vocab (or walk-up fallback).
+    """Load personal vocabulary from ~/.roxabi/voicecli/voicecli.vocab (or walk-up fallback).
 
     Returns a list of words/phrases (comments and blank lines stripped).
     Returns an empty list if no file is found.

@@ -36,7 +36,7 @@ def _reset_blobstore() -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_nats_env_from_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Prevent the user's ``~/.voicecli/voicecli.toml`` from leaking NATS_URL
+    """Prevent the user's ``~/.roxabi/voicecli/voicecli.toml`` from leaking NATS_URL
     into ``nats-serve`` CLI tests.
 
     ``cli_nats`` calls ``apply_nats_env_from_config()`` which backfills

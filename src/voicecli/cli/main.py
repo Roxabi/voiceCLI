@@ -9,6 +9,7 @@ from voicecli.cli.doctor import doctor
 from voicecli.cli.nats import nats_app
 from voicecli.cli.samples import samples_app
 from voicecli.engines.engine import QWEN_ENGINES, available_engines, get_engine
+from voicecli.core.config import VOICECLI_DIR
 from voicecli.core.utils import OUTPUT_DIR, UNRESTRICTED
 
 
@@ -481,7 +482,7 @@ def transcribe(
 
         ext = "json" if json_output else "txt"
         output = default_output_path(
-            prefix=audio.stem, fmt=ext, base_dir=Path.home() / ".voicecli" / "STT" / "texts_out"
+            prefix=audio.stem, fmt=ext, base_dir=VOICECLI_DIR / "STT" / "texts_out"
         )
 
     output.write_text(text_out, encoding="utf-8")

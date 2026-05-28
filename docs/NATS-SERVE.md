@@ -38,7 +38,7 @@ Both subcommands are now available: `nats-serve tts` (Slice 1) and `nats-serve s
 For consumers on a host **without** the model loaded (e.g. M₂, laptop, any tailnet member), `voicecli generate` can route through the hub satellite instead of loading models locally.
 
 ```bash
-# Synthesize via NATS → WAV lands in ~/.voicecli/TTS/voices_out/
+# Synthesize via NATS → WAV lands in ~/.roxabi/voicecli/TTS/voices_out/
 voicecli generate --via-nats "Bonjour le monde"
 
 # Env-driven (same effect)
@@ -60,7 +60,7 @@ voicecli generate --via-nats path/to/script.md
 | `--timeout <s>` | 60 | NATS request timeout (one-shot reply, no streaming) |
 | `--engine`, `--voice`, `--lang` | satellite defaults | mapped to `TtsRequest` fields |
 
-Requires `NATS_URL` set (e.g. `tls://hub:4222`) and an NKey seed at the path declared in `voicecli.toml` `[nats].nkey_seed_path` (default `~/.voicecli/nkeys/voice-client.seed`). The client uses `inbox_prefix=_inbox.voice-client` (ACL-aligned with the STT client).
+Requires `NATS_URL` set (e.g. `tls://hub:4222`) and an NKey seed at the path declared in `voicecli.toml` `[nats].nkey_seed_path` (default `~/.roxabi/voicecli/nkeys/voice-client.seed`). The client uses `inbox_prefix=_inbox.voice-client` (ACL-aligned with the STT client).
 
 **V1 non-goals** (use local socket daemon for these):
 - Per-segment multi-language synthesis — `TtsRequest.text` is a single string
@@ -178,7 +178,7 @@ command=voicecli nats-serve tts
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts (e.g. RTX 3080 10 GB). Setting it bypasses the VRAM-sequencing guard and
 ; will cause CUDA OOM under concurrent synthesis. See VRAM sequencing section above.
-environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.roxabi/voicecli/nkeys/voice-tts.seed",LYRA_TTS_ENGINE="qwen-fast"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
@@ -203,7 +203,7 @@ loop-restarts on exit 78. `stopwaitsecs=35` must exceed `VOICECLI_DRAIN_TIMEOUT`
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon (`systemctl --user stop voicecli-tts` or `pkill -f 'voicecli serve'`), then restart; or pass `--allow-coexist` if coexistence is intentional |
-| `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.voicecli/nkeys/voice-tts.seed` |
+| `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.roxabi/voicecli/nkeys/voice-tts.seed` |
 | Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts-workers` (TTS) and `stt-workers` (STT) |
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
@@ -482,7 +482,7 @@ voicecli nats-serve stt                  # start NATS satellite
 command=voicecli nats-serve stt
 ; VOICECLI_ALLOW_COEXIST is intentionally absent — do NOT set it on co-located GPU
 ; hosts. Bypasses the VRAM-sequencing guard and risks OOM. See VRAM sequencing above.
-environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.voicecli/nkeys/voice-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
+environment=NATS_URL="nats://127.0.0.1:4222",NATS_NKEY_SEED_PATH="/home/lyra/.roxabi/voicecli/nkeys/voice-stt.seed",VOICECLI_MODEL="large-v3-turbo",VOICECLI_MAX_CONCURRENT="1"
 autorestart=unexpected
 exitcodes=0,3,78
 stopsignal=TERM
@@ -597,19 +597,19 @@ of containerized NATS satellites without manual podman commands.
 2. Create the NKey seed secrets (one per satellite):
 
    ```bash
-   mkdir -p ~/.voicecli/nkeys && chmod 700 ~/.voicecli/nkeys
-   printf 'SU...' > ~/.voicecli/nkeys/voice-tts.seed
-   chmod 600 ~/.voicecli/nkeys/voice-tts.seed
+   mkdir -p ~/.roxabi/voicecli/nkeys && chmod 700 ~/.roxabi/voicecli/nkeys
+   printf 'SU...' > ~/.roxabi/voicecli/nkeys/voice-tts.seed
+   chmod 600 ~/.roxabi/voicecli/nkeys/voice-tts.seed
 
-   printf 'SU...' > ~/.voicecli/nkeys/voice-stt.seed
-   chmod 600 ~/.voicecli/nkeys/voice-stt.seed
+   printf 'SU...' > ~/.roxabi/voicecli/nkeys/voice-stt.seed
+   chmod 600 ~/.roxabi/voicecli/nkeys/voice-stt.seed
    ```
 
 3. Register secrets with Podman (required for Quadlet `Secret=` directive):
 
    ```bash
-   podman secret create voicecli-nats-tts ~/.voicecli/nkeys/voice-tts.seed
-   podman secret create voicecli-nats-stt ~/.voicecli/nkeys/voice-stt.seed
+   podman secret create voicecli-nats-tts ~/.roxabi/voicecli/nkeys/voice-tts.seed
+   podman secret create voicecli-nats-stt ~/.roxabi/voicecli/nkeys/voice-stt.seed
    ```
 
 4. Reload systemd and start the service(s):
@@ -754,7 +754,7 @@ swap re-tags `:staging-prev`.
 | Variable | Example | Purpose |
 |---|---|---|
 | `NATS_URL` | `nats://192.168.1.16:4222` | NATS server (must be reachable on LAN; port 4222 must be published) |
-| `NATS_NKEY_SEED_PATH` | `~/.voicecli/nkeys/voice-client.seed` | `voice-client` NKey identity |
+| `NATS_NKEY_SEED_PATH` | `~/.roxabi/voicecli/nkeys/voice-client.seed` | `voice-client` NKey identity |
 
 ### ACL requirements
 
@@ -768,7 +768,7 @@ The `voice-client` identity needs:
 # ~/.local/bin/voicecli-dictate-nats
 #!/bin/bash
 export NATS_URL="nats://192.168.1.16:4222"
-export NATS_NKEY_SEED_PATH="$HOME/.voicecli/nkeys/voice-client.seed"
+export NATS_NKEY_SEED_PATH="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
 exec /home/mickael/.local/bin/voicecli dictate nats
 ```
 

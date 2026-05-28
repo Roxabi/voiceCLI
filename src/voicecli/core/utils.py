@@ -1,8 +1,10 @@
 from datetime import datetime
 from pathlib import Path
 
-OUTPUT_DIR = Path.home() / ".voicecli" / "TTS" / "voices_out"
-STT_OUTPUT_DIR = Path.home() / ".voicecli" / "STT" / "texts_out"
+from voicecli.core.config import VOICECLI_DIR
+
+OUTPUT_DIR = VOICECLI_DIR / "TTS" / "voices_out"
+STT_OUTPUT_DIR = VOICECLI_DIR / "STT" / "texts_out"
 
 
 class _Unrestricted:
