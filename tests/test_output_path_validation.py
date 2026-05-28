@@ -81,7 +81,7 @@ class TestValidateOutputPath:
         inside = fake_base / "x.wav"
         result = _validate_output_path(inside, allowed_base=fake_base)
         assert result == inside.resolve()
-        # Default OUTPUT_DIR constant in utils.py points into ~/.voicecli/TTS/voices_out
+        # Default OUTPUT_DIR constant in utils.py points into ~/.roxabi/voicecli/TTS/voices_out
         assert "voices_out" in str(OUTPUT_DIR)
 
 

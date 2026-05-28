@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from typing import Any, Callable
 from pathlib import Path
 
-VOICECLI_DIR = Path.home() / ".voicecli"
+
+def get_data_dir() -> Path:
+    """Resolve the voiceCLI data directory with grandfathered fallback.
+
+    Priority:
+      1. ``VOICECLI_DATA_DIR`` environment variable.
+      2. ``~/.roxabi/voicecli/`` (new canonical location).
+      3. ``~/.voicecli/`` (legacy fallback — only if it exists and the new dir does not).
+    """
+    env = os.environ.get("VOICECLI_DATA_DIR")
+    if env:
+        return Path(env).expanduser()
+    new_dir = Path.home() / ".roxabi" / "voicecli"
+    old_dir = Path.home() / ".voicecli"
+    if new_dir.exists() or not old_dir.exists():
+        return new_dir
+    return old_dir
+
+
+VOICECLI_DIR = get_data_dir()
 
 
 def _parse_bool(value: object) -> bool:
@@ -42,7 +62,7 @@ _KNOWN_DEFAULTS: dict[str, Callable[..., Any]] = {
 
 
 def _find_config() -> Path | None:
-    """Look for voicecli.toml in ~/.voicecli/, then walk up from CWD to $HOME."""
+    """Look for voicecli.toml in ~/.roxabi/voicecli/ (or ~/.voicecli/ fallback), then walk up from CWD to $HOME."""
     canonical = VOICECLI_DIR / "voicecli.toml"
     if canonical.is_file():
         return canonical
@@ -58,7 +78,7 @@ def _find_config() -> Path | None:
 
 
 def load_defaults(config: Path | None = None) -> dict:
-    """Load [defaults] from voicecli.toml, checking ~/.voicecli/ then walking up from CWD to $HOME. Returns empty dict if not found.
+    """Load [defaults] from voicecli.toml, checking ~/.roxabi/voicecli/ (or ~/.voicecli/ fallback) then walking up from CWD to $HOME. Returns empty dict if not found.
 
     Args:
         config: Explicit path to a toml file. If provided, skips the walk-up search.
@@ -113,7 +133,7 @@ _KNOWN_STT: dict[str, type] = {
 
 
 def load_vocab(vocab: Path | None = None) -> list[str]:
-    """Load personal vocabulary from ~/.voicecli/voicecli.vocab (or walk-up fallback).
+    """Load personal vocabulary from ~/.roxabi/voicecli/voicecli.vocab (or ~/.voicecli/ fallback, or walk-up fallback).
 
     Returns a list of words/phrases (comments and blank lines stripped).
     Returns an empty list if no file is found.

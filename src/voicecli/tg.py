@@ -31,7 +31,9 @@ def load_telegram_config() -> dict[str, str]:
     """
     path = _find_config()
     if path is None:
-        raise RuntimeError("voicecli.toml not found (searched ~/.voicecli/ and from CWD to $HOME)")
+        raise RuntimeError(
+            "voicecli.toml not found (searched ~/.roxabi/voicecli/ and from CWD to $HOME)"
+        )
     with open(path, "rb") as f:
         data = tomllib.load(f)
     tg = data.get("telegram")

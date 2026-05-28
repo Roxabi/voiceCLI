@@ -5,7 +5,7 @@ HUB_SERVICES   := tts stt
 -include $(SUPERVISOR_HUB)/hub.mk
 
 QUADLET_DIR        ?= $(HOME)/.config/containers/systemd
-VOICECLI_NKEYS_DIR ?= $(HOME)/.voicecli/nkeys
+VOICECLI_NKEYS_DIR ?= $(HOME)/.roxabi/voicecli/nkeys
 DEPLOY_HOST        := $(shell grep '^DEPLOY_HOST=' $(SUPERVISOR_HUB)/lyra/.env 2>/dev/null | cut -d= -f2)
 VOICECLI_SVCS      := voicecli-tts voicecli-stt
 TTS_IMAGE          := ghcr.io/roxabi/voicecli-tts:staging
