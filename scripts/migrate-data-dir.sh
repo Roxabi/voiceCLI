@@ -15,6 +15,12 @@ if [[ ! -e "${OLD_DIR}" && ! -L "${OLD_DIR}" ]]; then
     exit 1
 fi
 
+# Guard against OLD_DIR being a symlink (would move the symlink node, not the data)
+if [[ -L "${OLD_DIR}" ]]; then
+    echo "ERROR: ${OLD_DIR} is a symlink. Dereference it first (e.g., cp -aL). Aborting."
+    exit 1
+fi
+
 # Verify OLD_DIR contains expected voiceCLI data
 if [[ ! -f "${OLD_DIR}/voicecli.toml" && ! -d "${OLD_DIR}/TTS" && ! -d "${OLD_DIR}/STT" && ! -d "${OLD_DIR}/nkeys" ]]; then
     echo "ERROR: ${OLD_DIR} does not contain expected voiceCLI data (voicecli.toml, TTS/, STT/, or nkeys/). Aborting."
@@ -48,14 +54,15 @@ fi
 if command -v rsync &>/dev/null; then
     echo "==> Moving data to ${NEW_DIR}..."
     rsync -a "${OLD_DIR}/" "${NEW_DIR}/"
-    rm -rf "${OLD_DIR}"
+    rm -rf --one-file-system "${OLD_DIR}"
 else
     echo "==> Moving data to ${NEW_DIR}..."
-    mv "${OLD_DIR}" "${NEW_DIR}"
+    cp -a "${OLD_DIR}/" "${NEW_DIR}/"
+    rm -rf --one-file-system "${OLD_DIR}"
 fi
 
-# Restrict permissions on migrated data
-chmod -R go-rwx "${NEW_DIR}"
+# Restrict permissions on migrated data (find avoids following symlinks)
+find "${NEW_DIR}" -xdev \( -type f -o -type d \) -exec chmod go-rwx {} + || true
 
 # Create backward-compatibility symlink
 echo "==> Creating symlink ${OLD_DIR} -> ${NEW_DIR}..."

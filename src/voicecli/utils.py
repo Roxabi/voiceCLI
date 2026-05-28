@@ -1,11 +1,6 @@
 from datetime import datetime
 from pathlib import Path
 
-from voicecli.config import VOICECLI_DIR
-
-OUTPUT_DIR = VOICECLI_DIR / "TTS" / "voices_out"
-STT_OUTPUT_DIR = VOICECLI_DIR / "STT" / "texts_out"
-
 
 class _Unrestricted:
     """Sentinel for output-path trust boundary owned by the caller.
@@ -89,6 +84,8 @@ def default_output_path(
     fmt: str = "wav",
     base_dir: Path | None = None,
 ) -> Path:
+    from voicecli.config import OUTPUT_DIR
+
     now = datetime.now()
     day_dir = (base_dir or OUTPUT_DIR) / now.strftime("%Y%m%d")
     day_dir.mkdir(parents=True, exist_ok=True)

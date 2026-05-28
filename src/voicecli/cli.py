@@ -6,7 +6,8 @@ import typer
 
 from voicecli import __version__
 from voicecli.engine import QWEN_ENGINES, available_engines, get_engine
-from voicecli.utils import OUTPUT_DIR, UNRESTRICTED
+from voicecli.config import OUTPUT_DIR
+from voicecli.utils import UNRESTRICTED
 
 
 def _version_callback(value: bool) -> None:
@@ -800,7 +801,8 @@ def transcribe(
     typer.echo(text_out)
 
     if output is None:
-        from voicecli.utils import STT_OUTPUT_DIR, default_output_path
+        from voicecli.config import STT_OUTPUT_DIR
+        from voicecli.utils import default_output_path
 
         ext = "json" if json_output else "txt"
         output = default_output_path(prefix=audio.stem, fmt=ext, base_dir=STT_OUTPUT_DIR)

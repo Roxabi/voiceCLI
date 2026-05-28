@@ -28,12 +28,19 @@ def get_data_dir() -> Path:
         return path
     new_dir = Path.home() / ".roxabi" / "voicecli"
     old_dir = Path.home() / ".voicecli"
+    if new_dir.exists() and not new_dir.is_dir():
+        raise ValueError(f"voiceCLI data directory must be a directory, got: {new_dir}")
+    if old_dir.exists() and not old_dir.is_dir():
+        raise ValueError(f"voiceCLI data directory must be a directory, got: {old_dir}")
     if new_dir.exists() or not old_dir.exists():
         return new_dir
     return old_dir
 
 
 VOICECLI_DIR = get_data_dir()
+
+OUTPUT_DIR = VOICECLI_DIR / "TTS" / "voices_out"
+STT_OUTPUT_DIR = VOICECLI_DIR / "STT" / "texts_out"
 
 
 def _parse_bool(value: object) -> bool:

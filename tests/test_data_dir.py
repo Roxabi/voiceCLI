@@ -63,6 +63,48 @@ class TestGetDataDir:
         monkeypatch.setattr("os.path.expanduser", lambda p: str(tmp_path) if p == "~" else p)
         assert get_data_dir() == env_dir
 
+    def test_empty_env_var_treated_as_unset(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("VOICECLI_DATA_DIR", "")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        expected = tmp_path / ".roxabi" / "voicecli"
+        assert get_data_dir() == expected
+
+    def test_rejects_whitespace_only_env_path(self, monkeypatch):
+        monkeypatch.setenv("VOICECLI_DATA_DIR", "   ")
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            get_data_dir()
+
+    def test_allows_nonexistent_env_path(self, monkeypatch, tmp_path):
+        env_dir = tmp_path / "does_not_exist"
+        monkeypatch.setenv("VOICECLI_DATA_DIR", str(env_dir))
+        assert get_data_dir() == env_dir
+
+    def test_rejects_symlink_env_path_to_file(self, monkeypatch, tmp_path):
+        target = tmp_path / "not_a_dir"
+        target.write_text("data")
+        link = tmp_path / "link"
+        link.symlink_to(target)
+        monkeypatch.setenv("VOICECLI_DATA_DIR", str(link))
+        with pytest.raises(ValueError, match="must be a directory"):
+            get_data_dir()
+
+    def test_rejects_new_dir_if_it_is_a_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("VOICECLI_DATA_DIR", raising=False)
+        new_dir = tmp_path / ".roxabi" / "voicecli"
+        new_dir.parent.mkdir(parents=True)
+        new_dir.write_text("data")
+        with pytest.raises(ValueError, match="must be a directory"):
+            get_data_dir()
+
+    def test_rejects_old_dir_if_it_is_a_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("VOICECLI_DATA_DIR", raising=False)
+        old_dir = tmp_path / ".voicecli"
+        old_dir.write_text("data")
+        with pytest.raises(ValueError, match="must be a directory"):
+            get_data_dir()
+
 
 class TestFindConfig:
     """_find_config() path resolution tests."""
@@ -96,3 +138,18 @@ class TestFindConfig:
         monkeypatch.setattr("voicecli.config.VOICECLI_DIR", tmp_path / "nonexistent", raising=False)
         monkeypatch.chdir(subdir)
         assert _find_config() == config
+
+    def test_returns_none_when_cwd_is_home_and_no_config(self, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr("voicecli.config.VOICECLI_DIR", tmp_path / "nonexistent", raising=False)
+        monkeypatch.chdir(home)
+        assert _find_config() is None
+
+    def test_skips_voicecli_toml_directory(self, monkeypatch, tmp_path):
+        canonical = tmp_path / ".roxabi" / "voicecli"
+        canonical.mkdir(parents=True)
+        toml_dir = canonical / "voicecli.toml"
+        toml_dir.mkdir()
+        monkeypatch.setattr("voicecli.config.VOICECLI_DIR", canonical, raising=False)
+        assert _find_config() is None

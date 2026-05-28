@@ -10,7 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from voicecli.utils import OUTPUT_DIR, STT_OUTPUT_DIR, _Unrestricted
+from voicecli.config import OUTPUT_DIR, STT_OUTPUT_DIR
+from voicecli.utils import _Unrestricted
 
 log = logging.getLogger(__name__)
 
