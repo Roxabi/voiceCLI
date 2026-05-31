@@ -18,19 +18,20 @@ fail fast.
 from __future__ import annotations
 
 import os
-import re
 import threading
 from typing import Any
 
+from pydantic import ValidationError
 from roxabi_blobs import HttpBlobStore
 from roxabi_contracts.blob_ref import BlobRef as ContractsBlobRef
 
 _INSTANCE: HttpBlobStore | None = None
 _LOCK = threading.Lock()
 
-# Producer-only fields on roxabi_blobs.BlobRef that the contract BlobRef rejects
-# (extra="forbid"). Drop them when bridging to the wire payload.
-_PRODUCER_ONLY_FIELDS: frozenset[str] = frozenset({"id", "is_sentinel"})
+# Sentinel store_key emitted by adapters before BlobStore ingest lands.
+# Workers receiving a BlobRef with this store_key must fall back to the
+# legacy platform fetch path instead of calling blob_store.get(store_key).
+_PENDING_STORE_KEY = "__pending__"
 
 
 class BlobstoreConfigError(RuntimeError):
@@ -91,12 +92,19 @@ def reset_blobstore_for_tests() -> None:
 def blob_ref_to_contract(ref: Any) -> ContractsBlobRef:
     """Bridge ``roxabi_blobs.BlobRef`` → ``roxabi_contracts.BlobRef``.
 
-    The two packages publish distinct Pydantic models with overlapping fields.
-    The contract model has ``extra="forbid"`` so producer-only fields (``id``,
-    ``is_sentinel``) must be stripped before validation. Centralized here so a
-    field rename or addition upstream is a one-place fix instead of N callsites.
+    Canonical converter via ``roxabi_contracts.BlobRef.from_store_ref`` —
+    drops storage-only fields (``id``, ``is_sentinel``) and carries every
+    wire field (incl. ``created_at``) through verbatim.
+
+    A ``pydantic.ValidationError`` from ``from_store_ref`` signals field-set
+    drift between the storage and wire schemas.  It is re-raised as a typed
+    ``BlobRefValidationError`` so callers can distinguish contract-level
+    mismatches from generic runtime errors.
     """
     store_key = getattr(ref, "store_key", "")
-    if not re.match(r"^sha256:[a-f0-9]{64}$", store_key):
-        raise BlobRefValidationError(f"Invalid store_key: {store_key!r}")
-    return ContractsBlobRef.model_validate(ref.model_dump(exclude=set(_PRODUCER_ONLY_FIELDS)))
+    if store_key == _PENDING_STORE_KEY:
+        raise BlobRefValidationError(f"Pending store_key not allowed: {store_key!r}")
+    try:
+        return ContractsBlobRef.from_store_ref(ref)
+    except ValidationError as e:
+        raise BlobRefValidationError(str(e)) from e
