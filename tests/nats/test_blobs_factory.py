@@ -213,20 +213,33 @@ class TestMissingEnvVars:
 
 
 class TestBlobRefToContract:
-    def test_rejects_invalid_store_key(self) -> None:
-        """Invalid store_key raises BlobRefValidationError."""
+    def test_rejects_pending_store_key(self) -> None:
+        """Pending store_key (sentinel) raises BlobRefValidationError."""
         from dataclasses import dataclass
 
         @dataclass
         class FakeRef:
             store_key: str
 
-        ref = FakeRef(store_key="sha256:bad")
-        with pytest.raises(blobs.BlobRefValidationError, match="Invalid store_key"):
+            def model_dump(self, *, exclude: set | None = None) -> dict:
+                return {
+                    "store_key": self.store_key,
+                    "mime": "audio/wav",
+                    "size": 16,
+                    "source": "voicecli",
+                    "content_hash": "",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "filename": None,
+                    "platform_ref": None,
+                    "platform_message_id": None,
+                }
+
+        ref = FakeRef(store_key="__pending__")
+        with pytest.raises(blobs.BlobRefValidationError, match="Pending store_key"):
             blobs.blob_ref_to_contract(ref)
 
     def test_accepts_valid_store_key(self) -> None:
-        """Valid store_key passes through to model_dump."""
+        """Valid store_key passes through to from_store_ref."""
         from dataclasses import dataclass
         from datetime import datetime, timezone
 
