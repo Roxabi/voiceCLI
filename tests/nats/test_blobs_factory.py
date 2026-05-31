@@ -227,7 +227,7 @@ class TestBlobRefToContract:
                     "mime": "audio/wav",
                     "size": 16,
                     "source": "voicecli",
-                    "content_hash": "",
+                    "content_hash": "pending-dummy",
                     "created_at": "2026-01-01T00:00:00+00:00",
                     "filename": None,
                     "platform_ref": None,
@@ -266,3 +266,28 @@ class TestBlobRefToContract:
         # Does not raise — contract validation is the only gate
         result = blobs.blob_ref_to_contract(ref)
         assert result.store_key == ref.store_key
+
+    def test_rejects_validation_error_as_blob_ref_validation_error(self) -> None:
+        """pydantic.ValidationError from from_store_ref is re-raised as BlobRefValidationError."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class FakeRef:
+            store_key: str
+
+            def model_dump(self, *, exclude: set | None = None) -> dict:
+                # Missing required field 'content_hash' triggers ValidationError
+                return {
+                    "store_key": self.store_key,
+                    "mime": "audio/wav",
+                    "size": 16,
+                    "source": "voicecli",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "filename": None,
+                    "platform_ref": None,
+                    "platform_message_id": None,
+                }
+
+        ref = FakeRef(store_key="sha256:validstorekey")
+        with pytest.raises(blobs.BlobRefValidationError, match="content_hash"):
+            blobs.blob_ref_to_contract(ref)
