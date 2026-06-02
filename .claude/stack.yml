@@ -53,6 +53,7 @@ standards:
 quality_gates:
   file_length:
     enabled: true
+    metric: sloc
     max_lines: 300
     exemptions_file: tools/file_exemptions.txt
   folder_size:
