@@ -55,8 +55,8 @@ except ImportError as _e:
     _ext_from_mime = None  # type: ignore[assignment]
     TranscriptionResult = None  # type: ignore[assignment]
     DEFAULT_MODEL = "large-v3-turbo"  # type: ignore[assignment]
-    SUBJECT = "lyra.voice.stt.request"  # type: ignore[assignment]
-    HEARTBEAT_SUBJECT = "lyra.voice.stt.heartbeat"  # type: ignore[assignment]
+    SUBJECT = "factory.voice.stt.request"  # type: ignore[assignment]
+    HEARTBEAT_SUBJECT = "factory.voice.stt.heartbeat"  # type: ignore[assignment]
     STT_WORKERS = "stt-workers"  # type: ignore[assignment]
 
 
