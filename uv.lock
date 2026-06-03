@@ -1735,7 +1735,7 @@ wheels = [
 [[package]]
 name = "roxabi-blobs"
 version = "0.1.2"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-blobs&branch=staging#5d1abe25e95f723d405212668de41bf527dfbb54" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=staging#e8578e52c818dbfe46676566a032409a1345efa0" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
@@ -1744,16 +1744,16 @@ dependencies = [
 
 [[package]]
 name = "roxabi-contracts"
-version = "0.6.0"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging#5d1abe25e95f723d405212668de41bf527dfbb54" }
+version = "0.7.0"
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=staging#e8578e52c818dbfe46676566a032409a1345efa0" }
 dependencies = [
     { name = "pydantic" },
 ]
 
 [[package]]
 name = "roxabi-nats"
-version = "0.4.1"
-source = { git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging#5d1abe25e95f723d405212668de41bf527dfbb54" }
+version = "0.4.2"
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging#e8578e52c818dbfe46676566a032409a1345efa0" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
@@ -2317,9 +2317,9 @@ requires-dist = [
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts", marker = "extra == 'tts'" },
-    { name = "roxabi-blobs", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-blobs&branch=staging" },
-    { name = "roxabi-contracts", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-contracts&branch=staging" },
-    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/lyra.git?subdirectory=packages%2Froxabi-nats&branch=staging" },
+    { name = "roxabi-blobs", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=staging" },
+    { name = "roxabi-contracts", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=staging" },
+    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },
     { name = "torch", marker = "extra == 'stt'", specifier = ">=2.7" },
