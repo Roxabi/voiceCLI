@@ -118,7 +118,7 @@ def test_happy_path_returns_decoded_audio(monkeypatch: pytest.MonkeyPatch) -> No
     assert fake_nc.drained and fake_nc.closed
     assert len(fake_blobstore.get_calls) == 1, "client must fetch bytes via BlobStore.get"
     subject, payload, timeout = fake_nc.requests[0]
-    assert subject == "lyra.voice.tts.request"
+    assert subject == "factory.voice.tts.request"
     assert timeout == 60.0
     sent = json.loads(payload)
     assert sent["text"] == "Bonjour"

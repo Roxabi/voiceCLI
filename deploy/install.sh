@@ -101,7 +101,7 @@ blobstore_env="${HOME}/.roxabi/voicecli/env/blobstore.env"
 if [[ ! -f "$blobstore_env" ]]; then
     run bash -c "cat > '${blobstore_env}'" <<'EOF'
 # voiceCLI blobstore credentials (ADR-068)
-# Fill in the bearer token issued by the lyra blobstore service.
+# Fill in the bearer token issued by the factory-blobstore service.
 BLOBSTORE_BEARER_TOKEN=
 EOF
     run chmod 600 "$blobstore_env"
@@ -123,7 +123,7 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
     token_value=$(grep -E '^BLOBSTORE_BEARER_TOKEN=' "$blobstore_env" | head -1 | cut -d= -f2-)
     if [[ -z "$token_value" ]]; then
         echo "ERROR: BLOBSTORE_BEARER_TOKEN is empty in $blobstore_env" >&2
-        echo "  Fill in the token issued by the lyra blobstore service, then re-run." >&2
+        echo "  Fill in the token issued by the factory-blobstore service, then re-run." >&2
         exit 1
     fi
 fi
