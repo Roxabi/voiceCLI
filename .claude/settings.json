@@ -7,7 +7,6 @@
   "enabledPlugins": {
     "dev-core@roxabi-marketplace": true,
     "typescript-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "voice-cli@voicecli-marketplace": true
+    "pyright-lsp@claude-plugins-official": true
   }
 }
