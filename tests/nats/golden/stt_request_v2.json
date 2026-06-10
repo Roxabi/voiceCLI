@@ -3,7 +3,7 @@
   "trace_id": "trace-example",
   "request_id": "req-example",
   "blob_ref": {
-    "store_key": "sha256:deadbeef",
+    "store_key": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "content_hash": "deadbeef",
     "mime": "audio/wav",
     "size": 16384,

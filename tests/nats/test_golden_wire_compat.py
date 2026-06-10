@@ -38,7 +38,7 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 # ---------------------------------------------------------------------------
 
 _BLOB_REF_V2 = {
-    "store_key": "sha256:deadbeef",
+    "store_key": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "content_hash": "deadbeef",
     "mime": "audio/wav",
     "size": 16,

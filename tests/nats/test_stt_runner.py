@@ -316,6 +316,42 @@ class TestRunTranscriptionHappyPath:
         assert scoped_path.parent == tmp_path
         assert scoped_path.name.startswith("req-path")
 
+    def test_write_succeeds_when_scoped_dir_does_not_pre_exist(
+        self, tmp_path: Path, fake_api: _FakeApi, fake_blobstore: _FakeBlobStore
+    ) -> None:
+        """Runner creates scoped_dir (and parents) if it does not exist before writing.
+
+        Regression guard for the FileNotFoundError introduced in PR #180:
+        the runner must call mkdir() itself before write_bytes() because the
+        adapter passes TEMP_ROOT which may not exist in a fresh container.
+        """
+        # Arrange — point scoped_dir at a subdir that does NOT exist yet
+        scoped_dir = tmp_path / "voicecli-nats" / "subdir"
+        assert not scoped_dir.exists(), "precondition: dir must not pre-exist"
+
+        state = _make_state(model_warm=True)
+        blob_ref = _make_blob_ref(mime="audio/wav")
+
+        # Act
+        ok, result, scoped_path = _run(
+            run_transcription(
+                state,
+                "large-v3-turbo",
+                blob_ref,
+                "req-mkdir",
+                scoped_dir,
+                {},
+                trace_id="t-mkdir",
+            )
+        )
+
+        # Assert — write succeeded, file exists, dir was created with tight perms
+        assert ok is True
+        assert scoped_path is not None
+        assert scoped_path.exists(), "WAV file must be written to the non-pre-existing dir"
+        assert scoped_dir.exists(), "runner must have created scoped_dir"
+        assert oct(scoped_dir.stat().st_mode & 0o777) == oct(0o700)
+
     @pytest.mark.parametrize(
         "mime,expected_ext",
         [

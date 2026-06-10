@@ -4,7 +4,7 @@
   "trace_id": "trace-example",
   "request_id": "req-example",
   "blob_ref": {
-    "store_key": "sha256:cafef00d",
+    "store_key": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "content_hash": "cafef00d",
     "mime": "audio/wav",
     "size": 65536,
