@@ -4,7 +4,7 @@
 #
 # Merge strategy (Convention A):
 #   - Promote PRs (base=main, head=staging) → --merge (preserves history, no phantom conflicts)
-#   - All other PRs                          → --squash
+#   - All other PRs                          → --merge (merge commit — repo settings forbid squash)
 #
 # Also closes linked issues after merge, because GITHUB_TOKEN-initiated
 # auto-merges don't trigger GitHub's native "Closes #X" issue closure.
@@ -32,6 +32,15 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'reviewed')
     timeout-minutes: 5
     steps:
+      # roxabi-ci App token (ephemeral, 1 h) — replaces the shared org PAT: its pushes
+      # re-trigger CI and it can merge workflow-file PRs, which GITHUB_TOKEN cannot.
+      - name: Mint app token (roxabi-ci)
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ vars.ROXABI_CI_APP_ID }}
+          private-key: ${{ secrets.ROXABI_CI_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -41,11 +50,11 @@ jobs:
             echo "Promote PR detected (base=main, head=staging) — using --merge (Convention A)"
             gh pr merge "$PR_NUMBER" --auto --merge
           else
-            echo "Standard PR — using --squash"
-            gh pr merge "$PR_NUMBER" --auto --squash
+            echo "Standard PR — using --merge (merge commit)"
+            gh pr merge "$PR_NUMBER" --auto --merge
           fi
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -56,6 +65,15 @@ jobs:
     if: github.event_name == 'push'
     timeout-minutes: 5
     steps:
+      # roxabi-ci App token (ephemeral, 1 h) — replaces the shared org PAT: its pushes
+      # re-trigger CI and it can merge workflow-file PRs, which GITHUB_TOKEN cannot.
+      - name: Mint app token (roxabi-ci)
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ vars.ROXABI_CI_APP_ID }}
+          private-key: ${{ secrets.ROXABI_CI_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -75,7 +93,7 @@ jobs:
               --method PUT -f expected_head_sha="$SHA" || true
           done
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
 
   close-linked-issues:
     name: Close linked issues
