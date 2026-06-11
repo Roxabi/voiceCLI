@@ -4,7 +4,7 @@
 #
 # Merge strategy (Convention A):
 #   - Promote PRs (base=main, head=staging) → --merge (preserves history, no phantom conflicts)
-#   - All other PRs                          → --squash
+#   - All other PRs                          → --merge (merge commit — repo settings forbid squash)
 #
 # Also closes linked issues after merge, because GITHUB_TOKEN-initiated
 # auto-merges don't trigger GitHub's native "Closes #X" issue closure.
@@ -50,7 +50,7 @@ jobs:
             echo "Promote PR detected (base=main, head=staging) — using --merge (Convention A)"
             gh pr merge "$PR_NUMBER" --auto --merge
           else
-            echo "Standard PR — using --squash"
+            echo "Standard PR — using --merge (merge commit)"
             gh pr merge "$PR_NUMBER" --auto --merge
           fi
         env:
