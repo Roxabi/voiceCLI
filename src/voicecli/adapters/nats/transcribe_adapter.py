@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 
-def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:
+def _err_stt(trace_id: str, request_id: str, error: str, job_id: str | None = None) -> bytes:
     fields: dict[str, Any] = {
         "contract_version": CONTRACT_VERSION,
         "trace_id": trace_id,
@@ -59,6 +59,10 @@ def _err_stt(trace_id: str, request_id: str, error: str) -> bytes:
         "request_id": request_id or "",
         "error": error,
     }
+    # job_id=None must NOT be set — _validate_job_id raises TypeError on None.
+    # Let default_factory shim fire when job_id is absent.
+    if job_id:
+        fields["job_id"] = job_id
     # Skip validation only when request_id is empty (otherwise the contract requires it).
     m = SttResponse.model_construct(**fields) if not request_id else SttResponse(**fields)
     return m.model_dump_json(exclude_none=True).encode()
@@ -124,13 +128,14 @@ class SttNatsAdapter(NatsAdapterBase):
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
+        job_id: str | None = payload.get("job_id") or None
         if not request_id:
-            await self.reply(msg, _err_stt(trace_id, "", "malformed_request"))
+            await self.reply(msg, _err_stt(trace_id, "", "malformed_request", job_id))
             return
 
         outcome = validate_stt_request(payload)
         if outcome.error_code is not None:
-            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code))
+            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code, job_id))
             return
         req = outcome.request
 
@@ -139,7 +144,9 @@ class SttNatsAdapter(NatsAdapterBase):
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
-                await self.reply(msg, _err_stt(trace_id, req.request_id, "capacity_exceeded"))
+                await self.reply(
+                    msg, _err_stt(trace_id, req.request_id, "capacity_exceeded", job_id)
+                )
                 return
             try:
                 await self._run_transcription(
@@ -148,6 +155,7 @@ class SttNatsAdapter(NatsAdapterBase):
                     req.blob_ref,
                     req.to_overrides(),
                     trace_id=trace_id,
+                    job_id=job_id,
                 )
             finally:
                 self._sem.release()
@@ -159,6 +167,7 @@ class SttNatsAdapter(NatsAdapterBase):
                     req.blob_ref,
                     req.to_overrides(),
                     trace_id=trace_id,
+                    job_id=job_id,
                 )
 
     async def _run_transcription(
@@ -169,6 +178,7 @@ class SttNatsAdapter(NatsAdapterBase):
         overrides: dict,
         *,
         trace_id: str,
+        job_id: str | None = None,
     ) -> None:
         out_path = None
         try:
@@ -182,9 +192,13 @@ class SttNatsAdapter(NatsAdapterBase):
                 trace_id=trace_id,
             )
             if not ok:
-                await self.reply(msg, _err_stt(trace_id, request_id, result))  # type: ignore[arg-type]
+                await self.reply(msg, _err_stt(trace_id, request_id, result, job_id))  # type: ignore[arg-type]
                 return
             fields = result  # type: ignore[assignment]
+            # job_id=None must NOT be passed explicitly — let default_factory shim fire instead.
+            job_id_kwarg: dict[str, str] = {}
+            if job_id:
+                job_id_kwarg["job_id"] = job_id
             await self.reply(
                 msg,
                 SttResponse(
@@ -196,6 +210,7 @@ class SttNatsAdapter(NatsAdapterBase):
                     text=fields["text"],
                     language=fields["language"],
                     duration_seconds=fields["duration_seconds"],
+                    **job_id_kwarg,
                 )
                 .model_dump_json(exclude_none=True)
                 .encode(),
