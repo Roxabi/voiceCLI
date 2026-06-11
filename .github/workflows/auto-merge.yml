@@ -51,7 +51,7 @@ jobs:
             gh pr merge "$PR_NUMBER" --auto --merge
           else
             echo "Standard PR — using --squash"
-            gh pr merge "$PR_NUMBER" --auto --squash
+            gh pr merge "$PR_NUMBER" --auto --merge
           fi
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
