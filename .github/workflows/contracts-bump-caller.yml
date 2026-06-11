@@ -1,0 +1,16 @@
+# .github/workflows/contracts-bump-caller.yml  (in Roxabi/voiceCLI)
+name: Bump contracts lock
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Every Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  bump:
+    uses: Roxabi/roxabi-factory/.github/workflows/contracts-bump.yml@staging
+    with:
+      satellite_repo: ${{ github.repository }}
+      packages: "roxabi-contracts roxabi-nats roxabi-blobs"
+    secrets:
+      PAT: ${{ secrets.PAT }}

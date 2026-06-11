@@ -228,6 +228,16 @@ def test_golden_wire_compat(golden_path: Path, case_name: str) -> None:
     golden_obj.pop("issued_at", None)
     branch_obj.pop("issued_at", None)
 
+    # When the inbound payload carries no job_id, the default_factory shim in
+    # roxabi-contracts 0.9.0 synthesises a fresh UUID on every response — value
+    # varies per-run and cannot be golden-captured.  Strip it from both sides so
+    # the comparison stays meaningful for the remaining fields.  Echo behaviour
+    # (payload WITH job_id → reply echoes it verbatim) is covered by the
+    # dedicated test_job_id_echoed_in_* tests in test_tts_adapter / test_stt_adapter.
+    if "job_id" not in payload:
+        golden_obj.pop("job_id", None)
+        branch_obj.pop("job_id", None)
+
     # Re-serialize both with canonical formatting for deterministic comparison
     golden_canonical = json.dumps(golden_obj, sort_keys=True, indent=2)
     branch_canonical = json.dumps(branch_obj, sort_keys=True, indent=2)

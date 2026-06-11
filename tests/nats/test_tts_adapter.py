@@ -1746,3 +1746,81 @@ class TestTtsNatsAdapter:
         assert reply["error"] == "engine_unavailable"
         assert "worker_error" in reply
         assert reply["worker_error"]["code"] == "engine_unavailable"
+
+    # ------------------------------------------------------------------
+    # job_id echo (#1840)
+    # ------------------------------------------------------------------
+
+    def test_job_id_echoed_in_success_reply(self, tmp_path: Path) -> None:
+        """job_id from inbound payload is echoed in the TTS success reply."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-jid-ok") | {"job_id": "job-abc-123"}
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            with patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        assert reply["job_id"] == "job-abc-123"
+
+    def test_job_id_absent_not_in_reply(self, tmp_path: Path) -> None:
+        """When job_id is absent, the shim (default_factory=new_job_id) generates a fresh UUID.
+        The reply always carries a job_id — we verify it is present and non-empty."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        payload = _valid_payload(request_id="req-nojid")
+        assert "job_id" not in payload  # sanity-check the fixture
+
+        def _patched_scoped_path(rid: str, ext: str) -> Path:
+            return tmp_path / f"{rid}.{ext}"
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            with patch(
+                "voicecli.adapters.nats.synthesize_adapter.scoped_path",
+                side_effect=_patched_scoped_path,
+            ):
+                asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is True
+        # default_factory shim fires — reply always carries a job_id UUID
+        assert "job_id" in reply
+        assert reply["job_id"]  # non-empty shim-generated UUID
+
+    def test_job_id_echoed_in_error_reply(self, tmp_path: Path) -> None:
+        """job_id is echoed even when the adapter returns an error response."""
+        _require_imports()
+        adapter = TtsNatsAdapter(default_engine="mock", max_concurrent=1)
+        msg = MockMsg()
+        _setup_adapter(adapter, msg)
+        # engine_unavailable path — easiest error to trigger without patching blobstore
+        payload = _valid_payload(engine="ghost-engine") | {"job_id": "job-err-xyz"}
+
+        with patch(
+            "voicecli.engines.engine._get_registry",
+            return_value={"mock": _stub_engine_factory(tmp_path)},
+        ):
+            asyncio.run(adapter.handle(msg, payload))
+
+        reply = msg.last_reply()
+        assert reply["ok"] is False
+        assert reply["error"] == "engine_unavailable"
+        assert reply["job_id"] == "job-err-xyz"
