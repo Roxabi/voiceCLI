@@ -12,5 +12,3 @@ jobs:
     with:
       satellite_repo: ${{ github.repository }}
       packages: "roxabi-contracts roxabi-nats roxabi-blobs"
-    secrets:
-      PAT: ${{ secrets.PAT }}
