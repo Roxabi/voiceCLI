@@ -34,7 +34,14 @@ def _engine_available(engine: str) -> bool:
     return engine in _get_registry()
 
 
-def _err_tts(trace_id: str, request_id: str, worker_error: WorkerError) -> bytes:
+def _err_tts(
+    trace_id: str, request_id: str, worker_error: WorkerError, job_id: str | None = None
+) -> bytes:
+    # job_id=None must NOT be passed to TtsResponse — _validate_job_id raises TypeError on None.
+    # Let the default_factory shim synthesise a fresh UUID when job_id is absent.
+    extra: dict[str, str] = {}
+    if job_id:
+        extra["job_id"] = job_id
     if not request_id:
         # model_construct bypasses validation for the malformed-request edge case
         # where request_id is empty (which normally fails min_length=1).
@@ -46,6 +53,7 @@ def _err_tts(trace_id: str, request_id: str, worker_error: WorkerError) -> bytes
             request_id="",
             error=worker_error.code,
             worker_error=worker_error,
+            **extra,
         )
     else:
         m = TtsResponse(
@@ -56,6 +64,7 @@ def _err_tts(trace_id: str, request_id: str, worker_error: WorkerError) -> bytes
             request_id=request_id,
             error=worker_error.code,
             worker_error=worker_error,
+            **extra,
         )
     return m.model_dump_json(exclude_none=True).encode()
 
@@ -147,8 +156,11 @@ class TtsNatsAdapter(NatsAdapterBase):
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
+        job_id: str | None = payload.get("job_id") or None
         if not request_id:
-            await self.reply(msg, _err_tts(trace_id, "", _VALIDATION_ERRORS["malformed_request"]))
+            await self.reply(
+                msg, _err_tts(trace_id, "", _VALIDATION_ERRORS["malformed_request"], job_id)
+            )
             return
 
         outcome = validate_tts_request(
@@ -165,7 +177,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                     retryable=False,
                 ),
             )
-            await self.reply(msg, _err_tts(trace_id, request_id, we))
+            await self.reply(msg, _err_tts(trace_id, request_id, we, job_id))
             return
         text = outcome.cleaned_text
         engine = outcome.engine
@@ -176,7 +188,8 @@ class TtsNatsAdapter(NatsAdapterBase):
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
                 await self.reply(
-                    msg, _err_tts(trace_id, request_id, _VALIDATION_ERRORS["capacity_exceeded"])
+                    msg,
+                    _err_tts(trace_id, request_id, _VALIDATION_ERRORS["capacity_exceeded"], job_id),
                 )
                 return
             try:
@@ -197,6 +210,7 @@ class TtsNatsAdapter(NatsAdapterBase):
         *,
         trace_id: str,
     ) -> None:
+        job_id: str | None = payload.get("job_id") or None
         out_path = scoped_path(request_id, "wav")
         try:
             try:
@@ -226,15 +240,20 @@ class TtsNatsAdapter(NatsAdapterBase):
                             message=type(exc).__name__,
                             retryable=False,
                         ),
+                        job_id,
                     ),
                 )
                 return
             if not ok:
                 # result is a WorkerError
-                await self.reply(msg, _err_tts(trace_id, request_id, result))  # type: ignore[arg-type]
+                await self.reply(msg, _err_tts(trace_id, request_id, result, job_id))  # type: ignore[arg-type]
                 return
             # result is the fields dict
             fields = result  # type: ignore[assignment]
+            # job_id=None must NOT be passed explicitly — let default_factory shim fire instead.
+            job_id_kwarg: dict[str, str] = {}
+            if job_id:
+                job_id_kwarg["job_id"] = job_id
             await self.reply(
                 msg,
                 TtsResponse(
@@ -247,6 +266,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                     mime_type=fields["mime_type"],
                     duration_ms=fields["duration_ms"],
                     waveform_b64=fields.get("waveform_b64"),
+                    **job_id_kwarg,
                 )
                 .model_dump_json(exclude_none=True)
                 .encode(),
