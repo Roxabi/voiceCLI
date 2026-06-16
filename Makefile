@@ -43,8 +43,9 @@ quadlet-install:  ## install Quadlet units to $(QUADLET_DIR) + reload
 	@mkdir -p "$(QUADLET_DIR)"
 	@mkdir -p "$(HOME)/.cache/huggingface" "$(HOME)/.cache/voicecli"
 	@rm -f "$(QUADLET_DIR)"/voicecli*.{network,container}
-	@cp deploy/quadlet/voicecli-stt.container        "$(QUADLET_DIR)/voicecli-stt.container"
-	@cp deploy/quadlet/voicecli-tts.container        "$(QUADLET_DIR)/voicecli-tts.container"
+	@for f in deploy/quadlet/*.container; do \
+		cp "$$f" "$(QUADLET_DIR)/"; \
+	done
 	@systemctl --user daemon-reload
 	@echo "Quadlet units installed."
 	@echo "Next: run 'make quadlet-secrets-install' to (re)create Podman secrets."
