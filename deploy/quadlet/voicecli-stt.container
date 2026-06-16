@@ -25,6 +25,8 @@ Environment=BLOBSTORE_URL=http://factory-blobstore:8449
 EnvironmentFile=%h/.roxabi/voicecli/env/blobstore.env
 HealthCmd=pgrep -f voicecli
 HealthInterval=30s
+# Grace for STT model cold-load (weights + CUDA init) before health failures count.
+HealthStartPeriod=120s
 NoNewPrivileges=true
 # Drop everything; GPU/CDI device access is granted via AddDevice= directive above.
 DropCapability=all
