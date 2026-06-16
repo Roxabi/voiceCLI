@@ -24,6 +24,8 @@ Environment=BLOBSTORE_URL=http://factory-blobstore:8449
 EnvironmentFile=%h/.roxabi/voicecli/env/blobstore.env
 HealthCmd=pgrep -f voicecli
 HealthInterval=30s
+# Grace for TTS model cold-load (weights + CUDA init) before health failures count.
+HealthStartPeriod=120s
 NoNewPrivileges=true
 DropCapability=all
 
