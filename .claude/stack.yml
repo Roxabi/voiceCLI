@@ -67,3 +67,8 @@ quality_gates:
     enabled: true
     script: tools/check_duplicate_test_basenames.sh
     source: pyproject.toml [tool.pytest.ini_options].testpaths
+  quadlet_manifest_install:
+    enabled: true
+    stage: pre-push
+    script: tools/check_quadlet_manifest_install.sh
+    description: bidirectional manifest↔install — every [component.*] container in deploy/quadlet.toml has a source file installed by the deploy/quadlet/*.container glob (Makefile + install.sh), and every on-disk *.container is declared (orphan-install guard, #1901). Also enforced in CI via quadlet-lint.yml.

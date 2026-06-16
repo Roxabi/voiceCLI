@@ -8,6 +8,10 @@ on:
     branches: [main, staging]
     paths:
       - "deploy/quadlet/**"
+      - "deploy/quadlet.toml"
+      - "deploy/install.sh"
+      - "Makefile"
+      - "tools/check_quadlet_manifest_install.sh"
   workflow_dispatch: {}
 
 concurrency:
@@ -109,3 +113,11 @@ jobs:
             exit 1
           fi
           echo "No inline comments on value lines — OK"
+
+      - name: Manifest↔install gate (#1901)
+        # Bidirectional: every declared [component.*] container has a source file
+        # installed by the deploy/quadlet/*.container glob, and every on-disk
+        # *.container is declared in quadlet.toml (orphan-install guard). Mirrors
+        # the pre-push hook so the gate also blocks in CI. Needs python3+tomllib
+        # (ubuntu-latest ships 3.12) and git (checkout above) — no Podman.
+        run: bash tools/check_quadlet_manifest_install.sh

@@ -59,3 +59,9 @@ repos:
       language: system
       pass_filenames: false
       stages: [pre-push]
+    - id: quadlet-manifest-install
+      name: quadlet manifest↔install gate
+      entry: tools/check_quadlet_manifest_install.sh
+      language: system
+      pass_filenames: false
+      stages: [pre-push]
