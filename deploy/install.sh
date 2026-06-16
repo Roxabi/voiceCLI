@@ -128,11 +128,11 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
     fi
 fi
 
-for unit in voicecli-stt.container voicecli-tts.container; do
-    src="${SCRIPT_DIR}/quadlet/${unit}"
+for src in "${SCRIPT_DIR}"/quadlet/*.container; do
+    unit="$(basename "$src")"
     dst="${QUADLET_DIR}/${unit}"
     if [[ ! -f "$src" ]]; then
-        echo "ERROR: Quadlet unit not found: $src" >&2
+        echo "ERROR: no .container units found in ${SCRIPT_DIR}/quadlet/" >&2
         exit 1
     fi
     run cp "$src" "$dst"
