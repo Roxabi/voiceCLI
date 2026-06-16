@@ -69,10 +69,16 @@ jobs:
           fi
 
       - name: Quadlet dryrun — parse errors
-        env:
-          QUADLET_UNIT_DIRS: ${{ github.workspace }}/deploy/quadlet
         run: |
           set -euo pipefail
+          # roxabi.network is owned by roxabi-factory (its defining repo); voiceCLI
+          # units only attach to it (the host creates the real bridge at deploy). Provide
+          # a throwaway stub in a separate search dir so the generator can resolve the
+          # `Network=roxabi.network` reference during lint, without vendoring factory's
+          # SSoT into this repo. (Resolution is by unit filename, not NetworkName.)
+          STUB_DIR="$(mktemp -d)"
+          printf '[Network]\nDriver=bridge\n' > "${STUB_DIR}/roxabi.network"
+          export QUADLET_UNIT_DIRS="${GITHUB_WORKSPACE}/deploy/quadlet:${STUB_DIR}"
           # Emit generator logs to stderr; non-zero exit on parse error.
           /usr/libexec/podman/quadlet --dryrun --user 2>&1
           echo "quadlet --dryrun passed"
