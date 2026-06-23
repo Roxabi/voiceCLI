@@ -88,18 +88,40 @@ cmd=( "$VOICECLI_BIN" dictate nats )
 if [ -n "${VOICECLI_MODE:-}" ]; then
     cmd+=( --mode "$VOICECLI_MODE" )
 fi
-"${cmd[@]}"
+
+CLI_LOG="$(mktemp "${TMPDIR:-/tmp}/voicecli-dictate.XXXXXX")"
+trap 'rm -f "$CLI_LOG"' EXIT
+
+"${cmd[@]}" >"$CLI_LOG" 2>&1
 EXIT_CODE=$?
 
-# Exit 69 = TCP probe failed (hub unreachable, already notified above). Skip
-# the log check so a stale ImportError from a prior run doesn't surface a
-# spurious "stale .venv" notification on top of an unrelated network failure.
-if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 69 ]; then
-    LOG="$HOME/.local/state/voicecli/recorder.log"
-    if [ -f "$LOG" ] && command -v notify-send >/dev/null 2>&1; then
-        if tail -n 50 "$LOG" | grep -qE "ImportError|ModuleNotFoundError"; then
-            notify-send -u normal "voicecli-dictate" \
-                "Recorder failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
+# Exit 69 = TCP probe failed (hub unreachable, already notified above).
+if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 69 ] && command -v notify-send >/dev/null 2>&1; then
+    RECORDER_LOG="$HOME/.local/state/voicecli/recorder.log"
+    _has_import_error() {
+        grep -qE "ImportError|ModuleNotFoundError" "$1" 2>/dev/null
+    }
+
+    if _has_import_error "$CLI_LOG" || { [ -f "$RECORDER_LOG" ] && tail -n 50 "$RECORDER_LOG" | grep -qE "ImportError|ModuleNotFoundError"; }; then
+        notify-send -u normal -r 2 "VoiceCLI" \
+            "Dictate failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
+    else
+        err_line=""
+        if [ -s "$CLI_LOG" ]; then
+            err_line="$(grep -E '^[A-Z][A-Za-z]+Error:' "$CLI_LOG" 2>/dev/null | tail -1)"
+            if [ -z "$err_line" ]; then
+                err_line="$(grep -oE '[A-Z][A-Za-z]+Error: [^│]+' "$CLI_LOG" 2>/dev/null | tail -1 | sed 's/[[:space:]]*$//')"
+            fi
+            if [ -z "$err_line" ]; then
+                err_line="$(grep -viE '^(╭|│|╰|─|Traceback|File "|During handling)' "$CLI_LOG" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -1 | sed 's/^[[:space:]]*//')"
+            fi
+        fi
+        if [ -n "$err_line" ]; then
+            # notify-send body length is limited; keep the bubble readable.
+            err_line="${err_line:0:240}"
+            notify-send -u normal -r 2 "VoiceCLI" "Dictate failed: $err_line"
+        else
+            notify-send -u normal -r 2 "VoiceCLI" "Dictate failed (exit $EXIT_CODE)"
         fi
     fi
 fi
