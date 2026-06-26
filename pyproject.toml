@@ -54,9 +54,7 @@ pkuseg = ["numpy"]
 
 [tool.uv.sources]
 voxtral-tts = { git = "https://github.com/Roxabi/voxtral-tts.git", branch = "main" }
-roxabi-nats = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-nats", branch = "staging" }
-roxabi-contracts = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-contracts", branch = "staging" }
-roxabi-blobs = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-blobs", branch = "staging" }
+roxabi-satellite = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-satellite", branch = "feat/roxabi-satellite" }
 
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
@@ -81,9 +79,7 @@ voxtral = ["voxtral-tts[int4]", "scipy"]
 hotkey = ["pynput>=1.7"]
 overlay = ["PyGObject>=3.42", "pycairo>=1.25"]
 nats = [
-    "roxabi-nats",
-    "roxabi-contracts",
-    "roxabi-blobs",
+    "roxabi-satellite",
     "nats-py>=2.6,<3",
     "nkeys>=0.1",
     "nvidia-ml-py>=12,<14",

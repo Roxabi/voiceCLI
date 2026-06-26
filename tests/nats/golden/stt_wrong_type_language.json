@@ -3,5 +3,10 @@
   "error": "malformed_request",
   "ok": false,
   "request_id": "req-badlang",
-  "trace_id": "trace-stt-7"
+  "trace_id": "trace-stt-7",
+  "worker_error": {
+    "code": "malformed_request",
+    "message": "Request payload is malformed or missing required fields",
+    "retryable": false
+  }
 }

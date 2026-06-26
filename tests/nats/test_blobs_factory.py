@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
+import roxabi_satellite.blobs as satellite_blobs
 
 from voicecli.adapters.nats import blobs
 
@@ -47,9 +48,10 @@ def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None
     the same pytest worker — e.g. missing-env tests would skip construction
     entirely and return the cached instance instead of raising.
     """
-    monkeypatch.setattr(blobs, "_INSTANCE", None)
+    monkeypatch.setattr(satellite_blobs, "_INSTANCE", None)
+    monkeypatch.delenv("BLOBSTORE_BEARER_TOKEN_PATH", raising=False)
     yield
-    monkeypatch.setattr(blobs, "_INSTANCE", None)
+    monkeypatch.setattr(satellite_blobs, "_INSTANCE", None)
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +62,7 @@ def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None
 @pytest.fixture()
 def _fake_http_blobstore(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
     """Replace HttpBlobStore with _FakeHttpBlobStore for construction tests."""
-    monkeypatch.setattr(blobs, "HttpBlobStore", _FakeHttpBlobStore)
+    monkeypatch.setattr(satellite_blobs, "HttpBlobStore", _FakeHttpBlobStore)
 
 
 # ===========================================================================

@@ -13,6 +13,7 @@ from roxabi_contracts.errors import WorkerError
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
+from roxabi_satellite.voice.replies import build_tts_error_reply, voice_validation_error
 from voicecli.adapters.nats._synthesize_runner import TtsRunnerState, run_synthesis
 from voicecli.adapters.nats._validation import validate_tts_request
 from voicecli.adapters.nats.queue_groups import TTS_WORKERS
@@ -32,62 +33,6 @@ def _engine_available(engine: str) -> bool:
     from voicecli.engines.engine import _get_registry
 
     return engine in _get_registry()
-
-
-def _err_tts(
-    trace_id: str, request_id: str, worker_error: WorkerError, job_id: str | None = None
-) -> bytes:
-    # job_id=None must NOT be passed to TtsResponse — _validate_job_id raises TypeError on None.
-    # Let the default_factory shim synthesise a fresh UUID when job_id is absent.
-    extra: dict[str, str] = {}
-    if job_id:
-        extra["job_id"] = job_id
-    if not request_id:
-        # model_construct bypasses validation for the malformed-request edge case
-        # where request_id is empty (which normally fails min_length=1).
-        m = TtsResponse.model_construct(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id="",
-            error=worker_error.code,
-            worker_error=worker_error,
-            **extra,
-        )
-    else:
-        m = TtsResponse(
-            contract_version=CONTRACT_VERSION,
-            trace_id=trace_id,
-            issued_at=datetime.now(timezone.utc),
-            ok=False,
-            request_id=request_id,
-            error=worker_error.code,
-            worker_error=worker_error,
-            **extra,
-        )
-    return m.model_dump_json(exclude_none=True).encode()
-
-
-# Minimal mapping from validation error-code strings → WorkerError.
-# Keeps adapter callsites clean without over-engineering a registry.
-_VALIDATION_ERRORS: dict[str, WorkerError] = {
-    "malformed_request": WorkerError(
-        code="malformed_request",
-        message="Request payload is malformed or missing required fields",
-        retryable=False,
-    ),
-    "engine_unavailable": WorkerError(
-        code="engine_unavailable",
-        message="Requested TTS engine is not available",
-        retryable=True,
-    ),
-    "capacity_exceeded": WorkerError(
-        code="capacity_exceeded",
-        message="Worker is at capacity; retry later",
-        retryable=True,
-    ),
-}
 
 
 class TtsNatsAdapter(NatsAdapterBase):
@@ -159,7 +104,10 @@ class TtsNatsAdapter(NatsAdapterBase):
         job_id: str | None = payload.get("job_id") or None
         if not request_id:
             await self.reply(
-                msg, _err_tts(trace_id, "", _VALIDATION_ERRORS["malformed_request"], job_id)
+                msg,
+                build_tts_error_reply(
+                    trace_id, "", voice_validation_error("malformed_request"), job_id
+                ),
             )
             return
 
@@ -169,15 +117,15 @@ class TtsNatsAdapter(NatsAdapterBase):
             engine_available=_engine_available,
         )
         if outcome.error_code is not None:
-            we = _VALIDATION_ERRORS.get(
-                outcome.error_code,
-                WorkerError(
-                    code=outcome.error_code,
-                    message=outcome.error_code.replace("_", " ").capitalize(),
-                    retryable=False,
+            await self.reply(
+                msg,
+                build_tts_error_reply(
+                    trace_id,
+                    request_id,
+                    voice_validation_error(outcome.error_code),
+                    job_id,
                 ),
             )
-            await self.reply(msg, _err_tts(trace_id, request_id, we, job_id))
             return
         text = outcome.cleaned_text
         engine = outcome.engine
@@ -189,7 +137,12 @@ class TtsNatsAdapter(NatsAdapterBase):
             except asyncio.TimeoutError:
                 await self.reply(
                     msg,
-                    _err_tts(trace_id, request_id, _VALIDATION_ERRORS["capacity_exceeded"], job_id),
+                    build_tts_error_reply(
+                        trace_id,
+                        request_id,
+                        voice_validation_error("capacity_exceeded"),
+                        job_id,
+                    ),
                 )
                 return
             try:
@@ -232,7 +185,7 @@ class TtsNatsAdapter(NatsAdapterBase):
                 )
                 await self.reply(
                     msg,
-                    _err_tts(
+                    build_tts_error_reply(
                         trace_id,
                         request_id,
                         WorkerError(
@@ -246,7 +199,10 @@ class TtsNatsAdapter(NatsAdapterBase):
                 return
             if not ok:
                 # result is a WorkerError
-                await self.reply(msg, _err_tts(trace_id, request_id, result, job_id))  # type: ignore[arg-type]
+                await self.reply(
+                    msg,
+                    build_tts_error_reply(trace_id, request_id, result, job_id),  # type: ignore[arg-type]
+                )
                 return
             # result is the fields dict
             fields = result  # type: ignore[assignment]

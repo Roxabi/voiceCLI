@@ -328,7 +328,7 @@ class TestValidateSttRequest:
         # Arrange — blob_ref present but request_id absent
         payload = {"blob_ref": _valid_blob_ref_dict()}
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
         assert result.overrides is None
@@ -337,7 +337,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(request_id="")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -345,7 +345,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(request_id="bad id!")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -353,7 +353,7 @@ class TestValidateSttRequest:
         # Arrange — 129 chars
         payload = _valid_stt_payload(request_id="b" * 129)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -361,7 +361,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(request_id="b" * 128)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -373,13 +373,13 @@ class TestValidateSttRequest:
         """blob_ref absent → malformed_request.
 
         Negative-test: if the `if not isinstance(raw_ref, dict)` guard in
-        SttRequest.from_payload() were removed, this test would succeed even
+        SttRequest.model_validate() were removed, this test would succeed even
         without a blob_ref field — test would pass vacuously and fail here.
         """
         # Arrange
         payload: dict = {"request_id": "req-001"}
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -392,7 +392,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(blob_ref="not-a-dict")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -400,7 +400,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(blob_ref=None)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -410,7 +410,7 @@ class TestValidateSttRequest:
         del bad_ref["store_key"]
         payload = _valid_stt_payload(blob_ref=bad_ref)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -418,7 +418,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload()
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -449,7 +449,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(**{field: bad_value})
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request", (
             f"Expected malformed_request for {field}={bad_value!r}"
@@ -459,7 +459,7 @@ class TestValidateSttRequest:
         # Arrange — bool is a subclass of int but must be explicitly rejected
         payload = _valid_stt_payload(language_detection_segments=True)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -467,7 +467,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(language_detection_segments=False)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -475,7 +475,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(language_detection_segments=3)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -483,7 +483,7 @@ class TestValidateSttRequest:
         # Arrange — int is a valid type for this field
         payload = _valid_stt_payload(language_detection_threshold=1)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -491,7 +491,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(language_detection_threshold=0.75)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -503,7 +503,7 @@ class TestValidateSttRequest:
         # Arrange — valid str type but unknown task
         payload = _valid_stt_payload(task="summarise")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code == "malformed_request"
 
@@ -511,7 +511,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(task="transcribe")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -519,7 +519,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(task="translate")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
 
@@ -531,7 +531,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload()
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
         assert result.overrides == {}
@@ -540,7 +540,7 @@ class TestValidateSttRequest:
         # Arrange
         payload = _valid_stt_payload(language="fr", task="transcribe")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
         assert result.overrides is not None
@@ -551,7 +551,7 @@ class TestValidateSttRequest:
         # Arrange — only language provided; other optional fields absent
         payload = _valid_stt_payload(language="en")
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.overrides is not None
         assert set(result.overrides.keys()) == {"language"}
@@ -560,7 +560,7 @@ class TestValidateSttRequest:
         # Arrange — explicitly provide None for an optional field
         payload = _valid_stt_payload(language=None)
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.overrides is not None
         assert "language" not in result.overrides
@@ -576,7 +576,7 @@ class TestValidateSttRequest:
             task="translate",
         )
         # Act
-        result = validate_stt_request(payload)
+        result = validate_stt_request(payload, default_model="large-v3-turbo")
         # Assert
         assert result.error_code is None
         assert result.overrides is not None
@@ -589,7 +589,7 @@ class TestValidateSttRequest:
 
     def test_outcome_is_frozen_dataclass(self) -> None:
         # Arrange + Act
-        result = validate_stt_request(_valid_stt_payload())
+        result = validate_stt_request(_valid_stt_payload(), default_model="large-v3-turbo")
         # Assert — frozen dataclass raises FrozenInstanceError on mutation attempt
         with pytest.raises(AttributeError):
             result.error_code = "mutated"  # type: ignore[misc]

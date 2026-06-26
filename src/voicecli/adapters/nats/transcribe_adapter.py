@@ -10,16 +10,14 @@ from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
-from roxabi_contracts.voice.models import SttResponse
+from roxabi_contracts.voice.models import SttRequest, SttResponse
 from roxabi_nats import NatsAdapterBase
+from roxabi_satellite.errors import VOICE_STT_RUNNER_ERRORS, resolve_worker_error
+from roxabi_satellite.voice.replies import build_stt_error_reply, voice_validation_error
 from voicecli.adapters.nats._transcribe_runner import SttRunnerState, run_transcription
 from voicecli.adapters.nats._validation import validate_stt_request
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
-from voicecli.adapters.nats.requests import SttRequest
 from voicecli.adapters.nats.tempdir import TEMP_ROOT, cleanup
-
-# voicecli.api is NOT imported at module level — deferred to keep startup fast
-# and avoid pulling torch/faster-whisper when only inspecting the adapter (e.g. --help).
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +25,6 @@ log = logging.getLogger(__name__)
 SUBJECT = VOICE_SUBJECTS.stt_request
 HEARTBEAT_SUBJECT = VOICE_SUBJECTS.stt_heartbeat
 
-# Audio shape helpers + size cap are re-exported here so tests + adapter callers
-# keep importing from voicecli.adapters.nats.transcribe_adapter. The actual definitions live in
-# _audio_utils.py to keep the adapter ↔ runner dependency direction one-way
-# (the runner imports the helpers from _audio_utils directly, not from here).
 from voicecli.adapters.nats._audio_utils import (  # noqa: E402
     MAX_AUDIO_B64_LEN,
     _MIME_TO_EXT,
@@ -48,24 +42,6 @@ __all__ = [
     "SUBJECT",
     "HEARTBEAT_SUBJECT",
 ]
-
-
-def _err_stt(trace_id: str, request_id: str, error: str, job_id: str | None = None) -> bytes:
-    fields: dict[str, Any] = {
-        "contract_version": CONTRACT_VERSION,
-        "trace_id": trace_id,
-        "issued_at": datetime.now(timezone.utc),
-        "ok": False,
-        "request_id": request_id or "",
-        "error": error,
-    }
-    # job_id=None must NOT be set — _validate_job_id raises TypeError on None.
-    # Let default_factory shim fire when job_id is absent.
-    if job_id:
-        fields["job_id"] = job_id
-    # Skip validation only when request_id is empty (otherwise the contract requires it).
-    m = SttResponse.model_construct(**fields) if not request_id else SttResponse(**fields)
-    return m.model_dump_json(exclude_none=True).encode()
 
 
 class SttNatsAdapter(NatsAdapterBase):
@@ -87,7 +63,7 @@ class SttNatsAdapter(NatsAdapterBase):
             heartbeat_interval=heartbeat_interval,
             drain_timeout=drain_timeout,
             inbox_prefix="_inbox.voice-stt",
-            wait_ready=False,  # worker semantics — see NatsAdapterBase docstring
+            wait_ready=False,
         )
         self.default_model = default_model
         self.max_concurrent = max_concurrent
@@ -130,30 +106,49 @@ class SttNatsAdapter(NatsAdapterBase):
         request_id = payload.get("request_id", "")
         job_id: str | None = payload.get("job_id") or None
         if not request_id:
-            await self.reply(msg, _err_stt(trace_id, "", "malformed_request", job_id))
+            await self.reply(
+                msg,
+                build_stt_error_reply(
+                    trace_id, "", voice_validation_error("malformed_request"), job_id
+                ),
+            )
             return
 
-        outcome = validate_stt_request(payload)
+        outcome = validate_stt_request(payload, default_model=self.default_model)
         if outcome.error_code is not None:
-            await self.reply(msg, _err_stt(trace_id, request_id, outcome.error_code, job_id))
+            await self.reply(
+                msg,
+                build_stt_error_reply(
+                    trace_id,
+                    request_id,
+                    voice_validation_error(outcome.error_code),
+                    job_id,
+                ),
+            )
             return
         req = outcome.request
+        assert req is not None and outcome.storage_blob_ref is not None
 
         if self.reject_when_full:
-            # Non-blocking acquire: avoid the race in _sem.locked()
             try:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0)
             except asyncio.TimeoutError:
                 await self.reply(
-                    msg, _err_stt(trace_id, req.request_id, "capacity_exceeded", job_id)
+                    msg,
+                    build_stt_error_reply(
+                        trace_id,
+                        req.request_id,
+                        voice_validation_error("capacity_exceeded"),
+                        job_id,
+                    ),
                 )
                 return
             try:
                 await self._run_transcription(
                     msg,
                     req.request_id,
-                    req.blob_ref,
-                    req.to_overrides(),
+                    outcome.storage_blob_ref,
+                    outcome.overrides or {},
                     trace_id=trace_id,
                     job_id=job_id,
                 )
@@ -164,8 +159,8 @@ class SttNatsAdapter(NatsAdapterBase):
                 await self._run_transcription(
                     msg,
                     req.request_id,
-                    req.blob_ref,
-                    req.to_overrides(),
+                    outcome.storage_blob_ref,
+                    outcome.overrides or {},
                     trace_id=trace_id,
                     job_id=job_id,
                 )
@@ -192,10 +187,17 @@ class SttNatsAdapter(NatsAdapterBase):
                 trace_id=trace_id,
             )
             if not ok:
-                await self.reply(msg, _err_stt(trace_id, request_id, result, job_id))  # type: ignore[arg-type]
+                await self.reply(
+                    msg,
+                    build_stt_error_reply(
+                        trace_id,
+                        request_id,
+                        resolve_worker_error(result, VOICE_STT_RUNNER_ERRORS),
+                        job_id,
+                    ),
+                )
                 return
             fields = result  # type: ignore[assignment]
-            # job_id=None must NOT be passed explicitly — let default_factory shim fire instead.
             job_id_kwarg: dict[str, str] = {}
             if job_id:
                 job_id_kwarg["job_id"] = job_id
