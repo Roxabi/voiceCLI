@@ -57,7 +57,7 @@ except ImportError as _e:
     DEFAULT_MODEL = "large-v3-turbo"  # type: ignore[assignment]
     SUBJECT = "factory.voice.stt.request"  # type: ignore[assignment]
     HEARTBEAT_SUBJECT = "factory.voice.stt.heartbeat"  # type: ignore[assignment]
-    STT_WORKERS = "stt-workers"  # type: ignore[assignment]
+    STT_WORKERS = "stt_workers"  # type: ignore[assignment]
 
 
 def _require_imports() -> None:

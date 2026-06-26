@@ -7,8 +7,10 @@ defines exactly one role → name mapping.
 
 from __future__ import annotations
 
+from roxabi_contracts.voice import SUBJECTS
+
 #: Queue group for TTS worker processes consuming synthesis requests.
-TTS_WORKERS = "tts-workers"
+TTS_WORKERS = SUBJECTS.tts_workers
 
 #: Queue group for STT worker processes consuming transcription requests.
-STT_WORKERS = "stt-workers"
+STT_WORKERS = SUBJECTS.stt_workers

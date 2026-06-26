@@ -25,7 +25,7 @@ dependency on voicecli, enabling each service to be deployed and restarted indep
 **Startup sequence:**
 1. Validate env vars and file permissions (seed file `0600`).
 2. Run the VRAM-sequencing guard (probe local socket daemon).
-3. Connect to NATS and join the queue group (`tts-workers` / `stt-workers`).
+3. Connect to NATS and join the queue group (`tts_workers` / `stt_workers`).
 4. Load the TTS/STT engine model into VRAM.
 5. Begin accepting requests and publishing heartbeats.
 
@@ -204,7 +204,7 @@ loop-restarts on exit 78. `stopwaitsecs=35` must exceed `VOICECLI_DRAIN_TIMEOUT`
 |---|---|---|
 | Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon (`systemctl --user stop voicecli-tts` or `pkill -f 'voicecli serve'`), then restart; or pass `--allow-coexist` if coexistence is intentional |
 | `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.roxabi/voicecli/nkeys/voice-tts.seed` |
-| Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts-workers` (TTS) and `stt-workers` (STT) |
+| Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts_workers` (TTS) and `stt_workers` (STT) |
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
 | Satellite starts but produces no output; logs show CUDA OOM | VRAM exhausted by coexisting processes | Stop other GPU-heavy daemons, reduce `VOICECLI_MAX_CONCURRENT`, or move to a host with more VRAM |
@@ -219,7 +219,7 @@ The satellite logs its startup sequence to stdout. A healthy start looks like:
 INFO  vram-guard: no live socket daemon detected — proceeding
 INFO  nats: connected to nats://127.0.0.1:4222
 INFO  engine: model loaded in 12.3s (qwen-fast)
-INFO  nats-serve: joined queue group tts-workers — ready
+INFO  nats-serve: joined queue group tts_workers — ready
 ```
 
 If the process exits before the "ready" line, check `stderr_logfile` for the Python
@@ -390,7 +390,7 @@ All other parameters (`--heartbeat-interval`, `--drain-timeout`, `--reject-when-
 |---|---|
 | Request subject | `lyra.voice.stt.request` |
 | Heartbeat subject | `lyra.voice.stt.heartbeat` |
-| Queue group | `stt-workers` |
+| Queue group | `stt_workers` |
 | Service name (heartbeat payload) | `stt_workers` |
 
 ### STT — per-request language overrides

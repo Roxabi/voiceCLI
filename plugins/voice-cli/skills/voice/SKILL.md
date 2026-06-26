@@ -317,8 +317,8 @@ voicecli serve --engine qwen --fast                   # preload smaller 0.6B mod
 `voicecli nats-serve {tts,stt}` runs voicecli as a long-lived NATS queue-group subscriber instead of a local Unix-socket daemon — the hub and voicecli talk over NATS subjects rather than a local socket, so they can live on different hosts and be restarted independently.
 
 ```bash
-voicecli nats-serve tts                               # TTS satellite (queue group: tts-workers)
-voicecli nats-serve stt                               # STT satellite (queue group: stt-workers)
+voicecli nats-serve tts                               # TTS satellite (queue group: tts_workers)
+voicecli nats-serve stt                               # STT satellite (queue group: stt_workers)
 voicecli nats-serve tts --allow-coexist               # bypass VRAM guard (large-VRAM hosts only)
 voicecli nats-serve stt --model large-v3-turbo        # override STT model
 ```
