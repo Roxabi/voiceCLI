@@ -68,7 +68,26 @@ make quadlet-secrets-install
 # stops services before replace and restarts after (avoids mid-rotation mismatch)
 ```
 
-### 5. Start services
+### 5. Blobstore bearer token (factory SSoT)
+
+STT/TTS workers bind-mount `~/.roxabi/factory/blobstore.tok` (same file as
+`factory-blobstore` / telegram / discord). There is no separate copy under
+`~/.roxabi/voicecli/env/blobstore.env` on M₁.
+
+Prerequisite on the hub host:
+
+```bash
+# in roxabi-factory checkout
+./deploy/install.sh --secrets-only   # ensures blobstore.tok + Podman secret exist
+```
+
+After a factory blobstore rotation, restart voiceCLI so workers re-read the file:
+
+```bash
+systemctl --user restart voicecli-stt voicecli-tts
+```
+
+### 6. Start services
 
 ```bash
 systemctl --user start voicecli-tts voicecli-stt

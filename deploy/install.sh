@@ -96,36 +96,24 @@ EOF
     fi
 done
 
-# ── Blobstore env stub ────────────────────────────────────────────────────────
-blobstore_env="${HOME}/.roxabi/voicecli/env/blobstore.env"
-if [[ ! -f "$blobstore_env" ]]; then
-    run bash -c "cat > '${blobstore_env}'" <<'EOF'
-# voiceCLI blobstore credentials (ADR-068)
-# Fill in the bearer token issued by the factory-blobstore service.
-BLOBSTORE_BEARER_TOKEN=
-EOF
-    run chmod 600 "$blobstore_env"
-    echo "Created ${blobstore_env} (mode 600)"
-else
-    perms=$(stat -c '%a' "$blobstore_env")
-    if [[ "$perms" != "600" ]]; then
-        echo "ERROR: $blobstore_env has permissions $perms (expected 600 — bearer token is a credential)" >&2
-        echo "  Fix: chmod 600 $blobstore_env" >&2
-        exit 1
-    fi
-    echo "Keep ${blobstore_env} (exists, mode 600)"
+# ── Blobstore bearer (factory SSoT) ───────────────────────────────────────────
+factory_blobstore_tok="${HOME}/.roxabi/factory/blobstore.tok"
+legacy_blobstore_env="${HOME}/.roxabi/voicecli/env/blobstore.env"
+if [[ ! -f "$factory_blobstore_tok" ]]; then
+    echo "ERROR: ${factory_blobstore_tok} not found." >&2
+    echo "  Run roxabi-factory deploy/install.sh on this host first (generates blobstore.tok)." >&2
+    exit 1
 fi
-
-# Validate that the bearer token has been filled in before deploy. An empty
-# value would cause every get_blobstore() call to raise BlobstoreConfigError
-# at satellite startup and enter the systemd RestartSec=10 loop silently.
+if [[ -f "$legacy_blobstore_env" ]]; then
+    echo "WARN: legacy ${legacy_blobstore_env} is unused — Quadlet bind-mounts ${factory_blobstore_tok}" >&2
+    echo "  Safe to remove after voicecli-stt/tts restart cleanly." >&2
+fi
 if [[ "$DRY_RUN" -eq 0 ]]; then
-    token_value=$(grep -E '^BLOBSTORE_BEARER_TOKEN=' "$blobstore_env" | head -1 | cut -d= -f2-)
-    if [[ -z "$token_value" ]]; then
-        echo "ERROR: BLOBSTORE_BEARER_TOKEN is empty in $blobstore_env" >&2
-        echo "  Fill in the token issued by the factory-blobstore service, then re-run." >&2
+    if [[ ! -s "$factory_blobstore_tok" ]]; then
+        echo "ERROR: ${factory_blobstore_tok} is empty — regenerate via factory install.sh" >&2
         exit 1
     fi
+    echo "OK: factory blobstore token present at ${factory_blobstore_tok}"
 fi
 
 for src in "${SCRIPT_DIR}"/quadlet/*.container; do

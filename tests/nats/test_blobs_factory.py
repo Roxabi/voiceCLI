@@ -12,6 +12,7 @@ cross-test pollution from the module-level cache.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Generator
 
 import pytest
@@ -195,15 +196,44 @@ class TestMissingEnvVars:
     ) -> None:
         """BLOBSTORE_BEARER_TOKEN absent → BlobstoreConfigError naming the missing var.
 
-        Symmetric to the URL test — both env vars are mandatory for http backend.
+        Symmetric to the URL test — token env or path is mandatory for http backend.
         """
         # Arrange
         monkeypatch.setenv("BLOBSTORE_BACKEND", "http")
         monkeypatch.setenv("BLOBSTORE_URL", "http://hub:8080")
         monkeypatch.delenv("BLOBSTORE_BEARER_TOKEN", raising=False)
+        monkeypatch.delenv("BLOBSTORE_BEARER_TOKEN_PATH", raising=False)
 
         # Act + Assert
         with pytest.raises(blobs.BlobstoreConfigError, match="BLOBSTORE_BEARER_TOKEN"):
+            blobs.get_blobstore()
+
+    def test_bearer_token_path_preferred_over_env(
+        self, monkeypatch: pytest.MonkeyPatch, _fake_http_blobstore: None, tmp_path: Path
+    ) -> None:
+        """BLOBSTORE_BEARER_TOKEN_PATH wins when both path and env are set."""
+        tok_file = tmp_path / "blobstore.tok"
+        tok_file.write_text("from-file-token\n", encoding="utf-8")
+        monkeypatch.setenv("BLOBSTORE_BACKEND", "http")
+        monkeypatch.setenv("BLOBSTORE_URL", "http://hub:8080")
+        monkeypatch.setenv("BLOBSTORE_BEARER_TOKEN", "from-env")
+        monkeypatch.setenv("BLOBSTORE_BEARER_TOKEN_PATH", str(tok_file))
+
+        store = blobs.get_blobstore()
+
+        assert isinstance(store, _FakeHttpBlobStore)
+        assert store.token == "from-file-token"
+
+    def test_empty_bearer_token_path_raises(
+        self, monkeypatch: pytest.MonkeyPatch, _fake_http_blobstore: None, tmp_path: Path
+    ) -> None:
+        tok_file = tmp_path / "empty.tok"
+        tok_file.write_text("   \n", encoding="utf-8")
+        monkeypatch.setenv("BLOBSTORE_BACKEND", "http")
+        monkeypatch.setenv("BLOBSTORE_URL", "http://hub:8080")
+        monkeypatch.setenv("BLOBSTORE_BEARER_TOKEN_PATH", str(tok_file))
+
+        with pytest.raises(blobs.BlobstoreConfigError, match="empty"):
             blobs.get_blobstore()
 
 

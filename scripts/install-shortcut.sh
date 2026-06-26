@@ -98,10 +98,17 @@ fi
 # ── ~/.roxabi/voicecli/ existence (config + nkey + blobstore) ──────────────────────
 TOML="$HOME/.roxabi/voicecli/voicecli.toml"
 SEED="$HOME/.roxabi/voicecli/nkeys/voice-client.seed"
+FACTORY_BLOBSTORE_TOK="$HOME/.roxabi/factory/blobstore.tok"
 BLOBSTORE_ENV="$HOME/.roxabi/voicecli/env/blobstore.env"
 [ -f "$TOML" ] || warn "missing $TOML — set [nats] url + nkey_seed_path before first use"
 [ -f "$SEED" ] || warn "missing nkey seed at $SEED — copy it from your hub-authorized machine (chmod 600)"
-[ -f "$BLOBSTORE_ENV" ] || warn "missing $BLOBSTORE_ENV — run deploy/install.sh on the hub or create it manually"
+if [ -f "$FACTORY_BLOBSTORE_TOK" ]; then
+    say "blobstore token: $FACTORY_BLOBSTORE_TOK (factory SSoT)"
+elif [ -f "$BLOBSTORE_ENV" ]; then
+    warn "using legacy $BLOBSTORE_ENV — prefer $FACTORY_BLOBSTORE_TOK when on a factory host"
+else
+    warn "missing blobstore token — need $FACTORY_BLOBSTORE_TOK or $BLOBSTORE_ENV"
+fi
 
 # ── Stop here when --check-only ───────────────────────────────────────────────
 if [ "$CHECK_ONLY" -eq 1 ]; then

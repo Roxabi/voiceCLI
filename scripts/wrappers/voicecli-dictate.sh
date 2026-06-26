@@ -23,11 +23,12 @@ set -u
 # location for `uv tool install` / pip --user / our own symlink.
 export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:${PATH:-}"
 
-# Blobstore env file (created by deploy/install.sh). Sourced here because
-# compositor Spawn() actions do not run an interactive shell startup.
+# Blobstore credentials — factory SSoT on M₁/M₂ when present; legacy env fallback.
+FACTORY_BLOBSTORE_TOK="$HOME/.roxabi/factory/blobstore.tok"
 BLOBSTORE_ENV="$HOME/.roxabi/voicecli/env/blobstore.env"
-if [ -f "$BLOBSTORE_ENV" ]; then
-    # set -u safe: only export vars that are actually set in the file
+if [ -f "$FACTORY_BLOBSTORE_TOK" ]; then
+    export BLOBSTORE_BEARER_TOKEN_PATH="$FACTORY_BLOBSTORE_TOK"
+elif [ -f "$BLOBSTORE_ENV" ]; then
     while IFS='=' read -r key value; do
         case "$key" in
             BLOBSTORE_BACKEND|BLOBSTORE_URL|BLOBSTORE_BEARER_TOKEN)

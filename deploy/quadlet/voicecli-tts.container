@@ -21,7 +21,9 @@ Environment=NATS_URL=nats://factory-nats:4222
 Environment=NATS_NKEY_SEED_PATH=/run/secrets/voicecli-nats-tts.seed
 Environment=BLOBSTORE_BACKEND=http
 Environment=BLOBSTORE_URL=http://factory-blobstore:8449
-EnvironmentFile=%h/.roxabi/voicecli/env/blobstore.env
+# SSoT: factory hub token file — no duplicate copy in ~/.roxabi/voicecli/env/.
+Volume=%h/.roxabi/factory/blobstore.tok:/run/secrets/factory_blobstore_token:ro,z
+Environment=BLOBSTORE_BEARER_TOKEN_PATH=/run/secrets/factory_blobstore_token
 HealthCmd=pgrep -f voicecli
 HealthInterval=30s
 # Grace for TTS model cold-load (weights + CUDA init) before health failures count.

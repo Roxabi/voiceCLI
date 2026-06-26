@@ -15,4 +15,5 @@ env_file = "~/.roxabi/voicecli/env/tts.env"
 host_roles = ["voice-worker"]
 
 [secrets]
-blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN", env_file = "~/.roxabi/voicecli/env/blobstore.env" }
+# Bind-mounted from factory SSoT — see deploy/quadlet/voicecli-{stt,tts}.container
+blobstore_bearer_token = { env_var = "BLOBSTORE_BEARER_TOKEN_PATH", host_path = "~/.roxabi/factory/blobstore.tok" }

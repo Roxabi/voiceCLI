@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -47,6 +48,39 @@ class BlobRefValidationError(BlobstoreConfigError):
     """Raised when a blob_ref field fails validation (e.g. invalid store_key)."""
 
 
+def _resolve_bearer_token() -> str:
+    """Read bearer token from ``BLOBSTORE_BEARER_TOKEN_PATH`` or env.
+
+    Token path is preferred on M₁ workers (shared ``~/.roxabi/factory/blobstore.tok``
+    bind-mount). ``BLOBSTORE_BEARER_TOKEN`` remains for M₂ clients and wrappers.
+    Read once at singleton init — restart required after rotation (factory parity).
+    """
+    path = os.environ.get("BLOBSTORE_BEARER_TOKEN_PATH", "").strip()
+    if path:
+        try:
+            token = Path(path).read_text(encoding="utf-8").strip()
+        except FileNotFoundError as exc:
+            raise BlobstoreConfigError(
+                f"BLOBSTORE_BEARER_TOKEN_PATH file not found: {path}"
+            ) from exc
+        except OSError as exc:
+            raise BlobstoreConfigError(
+                f"BLOBSTORE_BEARER_TOKEN_PATH unreadable: {path}: {exc}"
+            ) from exc
+        if not token:
+            raise BlobstoreConfigError(f"BLOBSTORE_BEARER_TOKEN_PATH is empty: {path}")
+        return token
+    try:
+        token = os.environ["BLOBSTORE_BEARER_TOKEN"].strip()
+    except KeyError as exc:
+        raise BlobstoreConfigError(
+            "required env var not set: BLOBSTORE_BEARER_TOKEN (or set BLOBSTORE_BEARER_TOKEN_PATH)"
+        ) from exc
+    if not token:
+        raise BlobstoreConfigError("BLOBSTORE_BEARER_TOKEN is empty")
+    return token
+
+
 def get_blobstore() -> HttpBlobStore:
     """Return the singleton ``HttpBlobStore`` client, creating it on first call.
 
@@ -54,7 +88,8 @@ def get_blobstore() -> HttpBlobStore:
 
     - ``BLOBSTORE_BACKEND`` — must be ``"http"``.
     - ``BLOBSTORE_URL``     — base URL of the lyra-hub HTTP BlobStore service.
-    - ``BLOBSTORE_BEARER_TOKEN`` — bearer token for HTTP authentication.
+    - ``BLOBSTORE_BEARER_TOKEN_PATH`` — file with bearer token (preferred on M₁).
+    - ``BLOBSTORE_BEARER_TOKEN`` — inline bearer token (M₂ clients, legacy).
 
     Raises:
         BlobstoreConfigError: if any required env var is missing/invalid.
@@ -71,9 +106,9 @@ def get_blobstore() -> HttpBlobStore:
                     )
                 try:
                     url = os.environ["BLOBSTORE_URL"]
-                    token = os.environ["BLOBSTORE_BEARER_TOKEN"]
                 except KeyError as e:
                     raise BlobstoreConfigError(f"required env var not set: {e.args[0]}") from e
+                token = _resolve_bearer_token()
                 _INSTANCE = HttpBlobStore(base_url=url, token=token)
     return _INSTANCE
 
