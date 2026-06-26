@@ -3,5 +3,10 @@
   "error": "malformed_request",
   "ok": false,
   "request_id": "req-noaudio",
-  "trace_id": "trace-stt-3"
+  "trace_id": "trace-stt-3",
+  "worker_error": {
+    "code": "malformed_request",
+    "message": "Request payload is malformed or missing required fields",
+    "retryable": false
+  }
 }
