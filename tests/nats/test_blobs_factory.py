@@ -5,7 +5,7 @@ Covers the public contract of the module-level singleton factory:
 - ADR-068 enforcement: non-'http' backend raises BlobstoreConfigError mentioning ADR-068.
 - Missing env vars: absent BLOBSTORE_URL / BLOBSTORE_BEARER_TOKEN raise BlobstoreConfigError.
 
-Every test resets blobs._INSTANCE via an autouse fixture to prevent
+Every test resets the satellite blobstore singleton via an autouse fixture to prevent
 cross-test pollution from the module-level cache.
 """
 
@@ -41,17 +41,17 @@ class _FakeHttpBlobStore:
 
 @pytest.fixture(autouse=True)
 def _reset_blobstore_instance(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
-    """Clear blobs._INSTANCE before (and after) each test.
+    """Clear the satellite blobstore singleton before (and after) each test.
 
     The factory caches its result at module level. Without this reset, a test
     that successfully constructs a store will pollute every subsequent test in
     the same pytest worker — e.g. missing-env tests would skip construction
     entirely and return the cached instance instead of raising.
     """
-    monkeypatch.setattr(satellite_blobs, "_INSTANCE", None)
+    satellite_blobs.reset_blobstore_for_tests()
     monkeypatch.delenv("BLOBSTORE_BEARER_TOKEN_PATH", raising=False)
     yield
-    monkeypatch.setattr(satellite_blobs, "_INSTANCE", None)
+    satellite_blobs.reset_blobstore_for_tests()
 
 
 # ---------------------------------------------------------------------------
