@@ -13,8 +13,15 @@
 #      tables `[blobstore]` / `[nats]`).
 #
 # Overridable via env:
-#   VOICECLI_BIN   — voicecli command name or path (default: voicecli, resolved via PATH)
-#   VOICECLI_MODE  — STT mode passed as --mode (default: unset, uses voicecli's default)
+#   VOICECLI_BIN            — voicecli command name or path (default: voicecli, resolved via PATH)
+#   VOICECLI_MODE           — STT mode passed as --mode (default: unset, uses voicecli's default)
+#   VOICECLI_REPO           — voiceCLI git checkout used for auto-heal (default: ~/projects/voiceCLI)
+#   VOICECLI_TRACK_BRANCH   — branch to checkout on heal (default: staging)
+#   VOICECLI_AUTO_HEAL=0    — disable checkout/pull/uv sync recovery
+#
+# Auto-heal (once per invocation): when `dictate nats` is missing (stale main
+# checkout) or NATS extras are stale (ImportError), the wrapper runs
+# ``git checkout <track> && uv sync --extra nats`` then retries.
 
 set -u
 
@@ -39,6 +46,76 @@ elif [ -f "$BLOBSTORE_ENV" ]; then
 fi
 
 VOICECLI_BIN="${VOICECLI_BIN:-voicecli}"
+VOICECLI_REPO="${VOICECLI_REPO:-$HOME/projects/voiceCLI}"
+VOICECLI_TRACK_BRANCH="${VOICECLI_TRACK_BRANCH:-staging}"
+VOICECLI_AUTO_HEAL="${VOICECLI_AUTO_HEAL:-1}"
+_HEAL_ATTEMPTED=0
+
+_notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -u normal -r 2 "VoiceCLI" "$1"
+    fi
+}
+
+_dictate_nats_unavailable() {
+    local probe
+    probe="$("$VOICECLI_BIN" dictate nats-host 2>&1 >/dev/null || true)"
+    grep -qE "No such command 'nats" <<<"$probe"
+}
+
+_log_heal_failure() {
+    local log="$1"
+    if [ -s "$log" ]; then
+        tail -5 "$log" >&2
+    fi
+}
+
+_heal_voicecli() {
+    local reason="$1"
+    local heal_log
+
+    [ "$VOICECLI_AUTO_HEAL" = "1" ] || return 1
+    [ "$_HEAL_ATTEMPTED" -eq 0 ] || return 1
+    _HEAL_ATTEMPTED=1
+
+    [ -d "$VOICECLI_REPO/.git" ] || return 1
+    command -v uv >/dev/null 2>&1 || return 1
+    if [ -n "$(git -C "$VOICECLI_REPO" status --porcelain 2>/dev/null)" ]; then
+        _notify "Auto-heal bloqué — voiceCLI a des changements locaux (commit/stash)"
+        return 1
+    fi
+
+    _notify "Mise à jour voiceCLI ($reason)…"
+
+    heal_log="$(mktemp "${TMPDIR:-/tmp}/voicecli-heal.XXXXXX")"
+    if ! (
+        set -e
+        cd "$VOICECLI_REPO"
+        git fetch origin "$VOICECLI_TRACK_BRANCH"
+        git checkout "$VOICECLI_TRACK_BRANCH"
+        git pull --ff-only origin "$VOICECLI_TRACK_BRANCH"
+        uv sync --extra nats
+    ) >"$heal_log" 2>&1; then
+        _notify "Auto-heal échoué — voir journal"
+        _log_heal_failure "$heal_log"
+        rm -f "$heal_log"
+        return 1
+    fi
+    rm -f "$heal_log"
+
+    if [ -x "$VOICECLI_REPO/.venv/bin/voicecli" ]; then
+        ln -sf "$VOICECLI_REPO/.venv/bin/voicecli" "$HOME/.local/bin/voicecli"
+        VOICECLI_BIN="$VOICECLI_REPO/.venv/bin/voicecli"
+    fi
+
+    _notify "voiceCLI à jour ($VOICECLI_TRACK_BRANCH) — nouvel essai"
+    return 0
+}
+
+_cli_needs_heal() {
+    local log="$1"
+    grep -qE "No such command 'nats|ImportError|ModuleNotFoundError" "$log" 2>/dev/null
+}
 
 # Orphan-recorder guard: if a previous --run-recorder process is still alive
 # but the toggle state file is gone (or points at a stale PID), kill it before
@@ -68,6 +145,11 @@ except Exception: pass' "$STATE_FILE" 2>/dev/null || true)"
     fi
 fi
 
+# Pre-flight: heal stale checkout before probing NATS or invoking dictate.
+if command -v "$VOICECLI_BIN" >/dev/null 2>&1 && _dictate_nats_unavailable; then
+    _heal_voicecli "commande dictate nats absente" || true
+fi
+
 # Pre-flight: 2-second TCP probe so the user gets immediate feedback when
 # the hub is unreachable (offline, Tailscale down, hub off). Skipped when
 # the URL cannot be resolved — voicecli will print a clearer error than us.
@@ -85,16 +167,24 @@ if command -v "$VOICECLI_BIN" >/dev/null 2>&1 && command -v nc >/dev/null 2>&1; 
     fi
 fi
 
-cmd=( "$VOICECLI_BIN" dictate nats )
-if [ -n "${VOICECLI_MODE:-}" ]; then
-    cmd+=( --mode "$VOICECLI_MODE" )
-fi
-
 CLI_LOG="$(mktemp "${TMPDIR:-/tmp}/voicecli-dictate.XXXXXX")"
 trap 'rm -f "$CLI_LOG"' EXIT
 
-"${cmd[@]}" >"$CLI_LOG" 2>&1
+_run_dictate() {
+    local run_cmd=( "$VOICECLI_BIN" dictate nats )
+    if [ -n "${VOICECLI_MODE:-}" ]; then
+        run_cmd+=( --mode "$VOICECLI_MODE" )
+    fi
+    "${run_cmd[@]}" >"$CLI_LOG" 2>&1
+}
+
+_run_dictate
 EXIT_CODE=$?
+
+if [ "$EXIT_CODE" -ne 0 ] && _cli_needs_heal "$CLI_LOG" && _heal_voicecli "dépendances ou branche obsolètes"; then
+    _run_dictate
+    EXIT_CODE=$?
+fi
 
 # Exit 69 = TCP probe failed (hub unreachable, already notified above).
 if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 69 ] && command -v notify-send >/dev/null 2>&1; then
@@ -105,7 +195,10 @@ if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 69 ] && command -v notify-send >
 
     if _has_import_error "$CLI_LOG" || { [ -f "$RECORDER_LOG" ] && tail -n 50 "$RECORDER_LOG" | grep -qE "ImportError|ModuleNotFoundError"; }; then
         notify-send -u normal -r 2 "VoiceCLI" \
-            "Dictate failed: stale .venv. Run: cd ~/projects/voiceCLI && uv sync --extra nats"
+            "Dictate failed: deps NATS manquantes. Auto-heal a échoué — cd ~/projects/voiceCLI && uv sync --extra nats"
+    elif grep -qE "No such command 'nats" "$CLI_LOG" 2>/dev/null; then
+        notify-send -u normal -r 2 "VoiceCLI" \
+            "Dictate failed: branche voiceCLI trop vieille. Auto-heal a échoué — git checkout staging && uv sync --extra nats"
     else
         err_line=""
         if [ -s "$CLI_LOG" ]; then
