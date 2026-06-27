@@ -24,3 +24,8 @@ def test_run_dictate_uses_dynamic_voicecli_bin() -> None:
     text = WRAPPER.read_text(encoding="utf-8")
     assert "_run_dictate()" in text
     assert 'local run_cmd=( "$VOICECLI_BIN" dictate nats )' in text
+
+
+def test_heal_refuses_dirty_repo() -> None:
+    text = WRAPPER.read_text(encoding="utf-8")
+    assert "git -C" in text and "status --porcelain" in text

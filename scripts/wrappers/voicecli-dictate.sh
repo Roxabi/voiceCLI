@@ -80,6 +80,10 @@ _heal_voicecli() {
 
     [ -d "$VOICECLI_REPO/.git" ] || return 1
     command -v uv >/dev/null 2>&1 || return 1
+    if [ -n "$(git -C "$VOICECLI_REPO" status --porcelain 2>/dev/null)" ]; then
+        _notify "Auto-heal bloqué — voiceCLI a des changements locaux (commit/stash)"
+        return 1
+    fi
 
     _notify "Mise à jour voiceCLI ($reason)…"
 
