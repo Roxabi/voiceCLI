@@ -31,6 +31,7 @@ voicecli.vocab
 .env
 .claude/settings.local.json
 .claude/worktrees/
+.worktrees/
 
 .claude/dev-core.yml
 # CocoIndex Code (ccc)
