@@ -117,7 +117,7 @@ async def run_synthesis(
                     retryable=False,
                 )
             try:
-                from voicecli.core.sample_catalog import resolve_sample_path  # noqa: PLC0415
+                from voicecli.adapters.nats.sample_store import resolve_sample_path  # noqa: PLC0415
 
                 ref_path = await resolve_sample_path(sample_id)
             except FileNotFoundError as exc:

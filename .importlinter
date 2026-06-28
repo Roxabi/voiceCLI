@@ -33,6 +33,9 @@ ignore_imports =
     # to be resolved via warmup port or dependency injection (ADR-003)
     voicecli.adapters.nats._synthesize_runner -> voicecli.api
     voicecli.adapters.nats._transcribe_runner -> voicecli.api
+    # Lifecycle + clone routing read ENGINE_CAPS matrix (pure data; matrix home is api/)
+    voicecli.adapters.nats._synthesize_runner -> voicecli.api.engine_caps
+    voicecli.adapters.nats._tts_lifecycle -> voicecli.api.engine_caps
     # Transitional: voicecli.ports.stt imports runtime.transcribe directly — needs indirection via port interface (ADR-003)
     voicecli.ports.stt -> voicecli.runtime.transcribe
 

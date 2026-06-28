@@ -54,7 +54,8 @@ pkuseg = ["numpy"]
 
 [tool.uv.sources]
 voxtral-tts = { git = "https://github.com/Roxabi/voxtral-tts.git", branch = "main" }
-roxabi-satellite = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-satellite", branch = "staging" }
+roxabi-contracts = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-contracts", rev = "0cb91264" }
+roxabi-satellite = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-satellite", rev = "0cb91264" }
 
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
