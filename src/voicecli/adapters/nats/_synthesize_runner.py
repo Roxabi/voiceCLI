@@ -88,7 +88,7 @@ async def run_synthesis(
         sample_id = payload.get("sample_id")
         from voicecli.api.engine_caps import ENGINE_CAPS  # noqa: PLC0415
 
-        needs_clone = not bool(ENGINE_CAPS.get(engine, {}).get("voice"))
+        needs_clone = ENGINE_CAPS.get(engine, {}).get("voice") is False
 
         # Engine-agnostic kwargs forwarded through api.generate **kwargs.
         # translate.py strips fields the target engine cannot consume.

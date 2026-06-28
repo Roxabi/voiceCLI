@@ -153,9 +153,10 @@ _SCHEMA_DOCS = frozenset({"stt_request_v2", "tts_response_v2"})
 
 
 class _FakeMsg:
-    def __init__(self) -> None:
+    def __init__(self, subject: str = "factory.voice.tts.request") -> None:
         self.data = b""
         self.reply = "_INBOX.golden-replay"
+        self.subject = subject
         self._published: list[bytes] = []
 
     async def respond(self, data: bytes) -> None:

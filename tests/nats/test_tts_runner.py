@@ -910,18 +910,35 @@ class TestRunSynthesisKwargForwarding:
     ) -> None:
         # Arrange
         out_path = tmp_path / "req-eng.wav"
+        ref_wav = tmp_path / "ref.wav"
+        ref_wav.write_bytes(_make_silent_wav_bytes())
         captured: dict = {}
 
-        def _fake_generate(text, *, engine, output, **kw):
+        def _fake_clone(text, *, ref, engine, output, **kw):
             captured["engine"] = engine
             output.write_bytes(b"\x00")
 
-        monkeypatch.setattr("voicecli.api.generate", _fake_generate)
+        async def _fake_resolve(_sample_id: str) -> Path:
+            return ref_wav
+
+        monkeypatch.setattr("voicecli.api.clone", _fake_clone)
+        monkeypatch.setattr(
+            "voicecli.adapters.nats.sample_store.resolve_sample_path",
+            _fake_resolve,
+        )
         state = _make_state()
 
         # Act
         ok, _result = _run(
-            run_synthesis(state, {}, "req-eng", "Hello", "chatterbox", out_path, trace_id="t1")
+            run_synthesis(
+                state,
+                {"sample_id": "alice"},
+                "req-eng",
+                "Hello",
+                "chatterbox",
+                out_path,
+                trace_id="t1",
+            )
         )
 
         # Assert

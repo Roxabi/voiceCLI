@@ -111,9 +111,15 @@ class FakeMsg:
     directly can leave ``data`` as an empty bytes literal.
     """
 
-    def __init__(self, data: bytes = b"", reply_subject: str = "_INBOX.test") -> None:
+    def __init__(
+        self,
+        data: bytes = b"",
+        reply_subject: str = "_INBOX.test",
+        subject: str = "factory.voice.tts.request",
+    ) -> None:
         self.data = data
         self.reply = reply_subject
+        self.subject = subject
         self._published: list[bytes] = []
 
     async def respond(self, data: bytes) -> None:
