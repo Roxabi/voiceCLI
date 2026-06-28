@@ -85,6 +85,11 @@ async def run_synthesis(
     try:
         state.set_model_loaded(engine)
 
+        sample_id = payload.get("sample_id")
+        from voicecli.api.engine_caps import ENGINE_CAPS  # noqa: PLC0415
+
+        needs_clone = not bool(ENGINE_CAPS.get(engine, {}).get("voice"))
+
         # Engine-agnostic kwargs forwarded through api.generate **kwargs.
         # translate.py strips fields the target engine cannot consume.
         optional_kwargs: dict[str, Any] = {
@@ -103,6 +108,35 @@ async def run_synthesis(
 
         loop = asyncio.get_running_loop()
 
+        ref_path: Path | None = None
+        if needs_clone:
+            if not sample_id:
+                return False, WorkerError(
+                    code="sample_required",
+                    message=f"Engine {engine!r} requires sample_id for voice cloning",
+                    retryable=False,
+                )
+            try:
+                from voicecli.core.sample_catalog import resolve_sample_path  # noqa: PLC0415
+
+                ref_path = await resolve_sample_path(sample_id)
+            except FileNotFoundError as exc:
+                return False, WorkerError(
+                    code="sample_not_found",
+                    message=str(exc),
+                    retryable=False,
+                )
+            except Exception as exc:
+                log.warning(
+                    "sample_resolve_failed",
+                    extra={"request_id": request_id, "sample_id": sample_id, "err": str(exc)},
+                )
+                return False, WorkerError(
+                    code="sample_resolve_failed",
+                    message="Failed to resolve clone sample",
+                    retryable=True,
+                )
+
         def _synthesize(language: str | None) -> None:
             # All heavy imports deferred — keeps startup fast and avoids
             # pulling torch when only inspecting the adapter (e.g. --help).
@@ -113,15 +147,29 @@ async def run_synthesis(
             kw = dict(optional_kwargs)
             if language is not None:
                 kw["language"] = language
-            api.generate(
-                text,
-                engine=engine,
-                output=out_path,
-                allowed_base=UNRESTRICTED,
-                _synthesis=LocalSynthesisAdapter(model_registry),
-                **kw,
-                **named_kwargs,
-            )
+            synthesis = LocalSynthesisAdapter(model_registry)
+            if needs_clone:
+                assert ref_path is not None
+                api.clone(
+                    text,
+                    ref=ref_path,
+                    engine=engine,
+                    output=out_path,
+                    allowed_base=UNRESTRICTED,
+                    _synthesis=synthesis,
+                    **kw,
+                    **named_kwargs,
+                )
+            else:
+                api.generate(
+                    text,
+                    engine=engine,
+                    output=out_path,
+                    allowed_base=UNRESTRICTED,
+                    _synthesis=synthesis,
+                    **kw,
+                    **named_kwargs,
+                )
 
         try:
             await loop.run_in_executor(state.executor, _synthesize, None)

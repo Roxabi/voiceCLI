@@ -14,7 +14,9 @@ from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import TtsResponse
 from roxabi_nats import NatsAdapterBase
 from roxabi_satellite.voice.replies import build_tts_error_reply, voice_validation_error
+from voicecli.adapters.nats._lifecycle import LifecycleMixin
 from voicecli.adapters.nats._synthesize_runner import TtsRunnerState, run_synthesis
+from voicecli.adapters.nats._tts_lifecycle import build_tts_list_data, build_tts_status_data
 from voicecli.adapters.nats._validation import validate_tts_request
 from voicecli.adapters.nats.queue_groups import TTS_WORKERS
 from voicecli.adapters.nats.tempdir import cleanup, scoped_path
@@ -35,7 +37,7 @@ def _engine_available(engine: str) -> bool:
     return engine in _get_registry()
 
 
-class TtsNatsAdapter(NatsAdapterBase):
+class TtsNatsAdapter(LifecycleMixin, NatsAdapterBase):
     def __init__(
         self,
         *,
@@ -66,13 +68,22 @@ class TtsNatsAdapter(NatsAdapterBase):
             executor=self._executor,
             set_model_loaded=lambda v: setattr(self, "model_loaded", v),
         )
+        self.__init_lifecycle__()
+
+    def _lifecycle_subjects(self) -> tuple[str, ...]:
+        return (
+            VOICE_SUBJECTS.tts_lifecycle_list,
+            VOICE_SUBJECTS.tts_lifecycle_status,
+        )
 
     def heartbeat_payload(self) -> dict:
+        from voicecli.core.sample_catalog import catalog_revision, load_catalog
         from voicecli.runtime.model_registry import model_registry
 
         payload = super().heartbeat_payload()
         payload["model_loaded"] = model_registry.loaded_engines()
         payload["active_requests"] = self.max_concurrent - self._sem._value
+        payload["catalog_revision"] = catalog_revision(load_catalog())
 
         # Add VRAM metrics
         payload["vram_free_mb"] = model_registry.vram_free_mb()
@@ -83,22 +94,23 @@ class TtsNatsAdapter(NatsAdapterBase):
     def _extra_subjects(self) -> list[str]:
         return [f"{self.subject}.{self._worker_id}"]
 
+    async def _do_list(self, msg, req) -> None:
+        await self._reply_ok(
+            msg,
+            req,
+            data=build_tts_list_data(default_engine=self.default_engine),
+        )
+
+    async def _do_status(self, msg, req) -> None:
+        await self._reply_ok(msg, req, data=build_tts_status_data(self))
+
     async def run(self, nats_url: str, stop: asyncio.Event | None = None) -> None:
-        asyncio.create_task(self._prewarm())
         await super().run(nats_url, stop)
 
-    async def _prewarm(self) -> None:
-        loop = asyncio.get_running_loop()
-        log.info("TTS pre-warm: loading engine=%s", self.default_engine)
-        try:
-            from voicecli.runtime.model_registry import model_registry
-
-            await loop.run_in_executor(self._executor, model_registry.get, self.default_engine)
-            log.info("TTS pre-warm complete: engine=%s loaded", self.default_engine)
-        except Exception:
-            log.warning("TTS pre-warm failed — first request will trigger cold load", exc_info=True)
-
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
+        if msg.subject in self._lifecycle_subjects():
+            await self.handle_lifecycle(msg, payload)
+            return
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         job_id: str | None = payload.get("job_id") or None

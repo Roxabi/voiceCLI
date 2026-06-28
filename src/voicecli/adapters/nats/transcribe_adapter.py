@@ -14,6 +14,8 @@ from roxabi_contracts.voice.models import SttRequest, SttResponse
 from roxabi_nats import NatsAdapterBase
 from roxabi_satellite.errors import VOICE_STT_RUNNER_ERRORS, resolve_worker_error
 from roxabi_satellite.voice.replies import build_stt_error_reply, voice_validation_error
+from voicecli.adapters.nats._lifecycle import LifecycleMixin
+from voicecli.adapters.nats._stt_lifecycle import build_stt_list_data, build_stt_status_data
 from voicecli.adapters.nats._transcribe_runner import SttRunnerState, run_transcription
 from voicecli.adapters.nats._validation import validate_stt_request
 from voicecli.adapters.nats.queue_groups import STT_WORKERS
@@ -44,7 +46,7 @@ __all__ = [
 ]
 
 
-class SttNatsAdapter(NatsAdapterBase):
+class SttNatsAdapter(LifecycleMixin, NatsAdapterBase):
     def __init__(
         self,
         *,
@@ -77,6 +79,23 @@ class SttNatsAdapter(NatsAdapterBase):
             set_model_loaded=self._set_model_loaded,
             model_warm=False,
         )
+        self.__init_lifecycle__()
+
+    def _lifecycle_subjects(self) -> tuple[str, ...]:
+        return (
+            VOICE_SUBJECTS.stt_lifecycle_list,
+            VOICE_SUBJECTS.stt_lifecycle_status,
+        )
+
+    async def _do_list(self, msg, req) -> None:
+        await self._reply_ok(
+            msg,
+            req,
+            data=build_stt_list_data(default_model=self.default_model),
+        )
+
+    async def _do_status(self, msg, req) -> None:
+        await self._reply_ok(msg, req, data=build_stt_status_data(self))
 
     @property
     def _model_warm(self) -> bool:
@@ -102,6 +121,9 @@ class SttNatsAdapter(NatsAdapterBase):
         return [f"{self.subject}.{self._worker_id}"]
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
+        if msg.subject in self._lifecycle_subjects():
+            await self.handle_lifecycle(msg, payload)
+            return
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         job_id: str | None = payload.get("job_id") or None

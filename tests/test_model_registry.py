@@ -25,7 +25,7 @@ class TestConfigLoading:
         result = load_nats_config()
 
         # Assert
-        assert result["max_cached_engines"] == 2
+        assert result["max_cached_engines"] == 1
 
     def test_load_nats_config_clamps_high(self, tmp_path):
         """max_cached_engines clamped to 5 when set higher."""

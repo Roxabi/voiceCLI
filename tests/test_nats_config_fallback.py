@@ -43,14 +43,14 @@ class TestLoadNatsConfig:
         assert "url" not in result
         assert "nkey_seed_path" not in result
         # default still applied for the existing key
-        assert result["max_cached_engines"] == 2
+        assert result["max_cached_engines"] == 1
 
     def test_no_config_file_returns_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force _find_config to find nothing so the test isn't perturbed by a
         # real voicecli.toml in the dev's home directory.
         monkeypatch.setattr("voicecli.core.config._find_config", lambda: None)
         result = load_nats_config(None)
-        assert result["max_cached_engines"] == 2
+        assert result["max_cached_engines"] == 1
         assert "url" not in result
         assert "nkey_seed_path" not in result
 

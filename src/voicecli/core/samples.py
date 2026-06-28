@@ -26,6 +26,9 @@ def add_sample(source: Path) -> Path:
         raise FileNotFoundError(f"File not found: {source}")
     dest = SAMPLES_DIR / source.name
     shutil.copy2(source, dest)
+    from voicecli.core.sample_catalog import register_sample
+
+    register_sample(dest.name)
     return dest
 
 
@@ -34,6 +37,9 @@ def remove_sample(name: str) -> None:
     if not path.exists():
         raise FileNotFoundError(f"Sample not found: {name}")
     path.unlink()
+    from voicecli.core.sample_catalog import remove_sample_from_catalog
+
+    remove_sample_from_catalog(name)
     # Clear active if it was pointing to this sample
     if get_active() == name:
         ACTIVE_FILE.unlink(missing_ok=True)

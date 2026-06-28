@@ -37,11 +37,11 @@ class ModelRegistry:
         _loading: Dict of engine names to locks for in-progress loads.
     """
 
-    def __init__(self, max_cached: int = 2) -> None:
+    def __init__(self, max_cached: int = 1) -> None:
         """Initialize the registry.
 
         Args:
-            max_cached: Maximum engines to keep in cache (default 2).
+            max_cached: Maximum engines to keep in cache (default 1).
 
         Raises:
             ValueError: If max_cached < 1.
