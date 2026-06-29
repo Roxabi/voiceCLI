@@ -345,6 +345,32 @@ still functions normally.
 
 ## Troubleshooting
 
+### NATS dictate (`voicecli dictate nats` / Ctrl+Space wrapper)
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Notification **"Hub injoignable: host:port"** | Hub offline, Tailscale down, or wrong `[nats] url` | `nc -z -w2 <host> 4222`; fix `voicecli.toml` or `NATS_URL` |
+| Notification **"Dictate failed: request timed out after 60s"** | `voicecli-stt` not running on the hub, or crash loop | On the hub: `systemctl --user is-active voicecli-stt` → `podman pull ghcr.io/roxabi/voicecli-stt:staging && systemctl --user restart voicecli-stt` |
+| First dictation slow (~5–15 s) after worker restart | Cold-load whisper on first NATS request (lazy VRAM) | Normal — subsequent dictations are faster |
+| Empty clipboard / no text | Silence or VAD removed all audio | Speak closer to the mic; check `~/.local/state/voicecli/recorder.log` |
+| **"Dictate failed: …"** with `ImportError` / `No such command 'nats'` | Stale local checkout or missing `[nats]` extra | Wrapper auto-heals when possible; else `cd ~/projects/voiceCLI && git checkout staging && uv sync --extra nats` |
+
+The wrapper only probes **TCP reachability** of the NATS port (2 s). A reachable hub with a
+down STT worker still accepts the recording; the failure appears on the **second** Ctrl+Space
+(stop + transcribe), not the first.
+
+Verify the hub worker from the satellite host:
+
+```bash
+ssh hub 'systemctl --user is-active voicecli-stt && podman ps --filter name=voicecli-stt'
+```
+
+See [NATS-SERVE.md](./NATS-SERVE.md) for satellite startup, lazy model loading, and image
+pinning (`roxabi-contracts` must match the container tag — stale `:staging` images can
+crash-loop with `ImportError: VoiceLifecycleRequest`).
+
+### Socket daemon (`voicecli dictate` without `nats`)
+
 **"STT daemon not running"**
 
 Start the daemon:

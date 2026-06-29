@@ -394,7 +394,7 @@ voicecli nats-serve stt --model large-v3   # STT satellite with specific model
 
 ```toml
 [nats]
-max_cached_engines = 2  # keep N engines hot
+max_cached_engines = 1  # engines kept hot in VRAM (LRU). Default: 1. Loads on first request.
 ```
 
 See [docs/NATS-SERVE.md](docs/NATS-SERVE.md) for full deployment guide.
