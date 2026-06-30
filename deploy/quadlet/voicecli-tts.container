@@ -1,7 +1,7 @@
 [Unit]
 Description=voiceCLI TTS NATS worker
-Wants=factory-nats.service
-After=factory-nats.service
+Wants=factory-nats.service factory-otel.service
+After=factory-nats.service factory-otel.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

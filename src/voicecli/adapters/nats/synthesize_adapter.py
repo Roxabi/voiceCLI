@@ -65,7 +65,7 @@ class TtsNatsAdapter(LifecycleMixin, NatsAdapterBase):
             wait_ready=False,  # worker semantics — see NatsAdapterBase docstring
             lifecycle_hooks=lifecycle_hooks,
         )
-        self._otel_work_attrs: dict[str, str] = {}
+        self._otel_work_attrs: dict[str, dict[str, str]] = {}
         self.default_engine = default_engine
         self.max_concurrent = max_concurrent
         self.reject_when_full = reject_when_full
@@ -120,15 +120,16 @@ class TtsNatsAdapter(LifecycleMixin, NatsAdapterBase):
         attrs: dict[str, str] = {
             ATTR_MODEL: str(payload.get("engine") or self.default_engine),
         }
-        if self._otel_work_attrs:
-            attrs.update(self._otel_work_attrs)
+        job_id = str(payload.get("job_id") or "")
+        work = self._otel_work_attrs.pop(job_id, None) if job_id else None
+        if work:
+            attrs.update(work)
         return attrs
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         if msg.subject in self._lifecycle_subjects():
             await self.handle_lifecycle(msg, payload)
             return
-        self._otel_work_attrs = {}
         trace_id = payload.get("trace_id") or "unknown"
         request_id = payload.get("request_id", "")
         job_id: str | None = payload.get("job_id") or None
@@ -237,10 +238,10 @@ class TtsNatsAdapter(LifecycleMixin, NatsAdapterBase):
             # result is the fields dict
             fields = result  # type: ignore[assignment]
             blob_ref = fields.get("blob_ref") if isinstance(fields, dict) else None
-            if isinstance(blob_ref, dict):
+            if isinstance(blob_ref, dict) and job_id:
                 store_key = blob_ref.get("store_key")
                 if isinstance(store_key, str) and store_key:
-                    self._otel_work_attrs = {ATTR_BLOB_REF_OUT: store_key}
+                    self._otel_work_attrs[job_id] = {ATTR_BLOB_REF_OUT: store_key}
             # job_id=None must NOT be passed explicitly — let default_factory shim fire instead.
             job_id_kwarg: dict[str, str] = {}
             if job_id:

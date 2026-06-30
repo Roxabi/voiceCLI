@@ -48,7 +48,7 @@ class TestVoiceTelemetryHooks:
             default_engine="qwen3-tts",
             lifecycle_hooks=recorder.hooks("voicecli-tts"),
         )
-        adapter._otel_work_attrs = {ATTR_BLOB_REF_OUT: "audio/out/key"}
+        adapter._otel_work_attrs[_JOB] = {ATTR_BLOB_REF_OUT: "audio/out/key"}
         msg = type("M", (), {"subject": "factory.voice.tts.request"})()
         payload = {
             "trace_id": _TRACE,
