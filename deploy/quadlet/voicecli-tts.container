@@ -9,6 +9,8 @@ StartLimitBurst=5
 Image=ghcr.io/roxabi/voicecli-tts:staging
 Label=io.containers.autoupdate=registry
 ContainerName=voicecli-tts
+Environment=CONTAINER_NAME=voicecli-tts
+Environment=IMAGE_REF=ghcr.io/roxabi/voicecli-tts:staging
 Network=roxabi.network
 Volume=%h/.cache/huggingface:/home/voicecli/.cache/huggingface
 Volume=%h/.cache/voicecli:/home/voicecli/.cache/voicecli

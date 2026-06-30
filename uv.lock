@@ -1888,6 +1888,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "roxabi-obs"
+version = "0.1.0"
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-obs&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+dependencies = [
+    { name = "roxabi-contracts" },
+    { name = "roxabi-nats" },
+]
+
+[[package]]
 name = "roxabi-otel"
 version = "0.1.0"
 source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
@@ -2403,6 +2412,7 @@ all = [
     { name = "nvidia-ml-py" },
     { name = "qwen-tts" },
     { name = "roxabi-nats" },
+    { name = "roxabi-obs" },
     { name = "roxabi-otel" },
     { name = "roxabi-satellite" },
     { name = "torch" },
@@ -2416,6 +2426,7 @@ nats = [
     { name = "nkeys" },
     { name = "nvidia-ml-py" },
     { name = "roxabi-nats" },
+    { name = "roxabi-obs" },
     { name = "roxabi-otel" },
     { name = "roxabi-satellite" },
 ]
@@ -2468,6 +2479,7 @@ requires-dist = [
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts", marker = "extra == 'tts'" },
     { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging" },
+    { name = "roxabi-obs", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-obs&branch=staging" },
     { name = "roxabi-otel", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging" },
     { name = "roxabi-satellite", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=staging" },
     { name = "scipy", marker = "extra == 'voxtral'" },

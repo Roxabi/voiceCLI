@@ -47,8 +47,6 @@ def nats_serve_tts(
     ] = False,
 ) -> None:
     """Subscribe to the TTS request subject and reply with synthesized audio."""
-    import asyncio
-
     from voicecli.core.config import apply_nats_env_from_config, load_nats_config
     from voicecli.runtime.model_registry import model_registry
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
@@ -95,7 +93,9 @@ def nats_serve_tts(
         lifecycle_hooks=build_lifecycle_hooks("voicecli-tts"),
     )
 
-    asyncio.run(adapter.run(nats_url))
+    from voicecli.adapters.nats._fleet_runner import run_adapter_with_fleet_reporter_sync
+
+    run_adapter_with_fleet_reporter_sync(adapter, nats_url)
 
 
 @nats_app.command("stt")
@@ -118,8 +118,6 @@ def nats_serve_stt(
     ] = False,
 ) -> None:
     """Subscribe to the STT request subject and reply with transcription."""
-    import asyncio
-
     from voicecli.core.config import apply_nats_env_from_config
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.adapters.nats.transcribe_adapter import SttNatsAdapter
@@ -161,4 +159,6 @@ def nats_serve_stt(
         lifecycle_hooks=build_lifecycle_hooks("voicecli-stt"),
     )
 
-    asyncio.run(adapter.run(nats_url))
+    from voicecli.adapters.nats._fleet_runner import run_adapter_with_fleet_reporter_sync
+
+    run_adapter_with_fleet_reporter_sync(adapter, nats_url)
