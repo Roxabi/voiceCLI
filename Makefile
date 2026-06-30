@@ -6,17 +6,36 @@ DEPLOY_HOST        ?= roxabituwer
 VOICECLI_SVCS      := voicecli-tts voicecli-stt
 TTS_IMAGE          := ghcr.io/roxabi/voicecli-tts:staging
 STT_IMAGE          := ghcr.io/roxabi/voicecli-stt:staging
+VOICECLI_TARGETS   := tts stt
 
-.PHONY: register tts stt install lint test quadlet-install quadlet-secrets-install deploy
+ifndef SVC_CMD
+ifneq (,$(filter $(VOICECLI_TARGETS),$(firstword $(MAKECMDGOALS))))
+  SVC_CMD := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  ifneq (,$(SVC_CMD))
+    $(eval $(SVC_CMD):;@:)
+  endif
+endif
+endif
 
-register:
-	@echo "supervisor registration removed — use Quadlet: systemctl --user start voicecli-tts"
+define voicecli_sctl
+	@case "$(SVC_CMD)" in \
+		reload|restart) systemctl --user restart $(1) ;; \
+		start|"")       systemctl --user start   $(1) ;; \
+		stop)           systemctl --user stop    $(1) ;; \
+		status)         systemctl --user status  $(1) || true ;; \
+		logs)           journalctl --user -u $(1) -f ;; \
+		errlogs|errors) journalctl --user -u $(1) -f -p err ;; \
+		*) echo "Unknown action: $(SVC_CMD). Use: start|stop|status|reload|logs|errors"; exit 1 ;; \
+	esac
+endef
+
+.PHONY: tts stt install lint test quadlet-install quadlet-secrets-install deploy
 
 tts:
-	@echo "Use: systemctl --user start voicecli-tts"
+	$(call voicecli_sctl,voicecli-tts)
 
 stt:
-	@echo "Use: systemctl --user start voicecli-stt"
+	$(call voicecli_sctl,voicecli-stt)
 
 install:
 	uv sync
