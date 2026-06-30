@@ -54,13 +54,16 @@ pkuseg = ["numpy"]
 
 [tool.uv.sources]
 voxtral-tts = { git = "https://github.com/Roxabi/voxtral-tts.git", branch = "main" }
-roxabi-contracts = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-contracts", rev = "0cb91264" }
-roxabi-satellite = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-satellite", rev = "0cb91264" }
+roxabi-contracts = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-contracts", branch = "feat/2069-otel-raw-telemetry" }
+roxabi-nats = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-nats", branch = "feat/2069-otel-raw-telemetry" }
+roxabi-otel = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-otel", branch = "feat/2069-otel-raw-telemetry" }
+roxabi-satellite = { git = "https://github.com/Roxabi/roxabi-factory.git", subdirectory = "packages/roxabi-satellite", branch = "feat/2069-otel-raw-telemetry" }
 
 [tool.pytest.ini_options]
 # src layout: expose src/ to pytest without relying on editable install
 pythonpath = ["src"]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [project.optional-dependencies]
 tts = [
@@ -81,6 +84,8 @@ hotkey = ["pynput>=1.7"]
 overlay = ["PyGObject>=3.42", "pycairo>=1.25"]
 nats = [
     "roxabi-satellite",
+    "roxabi-nats",
+    "roxabi-otel",
     "nats-py>=2.6,<3",
     "nkeys>=0.1",
     "nvidia-ml-py>=12,<14",
@@ -90,6 +95,7 @@ nats = [
 dev = [
     "ruff",
     "pytest",
+    "pytest-asyncio",
     "pre-commit>=4.5.1",
     "pip-licenses>=5.5.1",
     "pyright>=1.1.408",

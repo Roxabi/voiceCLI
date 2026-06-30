@@ -24,6 +24,9 @@ Environment=BLOBSTORE_URL=http://factory-blobstore:8449
 # SSoT: factory hub token file — no duplicate copy in ~/.roxabi/voicecli/env/.
 Volume=%h/.roxabi/factory/blobstore.tok:/run/secrets/factory_blobstore_token:ro,z
 Environment=BLOBSTORE_BEARER_TOKEN_PATH=/run/secrets/factory_blobstore_token
+Environment=ROXABI_OTEL_ENABLED=1
+Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://factory-otel:4317
+Environment=OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 HealthCmd=pgrep -f voicecli
 HealthInterval=30s
 # Grace for TTS model cold-load (weights + CUDA init) before health failures count.
