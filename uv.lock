@@ -1862,7 +1862,7 @@ wheels = [
 [[package]]
 name = "roxabi-blobs"
 version = "0.1.2"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=feat%2F2069-otel-raw-telemetry#3b2b0ed25409853c092ca5124260fff3e65029c5" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
@@ -1872,7 +1872,7 @@ dependencies = [
 [[package]]
 name = "roxabi-contracts"
 version = "0.13.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=feat%2F2069-otel-raw-telemetry#3b2b0ed25409853c092ca5124260fff3e65029c5" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -1880,7 +1880,7 @@ dependencies = [
 [[package]]
 name = "roxabi-nats"
 version = "0.4.2"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=feat%2F2069-otel-raw-telemetry#3b2b0ed25409853c092ca5124260fff3e65029c5" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
@@ -1890,7 +1890,7 @@ dependencies = [
 [[package]]
 name = "roxabi-otel"
 version = "0.1.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=feat%2F2069-otel-raw-telemetry#3b2b0ed25409853c092ca5124260fff3e65029c5" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
@@ -1901,7 +1901,7 @@ dependencies = [
 [[package]]
 name = "roxabi-satellite"
 version = "0.1.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=feat%2F2069-otel-raw-telemetry#3b2b0ed25409853c092ca5124260fff3e65029c5" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
 dependencies = [
     { name = "pydantic" },
     { name = "roxabi-blobs" },
@@ -2467,9 +2467,9 @@ requires-dist = [
     { name = "pygobject", marker = "extra == 'overlay'", specifier = ">=3.42" },
     { name = "pynput", marker = "extra == 'hotkey'", specifier = ">=1.7" },
     { name = "qwen-tts", marker = "extra == 'tts'" },
-    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=feat%2F2069-otel-raw-telemetry" },
-    { name = "roxabi-otel", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=feat%2F2069-otel-raw-telemetry" },
-    { name = "roxabi-satellite", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=feat%2F2069-otel-raw-telemetry" },
+    { name = "roxabi-nats", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging" },
+    { name = "roxabi-otel", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging" },
+    { name = "roxabi-satellite", marker = "extra == 'nats'", git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=staging" },
     { name = "scipy", marker = "extra == 'voxtral'" },
     { name = "soundfile" },
     { name = "torch", marker = "extra == 'stt'", specifier = ">=2.7" },
