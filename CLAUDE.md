@@ -9,9 +9,6 @@ Python 3.12 via `uv` · Typer CLI · PyTorch 2.7+ cu128 · ruff (L≤100, py312)
 ## TL;DR
 
 - **Project:** VoiceCLI
-- **Before work:** `/dev #N` = single entry — picks tier (S / F-lite / F-full) + drives lifecycle
-- **Never:** `--force` / `--hard` / `--amend`
-- **Always:** use matching skill even w/o slash cmd
 
 ### Code Review
 
@@ -42,12 +39,17 @@ TTS/texts_in/           — authored .md scripts (git-tracked)
   voicecli.vocab        — personal STT vocabulary (shared w/ Lyra)
   TTS/{voices_out,samples}/  — generated audio / clone samples
   STT/{audio_in,texts_out}/  — recordings / transcriptions
-src/voicecli/
-  cli.py, api.py, config.py, engine.py, translate.py, markdown.py
-  utils.py, samples.py, transcribe.py, listen.py, overlay.py
-  nats_mic_recorder.py, transcribe_client.py, assets/
-  engines/
-    qwen.py, chatterbox.py, chatterbox_turbo.py, voxtral.py
+src/voicecli/            — ports/adapters architecture, détail → `ls src/voicecli/`
+  ports/                — abstract interfaces (STT/TTS/synthesis)
+  adapters/              — port implementations: daemon/local synthesis, NATS transport (adapters/nats/)
+  engines/               — TTS/STT backends (qwen, chatterbox, chatterbox_turbo, voxtral, mock)
+  api/                   — public API surface (generate/clone/transcribe/translate/markdown)
+  cli/                   — Typer app (main, dictate, doctor, nats, samples)
+  core/                  — config, paths, models, samples, STT modes, history
+  runtime/               — daemon, dictation, listen, model registry, wire protocol
+  ui/                    — overlay, sounds, clipboard, NATS mic recorder, Telegram
+  obs/                   — observability (otel wiring)
+  assets/                — bundled sound files
 ```
 
 ## Key Patterns (invariants)
