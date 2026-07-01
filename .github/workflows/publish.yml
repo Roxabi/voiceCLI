@@ -3,11 +3,44 @@ on:
   push:
     branches: [staging]
     tags: ['voicecli/v*']
+  workflow_dispatch:
 permissions:
   contents: read
   packages: write
+  actions: read
 jobs:
+  # Gate staging-branch publishes on CI success (audit 2026-07-01: satellites published
+  # ungated on push, so a red-CI staging merge could ship a broken image to GHCR). Tag
+  # releases and manual dispatch publish directly (the gate is skipped for them).
+  ci-gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require CI success for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha='${{ github.sha }}'
+          echo "Waiting for CI (ci.yml) to conclude for ${sha}..."
+          for i in $(seq 1 60); do
+            run=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=1" \
+                    --jq '.workflow_runs[0] | "\(.status)|\(.conclusion // "")"' 2>/dev/null || echo '|')
+            status="${run%%|*}"; conclusion="${run#*|}"
+            echo "  CI: status='${status}' conclusion='${conclusion}'"
+            if [ "${status}" = "completed" ]; then
+              [ "${conclusion}" = "success" ] && { echo "CI green -> publishing."; exit 0; }
+              echo "::error::CI concluded '${conclusion}' for ${sha} -> refusing to publish a possibly-broken image."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Timed out (~30 min) waiting for CI on ${sha}."
+          exit 1
+
   publish-tts:
+    needs: [ci-gate]
+    if: ${{ always() && needs.ci-gate.result != 'failure' && needs.ci-gate.result != 'cancelled' }}
     uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
     with:
       image_name: ghcr.io/roxabi/voicecli-tts
@@ -15,6 +48,8 @@ jobs:
       release_please_component: voicecli
 
   publish-stt:
+    needs: [ci-gate]
+    if: ${{ always() && needs.ci-gate.result != 'failure' && needs.ci-gate.result != 'cancelled' }}
     uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
     with:
       image_name: ghcr.io/roxabi/voicecli-stt
@@ -22,6 +57,8 @@ jobs:
       release_please_component: voicecli
 
   publish-mock:
+    needs: [ci-gate]
+    if: ${{ always() && needs.ci-gate.result != 'failure' && needs.ci-gate.result != 'cancelled' }}
     uses: Roxabi/.github/.github/workflows/publish-container.yml@v1
     with:
       image_name: ghcr.io/roxabi/voicecli-mock
