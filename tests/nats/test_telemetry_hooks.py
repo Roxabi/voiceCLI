@@ -40,6 +40,8 @@ class TestVoiceTelemetryHooks:
         assert len(spans) == 1
         assert spans[0].attributes[ATTR_BLOB_REF_IN] == "audio/in/key"
         assert spans[0].attributes[ATTR_MODEL] == "whisper-large"
+        assert "text" not in spans[0].attributes
+        assert "transcript" not in spans[0].attributes
 
     @pytest.mark.asyncio
     async def test_tts_adapter_records_blob_out_and_model(self) -> None:
