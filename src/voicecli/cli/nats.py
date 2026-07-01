@@ -53,6 +53,7 @@ def nats_serve_tts(
     from voicecli.runtime.model_registry import model_registry
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_engine
     from voicecli.adapters.nats.synthesize_adapter import TtsNatsAdapter
+    from voicecli.obs.otel_wiring import build_lifecycle_hooks
 
     apply_nats_env_from_config()
 
@@ -91,6 +92,7 @@ def nats_serve_tts(
         reject_when_full=reject_when_full,
         heartbeat_interval=heartbeat_interval,
         drain_timeout=drain_timeout,
+        lifecycle_hooks=build_lifecycle_hooks("voicecli-tts"),
     )
 
     asyncio.run(adapter.run(nats_url))
@@ -121,6 +123,7 @@ def nats_serve_stt(
     from voicecli.core.config import apply_nats_env_from_config
     from voicecli.adapters.nats.config import _probe_socket_daemon, _resolve_model
     from voicecli.adapters.nats.transcribe_adapter import SttNatsAdapter
+    from voicecli.obs.otel_wiring import build_lifecycle_hooks
 
     apply_nats_env_from_config()
 
@@ -155,6 +158,7 @@ def nats_serve_stt(
         reject_when_full=reject_when_full,
         heartbeat_interval=heartbeat_interval,
         drain_timeout=drain_timeout,
+        lifecycle_hooks=build_lifecycle_hooks("voicecli-stt"),
     )
 
     asyncio.run(adapter.run(nats_url))

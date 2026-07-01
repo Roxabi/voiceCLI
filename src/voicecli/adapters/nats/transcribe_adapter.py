@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from roxabi_contracts.envelope import CONTRACT_VERSION
+from roxabi_contracts.telemetry import (
+    ATTR_BLOB_REF_IN,
+    ATTR_MODEL,
+    MessageLifecycleHooks,
+)
 from roxabi_contracts.voice import SUBJECTS as VOICE_SUBJECTS
 from roxabi_contracts.voice.models import SttRequest, SttResponse
 from roxabi_nats import NatsAdapterBase
@@ -55,6 +60,7 @@ class SttNatsAdapter(LifecycleMixin, NatsAdapterBase):
         reject_when_full: bool = False,
         heartbeat_interval: float = 5.0,
         drain_timeout: float = 30.0,
+        lifecycle_hooks: MessageLifecycleHooks | None = None,
     ) -> None:
         super().__init__(
             SUBJECT,
@@ -66,6 +72,7 @@ class SttNatsAdapter(LifecycleMixin, NatsAdapterBase):
             drain_timeout=drain_timeout,
             inbox_prefix="_inbox.voice-stt",
             wait_ready=False,
+            lifecycle_hooks=lifecycle_hooks,
         )
         self.default_model = default_model
         self.max_concurrent = max_concurrent
@@ -119,6 +126,15 @@ class SttNatsAdapter(LifecycleMixin, NatsAdapterBase):
 
     def _extra_subjects(self) -> list[str]:
         return [f"{self.subject}.{self._worker_id}"]
+
+    def telemetry_attributes(self, payload: dict, result: object | None) -> dict[str, str]:
+        del result
+        blob = payload.get("blob_ref") or {}
+        store_key = blob.get("store_key", "") if isinstance(blob, dict) else ""
+        return {
+            ATTR_BLOB_REF_IN: store_key if isinstance(store_key, str) else "",
+            ATTR_MODEL: str(payload.get("model") or self.default_model),
+        }
 
     async def handle(self, msg: Any, payload: dict) -> None:  # type: ignore[override]
         if msg.subject in self._lifecycle_subjects():
