@@ -9,9 +9,6 @@ Python 3.12 via `uv` · Typer CLI · PyTorch 2.7+ cu128 · ruff (L≤100, py312)
 ## TL;DR
 
 - **Project:** VoiceCLI
-- **Before work:** `/dev #N` = single entry — picks tier (S / F-lite / F-full) + drives lifecycle
-- **Never:** `--force` / `--hard` / `--amend`
-- **Always:** use matching skill even w/o slash cmd
 
 ### Code Review
 
