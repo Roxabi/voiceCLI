@@ -9,6 +9,10 @@ on:
 jobs:
   bump:
     uses: Roxabi/roxabi-factory/.github/workflows/contracts-bump.yml@staging
+    # Reusable workflows do NOT inherit caller secrets by default — without this the
+    # reusable workflow's actions/create-github-app-token fails ("private-key must be
+    # non-empty"), which broke this weekly cron 9/9 runs since inception (audit 2026-07-01).
+    secrets: inherit
     with:
       satellite_repo: ${{ github.repository }}
       packages: "roxabi-contracts roxabi-nats roxabi-blobs"
