@@ -28,4 +28,4 @@ def test_run_dictate_uses_dynamic_voicecli_bin() -> None:
 
 def test_heal_refuses_dirty_repo() -> None:
     text = WRAPPER.read_text(encoding="utf-8")
-    assert "git -C" in text and "status --porcelain" in text
+    assert "git -C" in text and "status --porcelain --untracked-files=no" in text
