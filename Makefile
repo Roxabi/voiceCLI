@@ -41,7 +41,7 @@ install:
 	uv sync
 	@# Git hooks — NOT `pre-commit install`: it refuses whenever core.hooksPath
 	@# is set at any scope, which silently left this repo without a pre-push hook.
-	@bash tools/install-hooks.sh || echo "make install: git hooks NOT installed (pre-commit missing?) — run 'uv tool install pre-commit' then 'bash tools/install-hooks.sh'"
+	@bash tools/install-hooks.sh || echo "make install: git hooks NOT installed (pre-commit missing?) — run 'uv tool install pre-commit' then 'bash tools/install-hooks.sh'" >&2
 
 lint:
 	uv run ruff check .
