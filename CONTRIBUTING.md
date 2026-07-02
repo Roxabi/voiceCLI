@@ -5,8 +5,13 @@
 ```bash
 git clone https://github.com/Roxabi/voiceCLI && cd voiceCLI
 uv sync                         # install all dependencies
+bash tools/install-hooks.sh     # git hooks (pre-commit + pre-push) — or `make install`
 uv run voicecli --help          # verify install
 ```
+
+Note: plain `pre-commit install` refuses to run when `core.hooksPath` is set
+at any git config scope; `tools/install-hooks.sh` writes the same dispatchers
+directly into the effective hooks dir instead.
 
 Requires Python 3.11–3.12, a CUDA GPU, and [uv](https://docs.astral.sh/uv/).
 
