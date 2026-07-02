@@ -19,7 +19,7 @@ Pick the best clean speech segment from an audio or video file for voice cloning
 /sample-pick audio.wav --min-duration 20
 ```
 
-¬ path → DP(B) for file path.
+¬ path → ask user for file path.
 
 ## Arguments
 
