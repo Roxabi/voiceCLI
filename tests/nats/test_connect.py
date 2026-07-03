@@ -68,16 +68,14 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts", "--engine", "qwen-fast"])
 
         assert result.exit_code == 0, result.output
         assert mock_run.call_count == 1
-        # SDK's run() takes nats_url positionally; nkey seed is read from env by SDK
-        assert mock_run.call_args.args == ("nats://localhost:4222",)
+        assert mock_run.call_args.args[1] == "nats://localhost:4222"
 
     def test_cli_connects_without_nkey_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI successfully starts adapter even without NATS_NKEY_SEED_PATH (dev mode)."""
@@ -93,8 +91,7 @@ class TestNkeyEnvVarResolution:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts", "--engine", "qwen-fast"])
@@ -134,8 +131,7 @@ class TestVramGuard:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="stale"),
             patch(
-                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ),
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
@@ -165,15 +161,14 @@ class TestSttConnect:
         with (
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "stt", "--model", "base"])
 
         assert result.exit_code == 0, result.output
         assert mock_run.call_count == 1
-        assert mock_run.call_args.args == ("nats://localhost:4222",)
+        assert mock_run.call_args.args[1] == "nats://localhost:4222"
 
 
 class TestMissingNatsUrl:
@@ -286,8 +281,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
@@ -316,8 +310,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.tts"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.synthesize_adapter.TtsNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "tts"])
@@ -346,8 +339,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
@@ -430,8 +422,7 @@ class TestNatsUrlSchemeValidation:
             caplog.at_level(logging.WARNING, logger="voicecli.nats-serve.stt"),
             patch("voicecli.adapters.nats.config._probe_socket_daemon", return_value="absent"),
             patch(
-                "voicecli.adapters.nats.transcribe_adapter.SttNatsAdapter.run",
-                new_callable=AsyncMock,
+                "voicecli.adapters.nats._fleet_runner.run_adapter_with_fleet_reporter_sync",
             ) as mock_run,
         ):
             result = CliRunner().invoke(app, ["nats-serve", "stt"])
