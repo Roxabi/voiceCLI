@@ -1862,7 +1862,7 @@ wheels = [
 [[package]]
 name = "roxabi-blobs"
 version = "0.1.2"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-blobs&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
@@ -1872,7 +1872,7 @@ dependencies = [
 [[package]]
 name = "roxabi-contracts"
 version = "0.13.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-contracts&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -1880,7 +1880,7 @@ dependencies = [
 [[package]]
 name = "roxabi-nats"
 version = "0.4.2"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-nats&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "nats-py" },
     { name = "nkeys" },
@@ -1890,7 +1890,7 @@ dependencies = [
 [[package]]
 name = "roxabi-obs"
 version = "0.1.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-obs&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-obs&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "roxabi-contracts" },
     { name = "roxabi-nats" },
@@ -1899,7 +1899,7 @@ dependencies = [
 [[package]]
 name = "roxabi-otel"
 version = "0.1.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-otel&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
@@ -1910,7 +1910,7 @@ dependencies = [
 [[package]]
 name = "roxabi-satellite"
 version = "0.1.0"
-source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=staging#0bebd39b7228eb2fd5353406ea8e7b3f4fcfbd91" }
+source = { git = "https://github.com/Roxabi/roxabi-factory.git?subdirectory=packages%2Froxabi-satellite&branch=staging#f717d8aecffb2be80a3e67e6db5089de25dd7625" }
 dependencies = [
     { name = "pydantic" },
     { name = "roxabi-blobs" },
