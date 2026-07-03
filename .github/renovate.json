@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":separateMajorReleases"
+  ],
+  "timezone": "Europe/Paris",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "minimumReleaseAge": "3 days",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "roxabi SDK pins (git-refs) — grouped weekly, human review",
+      "matchDatasources": ["git-refs"],
+      "matchSourceUrls": ["https://github.com/Roxabi/roxabi-factory"],
+      "matchPackageNames": ["roxabi-nats", "roxabi-contracts", "roxabi-blobs"],
+      "groupName": "roxabi sdk",
+      "labels": ["dependencies", "roxabi-sdk"],
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "matchManagers": ["pep621", "uv"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python non-major"
+    },
+    {
+      "matchManagers": ["pep621", "uv"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "python majors",
+      "labels": ["dependencies", "major"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "labels": ["dependencies", "ci"]
+    }
+  ]
+}
