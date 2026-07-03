@@ -9,6 +9,7 @@
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
   "prConcurrentLimit": 5,
+  "minimumReleaseAge": "3 days",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"]
@@ -26,21 +27,18 @@
     {
       "matchManagers": ["pep621", "uv"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "python non-major",
-      "minimumReleaseAge": "3 days"
+      "groupName": "python non-major"
     },
     {
       "matchManagers": ["pep621", "uv"],
       "matchUpdateTypes": ["major"],
       "groupName": "python majors",
-      "labels": ["dependencies", "major"],
-      "minimumReleaseAge": "3 days"
+      "labels": ["dependencies", "major"]
     },
     {
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
-      "labels": ["dependencies", "ci"],
-      "minimumReleaseAge": "3 days"
+      "labels": ["dependencies", "ci"]
     }
   ]
 }
