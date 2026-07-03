@@ -94,12 +94,12 @@ For distributed TTS/STT deployment via NATS. The satellite supports **per-reques
 
 ```toml
 [nats]
-max_cached_engines = 2   # engines to keep hot (LRU cache). Default: 2.
+max_cached_engines = 1   # engines kept hot in VRAM (LRU cache). Default: 1.
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `max_cached_engines` | `2` | Maximum engines cached in VRAM. Evicts LRU when full. |
+| `max_cached_engines` | `1` | Maximum engines cached in VRAM (LRU). Evicts oldest when full; models load on first request, not at satellite boot. |
 
 **How per-request switching works:**
 

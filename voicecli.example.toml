@@ -15,7 +15,7 @@ engine = "qwen"
 
 # ── NATS satellite settings ───────────────────────────────────────────────────
 # [nats]
-# max_cached_engines = 2   # engines to keep hot (LRU cache). Default: 2.
+# max_cached_engines = 1   # engines kept hot in VRAM (LRU cache). Default: 1. Loads on first request.
 #                          # Per-request engine switching is supported — the satellite
 #                          # hot-swaps engines via LRU eviction with VRAM awareness.
 

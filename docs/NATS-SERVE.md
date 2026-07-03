@@ -26,8 +26,12 @@ dependency on voicecli, enabling each service to be deployed and restarted indep
 1. Validate env vars and file permissions (seed file `0600`).
 2. Run the VRAM-sequencing guard (probe local socket daemon).
 3. Connect to NATS and join the queue group (`tts_workers` / `stt_workers`).
-4. Load the TTS/STT engine model into VRAM.
-5. Begin accepting requests and publishing heartbeats.
+4. Configure `model_registry` (`max_cached_engines`, default **1**) — **no model is loaded yet**.
+5. Begin accepting requests and publishing heartbeats (`model_loaded` is empty until the first inference).
+
+Models load **lazily on the first request** (VRAM lifecycle #36/#37, ADR-095): TTS via
+`model_registry.get(engine)` inside the synthesis executor; STT via idempotent `warmup_model()`
+on the first transcription. See [Model loading and VRAM cache](#model-loading-and-vram-cache).
 
 Both subcommands are now available: `nats-serve tts` (Slice 1) and `nats-serve stt` (Slice 2).
 
@@ -204,7 +208,8 @@ loop-restarts on exit 78. `stopwaitsecs=35` must exceed `VOICECLI_DRAIN_TIMEOUT`
 |---|---|---|
 | Process exits 78 immediately on startup | Live socket daemon (`tts-serve` / `stt-serve`) detected | Stop the socket daemon (`systemctl --user stop voicecli-tts` or `pkill -f 'voicecli serve'`), then restart; or pass `--allow-coexist` if coexistence is intentional |
 | `PermissionError` referencing the seed file path | NKey seed file is not `0600` | `chmod 600 ~/.roxabi/voicecli/nkeys/voice-tts.seed` |
-| Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, or mismatched queue group name | Verify `NATS_URL` is reachable from the satellite host; queue group names are `tts_workers` (TTS) and `stt_workers` (STT) |
+| Replies never arrive at the hub / requests time out | Wrong `NATS_URL`, network partition, mismatched queue group, or **worker crash loop** | Verify `NATS_URL` is reachable; queue groups are `tts_workers` / `stt_workers`. On the hub: `systemctl --user is-active voicecli-stt voicecli-tts` and `podman logs voicecli-stt`. Stale images missing `roxabi-contracts` updates crash at import (`VoiceLifecycleRequest`) — `podman pull ghcr.io/roxabi/voicecli-{stt,tts}:staging && systemctl --user restart voicecli-{stt,tts}` |
+| `dictate nats` records but transcribe times out (60 s) | STT satellite down while NATS TCP probe still passes | Client records locally; failure is on stop+transcribe. Restart `voicecli-stt` on the hub (see above) |
 | Heartbeats stop arriving during a synthesis | Concurrency contract violated (bug) | Report it — the spec guarantees heartbeats continue independently of in-flight synthesis |
 | Hub logs `payload_too_large` | Reply WAV exceeds NATS server `max_payload` | Increase `max_payload` in the NATS server config, or shorten the synthesis text |
 | Satellite starts but produces no output; logs show CUDA OOM | VRAM exhausted by coexisting processes | Stop other GPU-heavy daemons, reduce `VOICECLI_MAX_CONCURRENT`, or move to a host with more VRAM |
@@ -216,11 +221,14 @@ loop-restarts on exit 78. `stopwaitsecs=35` must exceed `VOICECLI_DRAIN_TIMEOUT`
 The satellite logs its startup sequence to stdout. A healthy start looks like:
 
 ```
-INFO  vram-guard: no live socket daemon detected — proceeding
-INFO  nats: connected to nats://127.0.0.1:4222
-INFO  engine: model loaded in 12.3s (qwen-fast)
+INFO  model_registry configured: max_cached=1
+INFO  nats: connected to nats://factory-nats:4222
 INFO  nats-serve: joined queue group tts_workers — ready
 ```
+
+Heartbeats before the first request show `"model_loaded": []` (TTS) or `"model_loaded": null`
+(STT). After the first successful inference, `model_loaded` reflects the warm engine(s).
+Cold-load latency (~10–30 s TTS, ~5–15 s STT) is paid on that first request, not at boot.
 
 If the process exits before the "ready" line, check `stderr_logfile` for the Python
 traceback. The most common causes are: missing env vars, seed file permission error, NATS
@@ -280,6 +288,22 @@ ADR-044 freezes the TTS request envelope in `lyra/artifacts/plans/688-voicecli-c
 
 ---
 
+## Model loading and VRAM cache
+
+NATS satellites intentionally **do not preload** ML weights at boot. This keeps startup
+fast (<1 s after NATS connect) and avoids pinning VRAM before any request arrives.
+
+| Modality | When the model loads | What stays in VRAM |
+|---|---|---|
+| TTS | First `api.generate` / `api.clone` for a given `engine` | Up to `max_cached_engines` engines in `model_registry` (LRU + VRAM eviction) |
+| STT | First `warmup_model()` inside `run_transcription` | One whisper model for the process lifetime |
+
+**Contrast with socket daemons** (`voicecli serve --engine qwen`): optional eager preload at
+daemon start for local low-latency CLI use. Do not run socket daemons alongside NATS
+satellites on the same GPU — the VRAM-sequencing guard (exit 78) enforces this.
+
+---
+
 ## Engine hot-swapping
 
 The TTS satellite supports **per-request engine switching** — a single satellite can serve
@@ -300,11 +324,13 @@ In `voicecli.toml`:
 
 ```toml
 [nats]
-max_cached_engines = 2  # keep N engines hot (default: 2)
+max_cached_engines = 1  # engines kept hot in VRAM (LRU). Default: 1.
 ```
 
-Higher values keep more engines hot but require more VRAM. On a 10 GB GPU, 2 engines
-is the practical limit (qwen-fast ~3.5 GB + chatterbox ~1.8 GB = ~5.3 GB steady-state).
+With the default of **1**, only the **most recently used** engine stays loaded; switching
+engines evicts the previous one (VRAM-aware). Raise to `2` only when the GPU has headroom —
+on a 10 GB RTX 3080, `qwen-fast` (~7.4 GB) alone nearly fills the budget; a second slot
+is only realistic for smaller engines (e.g. `chatterbox` ~2 GB + another small model).
 
 ### Heartbeat visibility
 
@@ -439,7 +465,7 @@ Error codes:
 | `malformed_request` | Missing or invalid `request_id`, missing `audio_b64`, or `request_id` fails format validation |
 | `audio_decode_failed` | `audio_b64` is not valid base64 |
 | `transcription_failed` | faster-whisper raised an exception during inference |
-| `model_load_failed` | Model could not be loaded into VRAM at startup |
+| `model_load_failed` | faster-whisper model could not be loaded into VRAM on the **first** transcription request (STT lazy warmup) |
 | `capacity_exceeded` | All semaphore slots busy and `VOICECLI_REJECT_WHEN_FULL=1` |
 | `payload_too_large` | Reply payload exceeds the NATS server `max_payload` limit |
 
