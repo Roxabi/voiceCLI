@@ -73,10 +73,11 @@ See [Ubiquitous Language — Instruct vs Structured Parts](./architecture/ubiqui
 
 ```toml
 [stt]
-model        = "large-v3-turbo"   # Whisper model (overridden by --model flag)
-hotkey       = "alt+space"        # Hotkey for --listen mode
-auto_paste   = true               # WSL2: write AHK trigger file after transcription
-default_mode = "default"          # Starting mode on daemon launch
+model                 = "large-v3-turbo"   # Whisper model (overridden by --model flag)
+hotkey                = "alt+space"        # Hotkey for --listen mode
+auto_paste            = true               # WSL2: write AHK trigger file after transcription
+default_mode          = "default"          # Starting mode on daemon launch
+segment_context_carry = true               # Keep punctuation across pause-split VAD chunks
 ```
 
 | Key | Default | Description |
@@ -85,6 +86,7 @@ default_mode = "default"          # Starting mode on daemon launch
 | `hotkey` | `alt+space` | Hotkey string for `voicecli dictate --listen` |
 | `auto_paste` | `false` | Write AHK paste trigger after transcription (WSL2) |
 | `default_mode` | `"default"` | Initial STT mode; cycle with `Alt+Shift+Tab` |
+| `segment_context_carry` | `true` | Propagate transcript context between VAD speech chunks (pauses > 500 ms) so punctuation carries across thinking pauses; `false` restores legacy single-pass decode |
 
 Requires daemon restart after changes. See [dictation-setup.md](./dictation-setup.md) for the full WSL2 setup.
 
