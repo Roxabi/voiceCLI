@@ -14,6 +14,8 @@ from voicecli.runtime.transcribe import (
     _resolve_segment_context_carry,
     _transcribe_single_pass,
     _transcribe_with_segment_carry,
+    segments_to_wire,
+    transcribe,
 )
 
 
@@ -137,3 +139,95 @@ class TestTranscribeSinglePass:
         assert captured["vad_filter"] is True
         assert captured["condition_on_previous_text"] is False
         assert seg_list[0].text == "Bonjour."
+
+
+class TestSegmentsToWire:
+    def test_serializes_segment_dataclasses(self):
+        segments = [Segment(start=0.0, end=1.5, text="Bonjour.")]
+        assert segments_to_wire(segments) == [{"start": 0.0, "end": 1.5, "text": "Bonjour."}]
+
+
+class TestTranscribeRouting:
+    def test_uses_single_pass_when_carry_disabled(self, tmp_path: Path):
+        audio_path = tmp_path / "audio.wav"
+        audio_path.write_bytes(b"fake")
+
+        with (
+            patch("voicecli.runtime.transcribe._try_daemon", return_value=None),
+            patch("voicecli.runtime.transcribe._load_model", return_value=MagicMock()),
+            patch(
+                "voicecli.runtime.transcribe._transcribe_single_pass",
+                return_value=([Segment(0.0, 1.0, "ok")], MagicMock(language="fr")),
+            ) as mock_single,
+            patch("voicecli.runtime.transcribe._transcribe_with_segment_carry") as mock_carry,
+        ):
+            result = transcribe(
+                audio_path,
+                _skip_daemon=True,
+                segment_context_carry=False,
+            )
+
+        mock_single.assert_called_once()
+        mock_carry.assert_not_called()
+        assert result.text == "ok"
+
+    def test_try_daemon_receives_resolved_carry_flag(self, tmp_path: Path):
+        from voicecli.runtime.transcribe import TranscriptionResult
+
+        audio_path = tmp_path / "audio.wav"
+        audio_path.write_bytes(b"fake")
+        daemon_result = TranscriptionResult(text="via daemon", language="en", segments=[])
+
+        with patch(
+            "voicecli.runtime.transcribe._try_daemon",
+            return_value=daemon_result,
+        ) as mock_daemon:
+            result = transcribe(audio_path, segment_context_carry=False)
+
+        assert mock_daemon.call_args.args[-1] is False
+        assert result.text == "via daemon"
+
+
+class TestHandleTranscribeFileWire:
+    def test_non_empty_segments_are_json_serializable(self, tmp_path: Path):
+        import json
+        from unittest.mock import MagicMock
+
+        from voicecli.runtime.dictation import handle_transcribe_file
+        from voicecli.runtime.transcribe import TranscriptionResult
+        from voicecli.runtime.transcribe_daemon import SttDaemon
+
+        audio_path = tmp_path / "audio.wav"
+        audio_path.write_bytes(b"RIFF")
+        daemon = SttDaemon(model="large-v3-turbo", socket_path=tmp_path / "stt.sock")
+        fake_conn = MagicMock()
+
+        def _capture_send(payload: bytes):
+            fake_conn.sent_data = payload
+
+        fake_conn.sendall.side_effect = _capture_send
+        fake_conn.sent_data = b""
+
+        mock_result = TranscriptionResult(
+            text="Bonjour. Suite.",
+            language="fr",
+            segments=[
+                Segment(start=0.0, end=1.0, text="Bonjour."),
+                Segment(start=5.5, end=6.0, text="Suite."),
+            ],
+        )
+
+        with (
+            patch("voicecli.runtime.transcribe_daemon.load_stt_config", return_value={}),
+            patch("voicecli.runtime.transcribe.transcribe", return_value=mock_result),
+        ):
+            handle_transcribe_file(
+                daemon,
+                fake_conn,
+                {"action": "transcribe_file", "audio_path": str(audio_path)},
+            )
+
+        response = json.loads(fake_conn.sent_data.decode().rstrip("\n"))
+        assert response["status"] == "ok"
+        assert len(response["segments"]) == 2
+        assert response["segments"][0]["text"] == "Bonjour."

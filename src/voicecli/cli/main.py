@@ -468,7 +468,13 @@ def transcribe(
     if json_output:
         import json
 
-        data = {"text": result.text, "language": result.language, "segments": result.segments}
+        from voicecli.runtime.transcribe import segments_to_wire
+
+        data = {
+            "text": result.text,
+            "language": result.language,
+            "segments": segments_to_wire(result.segments),
+        }
         text_out = json.dumps(data, ensure_ascii=False, indent=2)
     else:
         if result.language:
@@ -840,11 +846,12 @@ def stt_serve(
     autorestart=true
     stdout_logfile=/var/log/voicecli_stt.log
     """
-    from voicecli.core.config import load_config
+    from voicecli.core.config import load_config, load_stt_config
     from voicecli.runtime.transcribe_daemon import SttDaemon
 
     cfg = load_config()
     stt_cfg = cfg.get("stt", {}) if cfg else {}
+    stt_typed = load_stt_config()
     resolved_model = model or stt_cfg.get("model", "") or "large-v3-turbo"
     resolved_language = stt_cfg.get("language") or None
     resolved_threshold = stt_cfg.get("language_detection_threshold") or None
@@ -859,7 +866,7 @@ def stt_serve(
         language_fallback=resolved_fallback,
         default_mode=resolved_default_mode,
         auto_paste=bool(stt_cfg.get("auto_paste", False)),
-        segment_context_carry=bool(stt_cfg.get("segment_context_carry", True)),
+        segment_context_carry=bool(stt_typed.get("segment_context_carry", True)),
     ).serve()
 
 

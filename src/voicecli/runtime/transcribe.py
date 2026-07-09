@@ -42,7 +42,7 @@ _model_lock = threading.Lock()
 # VAD splits on pauses; cross-chunk punctuation uses an explicit carry prompt.
 _VAD_PARAMETERS = {"min_silence_duration_ms": 500, "speech_pad_ms": 400}
 # Whisper initial_prompt ≈224 tokens — keep the carry tail short.
-_MAX_CARRY_PROMPT_CHARS = 400
+_MAX_CARRY_PROMPT_CHARS = 200
 
 # Known Whisper hallucination signatures (YouTube/TV subtitle closings).
 # Case-insensitive match; stripped from tail and from standalone mid-text sentences.
@@ -197,22 +197,15 @@ def _transcribe_with_segment_carry(
     speech_chunks = get_speech_timestamps(audio, vad_opts, sampling_rate=16000)
 
     if not speech_chunks:
-        kwargs = _decode_kwargs(
+        return _transcribe_single_pass(
+            whisper,
+            audio_path,
             language=language,
             task=task,
             initial_prompt=initial_prompt,
             language_detection_threshold=language_detection_threshold,
             language_detection_segments=language_detection_segments,
         )
-        segments, info = whisper.transcribe(str(audio_path), **kwargs)
-        raw_segments = list(segments)
-        seg_list: list[Segment] = []
-        for s in raw_segments:
-            seg_text = _strip_hallucinations(s.text.strip())
-            if not seg_text:
-                continue
-            seg_list.append(Segment(start=s.start, end=s.end, text=seg_text))
-        return seg_list, info
 
     accumulated = ""
     seg_list = []
@@ -300,6 +293,13 @@ class Segment:
         self.start = float(self.start)
         self.end = float(self.end)
 
+    def to_wire_dict(self) -> dict[str, float | str]:
+        return {"start": self.start, "end": self.end, "text": self.text}
+
+
+def segments_to_wire(segments: list[Segment]) -> list[dict[str, float | str]]:
+    return [s.to_wire_dict() for s in segments]
+
 
 @dataclass
 class TranscriptionResult:
@@ -316,6 +316,7 @@ def _try_daemon(
     language_fallback: str | None,
     task: str,
     initial_prompt: str | None,
+    segment_context_carry: bool,
 ) -> TranscriptionResult | None:
     """Try the STT daemon for transcription. Returns None to fall back locally."""
     from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
@@ -340,6 +341,7 @@ def _try_daemon(
         req["language_fallback"] = language_fallback
     if initial_prompt is not None:
         req["initial_prompt"] = initial_prompt
+    req["segment_context_carry"] = segment_context_carry
 
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -391,6 +393,8 @@ def transcribe(
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         return TranscriptionResult(text="", language="en", segments=[])
 
+    carry = _resolve_segment_context_carry(segment_context_carry)
+
     # Try daemon first — reuses warm model, avoids loading locally
     if not _skip_daemon:
         daemon_result = _try_daemon(
@@ -401,6 +405,7 @@ def transcribe(
             language_fallback,
             task,
             initial_prompt,
+            carry,
         )
         if daemon_result is not None:
             return daemon_result
@@ -437,7 +442,6 @@ def transcribe(
             language = detect_info.language
 
     detect_threshold = language_detection_threshold if language_fallback is None else None
-    carry = _resolve_segment_context_carry(segment_context_carry)
     decode_fn = _transcribe_with_segment_carry if carry else _transcribe_single_pass
     seg_list, info = decode_fn(
         whisper,
