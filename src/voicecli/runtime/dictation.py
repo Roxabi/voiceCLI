@@ -80,6 +80,8 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
                 language_fallback=language_fallback,
                 task=task,
                 initial_prompt=initial_prompt,
+                segment_context_carry=daemon.segment_context_carry,
+                _skip_daemon=True,
             )
             _send_json(
                 conn,
@@ -252,6 +254,8 @@ def _stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
             language_fallback=daemon.language_fallback,
             task=transcribe_task,
             initial_prompt=transcribe_prompt,
+            segment_context_carry=daemon.segment_context_carry,
+            _skip_daemon=True,
         )
         text = result.text
         language = result.language

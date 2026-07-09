@@ -110,6 +110,7 @@ _KNOWN_STT: dict[str, type] = {
     "language_detection_segments": int,
     "language_fallback": str,
     "auto_paste": bool,
+    "segment_context_carry": bool,
 }
 
 

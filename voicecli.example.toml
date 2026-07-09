@@ -48,6 +48,7 @@ engine = "qwen"
 # language_detection_threshold = 0.8
 # language_detection_segments = 3
 # language_fallback = "en"       # fallback if detection confidence is low
+# segment_context_carry = true   # propagate punctuation across pause-split VAD chunks
 
 # ── STT modes — override built-ins or add your own ────────────────────────────
 # Built-in modes: french, english, translate-en, code
