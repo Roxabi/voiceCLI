@@ -49,6 +49,7 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
     language_detection_threshold = req.get("language_detection_threshold")
     language_detection_segments = req.get("language_detection_segments")
     language_fallback = req.get("language_fallback")
+    segment_context_carry = req.get("segment_context_carry")
 
     # Use daemon-level defaults when caller doesn't specify
     if language_detection_threshold is None:
@@ -57,8 +58,12 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
         language_detection_segments = daemon.language_detection_segments
     if language_fallback is None:
         language_fallback = daemon.language_fallback
+    if segment_context_carry is None:
+        segment_context_carry = daemon.segment_context_carry
+    else:
+        segment_context_carry = bool(segment_context_carry)
 
-    from voicecli.runtime.transcribe import transcribe
+    from voicecli.runtime.transcribe import segments_to_wire, transcribe
 
     try:
         import torch
@@ -80,6 +85,8 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
                 language_fallback=language_fallback,
                 task=task,
                 initial_prompt=initial_prompt,
+                segment_context_carry=segment_context_carry,
+                _skip_daemon=True,
             )
             _send_json(
                 conn,
@@ -87,7 +94,7 @@ def handle_transcribe_file(daemon: "SttDaemon", conn, req: dict) -> None:
                     "status": "ok",
                     "text": result.text,
                     "language": result.language,
-                    "segments": result.segments,
+                    "segments": segments_to_wire(result.segments),
                 },
             )
             return
@@ -252,6 +259,8 @@ def _stop_and_transcribe(daemon: "SttDaemon", conn) -> None:
             language_fallback=daemon.language_fallback,
             task=transcribe_task,
             initial_prompt=transcribe_prompt,
+            segment_context_carry=daemon.segment_context_carry,
+            _skip_daemon=True,
         )
         text = result.text
         language = result.language

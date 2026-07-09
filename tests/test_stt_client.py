@@ -563,6 +563,17 @@ class TestLoadSttConfig:
         assert result["hotkey"] == "ctrl+space"
         assert result["model"] == "large-v3-turbo"
 
+    def test_segment_context_carry_bool_parsed(self, tmp_path):
+        """segment_context_carry from [stt] is parsed as bool."""
+        from voicecli.core.config import load_stt_config
+
+        toml_file = tmp_path / "voicecli.toml"
+        toml_file.write_text("[stt]\nsegment_context_carry = false\n")
+
+        result = load_stt_config(config=toml_file)
+
+        assert result["segment_context_carry"] is False
+
 
 # ---------------------------------------------------------------------------
 # T11 — dictate CLI command

@@ -98,6 +98,7 @@ class SttDaemon:
         language_fallback: str | None = None,
         default_mode: str | None = None,
         auto_paste: bool = False,
+        segment_context_carry: bool = True,
     ):
         self.model = model
         self.language = language
@@ -106,6 +107,7 @@ class SttDaemon:
         self.language_fallback = language_fallback
         self.default_mode = default_mode
         self.auto_paste = auto_paste
+        self.segment_context_carry = segment_context_carry
         self._socket_path = Path(socket_path) if socket_path is not None else SOCKET_PATH
         self._state = State.IDLE
         self._lock = threading.Lock()

@@ -39,6 +39,11 @@ VALID_MODELS = frozenset(
 _model_cache: dict[str, WhisperModel] = {}
 _model_lock = threading.Lock()
 
+# VAD splits on pauses; cross-chunk punctuation uses an explicit carry prompt.
+_VAD_PARAMETERS = {"min_silence_duration_ms": 500, "speech_pad_ms": 400}
+# Whisper initial_prompt ≈224 tokens — keep the carry tail short.
+_MAX_CARRY_PROMPT_CHARS = 200
+
 # Known Whisper hallucination signatures (YouTube/TV subtitle closings).
 # Case-insensitive match; stripped from tail and from standalone mid-text sentences.
 
@@ -136,6 +141,148 @@ def _strip_hallucinations(text: str) -> str:
     return text
 
 
+def _build_carry_prompt(base: str | None, accumulated: str) -> str | None:
+    """Merge mode/vocab prompt with cleaned text from earlier VAD chunks."""
+    tail = accumulated.strip()
+    if len(tail) > _MAX_CARRY_PROMPT_CHARS:
+        tail = tail[-_MAX_CARRY_PROMPT_CHARS:].strip()
+    if not tail:
+        return base
+    if base:
+        return f"{base} {tail}"
+    return tail
+
+
+def _decode_kwargs(
+    *,
+    language: str | None,
+    task: str,
+    initial_prompt: str | None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+) -> dict:
+    kwargs: dict = dict(
+        language=language,
+        task=task,
+        beam_size=5,
+        vad_filter=False,
+        condition_on_previous_text=True,
+        no_speech_threshold=0.7,
+        compression_ratio_threshold=2.4,
+        initial_prompt=initial_prompt,
+    )
+    if language_detection_threshold is not None:
+        kwargs["language_detection_threshold"] = language_detection_threshold
+    if language_detection_segments is not None:
+        kwargs["language_detection_segments"] = language_detection_segments
+    return kwargs
+
+
+def _transcribe_with_segment_carry(
+    whisper: WhisperModel,
+    audio_path: Path,
+    *,
+    language: str | None,
+    task: str,
+    initial_prompt: str | None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+) -> tuple[list[Segment], object]:
+    """Transcribe each VAD speech region with context carried via initial_prompt."""
+    from faster_whisper.audio import decode_audio
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    audio = decode_audio(str(audio_path), sampling_rate=16000)
+    vad_opts = VadOptions(**_VAD_PARAMETERS)
+    speech_chunks = get_speech_timestamps(audio, vad_opts, sampling_rate=16000)
+
+    if not speech_chunks:
+        return _transcribe_single_pass(
+            whisper,
+            audio_path,
+            language=language,
+            task=task,
+            initial_prompt=initial_prompt,
+            language_detection_threshold=language_detection_threshold,
+            language_detection_segments=language_detection_segments,
+        )
+
+    accumulated = ""
+    seg_list = []
+    info = None
+
+    for chunk in speech_chunks:
+        chunk_audio = audio[chunk["start"] : chunk["end"]]
+        offset_s = chunk["start"] / 16000.0
+        carry = _build_carry_prompt(initial_prompt, accumulated)
+        kwargs = _decode_kwargs(
+            language=language,
+            task=task,
+            initial_prompt=carry,
+            language_detection_threshold=language_detection_threshold,
+            language_detection_segments=language_detection_segments,
+        )
+        segments, chunk_info = whisper.transcribe(chunk_audio, **kwargs)
+        info = chunk_info
+        chunk_parts: list[str] = []
+        for s in segments:
+            seg_text = _strip_hallucinations(s.text.strip())
+            if not seg_text:
+                continue
+            seg_list.append(Segment(start=s.start + offset_s, end=s.end + offset_s, text=seg_text))
+            chunk_parts.append(seg_text)
+        if chunk_parts:
+            chunk_text = " ".join(chunk_parts)
+            accumulated = f"{accumulated} {chunk_text}".strip() if accumulated else chunk_text
+
+    return seg_list, info
+
+
+def _transcribe_single_pass(
+    whisper: WhisperModel,
+    audio_path: Path,
+    *,
+    language: str | None,
+    task: str,
+    initial_prompt: str | None,
+    language_detection_threshold: float | None = None,
+    language_detection_segments: int | None = None,
+) -> tuple[list[Segment], object]:
+    """Legacy single-pass decode (pre-#154 style): no cross-VAD context carry."""
+    kwargs: dict = dict(
+        language=language,
+        task=task,
+        beam_size=5,
+        vad_filter=True,
+        condition_on_previous_text=False,
+        no_speech_threshold=0.7,
+        compression_ratio_threshold=2.4,
+        vad_parameters=dict(_VAD_PARAMETERS),
+    )
+    if initial_prompt is not None:
+        kwargs["initial_prompt"] = initial_prompt
+    if language_detection_threshold is not None:
+        kwargs["language_detection_threshold"] = language_detection_threshold
+    if language_detection_segments is not None:
+        kwargs["language_detection_segments"] = language_detection_segments
+    segments, info = whisper.transcribe(str(audio_path), **kwargs)
+    seg_list: list[Segment] = []
+    for s in segments:
+        seg_text = _strip_hallucinations(s.text.strip())
+        if not seg_text:
+            continue
+        seg_list.append(Segment(start=s.start, end=s.end, text=seg_text))
+    return seg_list, info
+
+
+def _resolve_segment_context_carry(value: bool | None) -> bool:
+    if value is not None:
+        return value
+    from voicecli.core.config import load_stt_config
+
+    return bool(load_stt_config().get("segment_context_carry", True))
+
+
 @dataclass
 class Segment:
     start: float
@@ -145,6 +292,13 @@ class Segment:
     def __post_init__(self) -> None:
         self.start = float(self.start)
         self.end = float(self.end)
+
+    def to_wire_dict(self) -> dict[str, float | str]:
+        return {"start": self.start, "end": self.end, "text": self.text}
+
+
+def segments_to_wire(segments: list[Segment]) -> list[dict[str, float | str]]:
+    return [s.to_wire_dict() for s in segments]
 
 
 @dataclass
@@ -162,6 +316,7 @@ def _try_daemon(
     language_fallback: str | None,
     task: str,
     initial_prompt: str | None,
+    segment_context_carry: bool,
 ) -> TranscriptionResult | None:
     """Try the STT daemon for transcription. Returns None to fall back locally."""
     from voicecli.core.paths import STT_SOCKET_PATH as SOCKET_PATH
@@ -186,6 +341,7 @@ def _try_daemon(
         req["language_fallback"] = language_fallback
     if initial_prompt is not None:
         req["initial_prompt"] = initial_prompt
+    req["segment_context_carry"] = segment_context_carry
 
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -229,12 +385,15 @@ def transcribe(
     language_fallback: str | None = None,
     task: str = "transcribe",
     initial_prompt: str | None = None,
+    segment_context_carry: bool | None = None,
     _skip_daemon: bool = False,
 ) -> TranscriptionResult:
     from voicecli.core.env import coerce_bool_env
 
     if model == "mock" and coerce_bool_env("VOICECLI_ENABLE_MOCK_ENGINE"):
         return TranscriptionResult(text="", language="en", segments=[])
+
+    carry = _resolve_segment_context_carry(segment_context_carry)
 
     # Try daemon first — reuses warm model, avoids loading locally
     if not _skip_daemon:
@@ -246,6 +405,7 @@ def transcribe(
             language_fallback,
             task,
             initial_prompt,
+            carry,
         )
         if daemon_result is not None:
             return daemon_result
@@ -281,32 +441,21 @@ def transcribe(
         else:
             language = detect_info.language
 
-    kwargs: dict = dict(
+    detect_threshold = language_detection_threshold if language_fallback is None else None
+    decode_fn = _transcribe_with_segment_carry if carry else _transcribe_single_pass
+    seg_list, info = decode_fn(
+        whisper,
+        audio_path,
         language=language,
         task=task,
-        beam_size=5,
-        vad_filter=True,
-        condition_on_previous_text=False,
-        no_speech_threshold=0.7,
-        compression_ratio_threshold=2.4,
-        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=400),
+        initial_prompt=initial_prompt,
+        language_detection_threshold=detect_threshold,
+        language_detection_segments=language_detection_segments,
     )
-    if initial_prompt is not None:
-        kwargs["initial_prompt"] = initial_prompt
-    if language_detection_threshold is not None and language_fallback is None:
-        kwargs["language_detection_threshold"] = language_detection_threshold
-    if language_detection_segments is not None:
-        kwargs["language_detection_segments"] = language_detection_segments
-    segments, info = whisper.transcribe(str(audio_path), **kwargs)
-    seg_list = []
-    for s in segments:
-        seg_text = _strip_hallucinations(s.text.strip())
-        if not seg_text:
-            continue
-        seg_list.append(Segment(start=s.start, end=s.end, text=seg_text))
+    for s in seg_list:
         duration = s.end - s.start
         print(
-            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {seg_text}",
+            f"[stt] segment [{s.start:.2f}s–{s.end:.2f}s, {duration:.2f}s]: {s.text}",
             file=__import__("sys").stderr,
         )
     full_text = _strip_hallucinations(" ".join(s.text for s in seg_list))

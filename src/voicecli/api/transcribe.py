@@ -24,6 +24,7 @@ def transcribe(
     language_fallback: str | None = None,
     initial_prompt: str | None = None,
     task: str = "transcribe",
+    segment_context_carry: bool | None = None,
     _skip_daemon: bool = False,
     allowed_base: Path | _Unrestricted = STT_OUTPUT_DIR,
 ):
@@ -44,6 +45,7 @@ def transcribe(
         language_fallback=language_fallback,
         initial_prompt=initial_prompt,
         task=task,
+        segment_context_carry=segment_context_carry,
         _skip_daemon=_skip_daemon,
     )
 
