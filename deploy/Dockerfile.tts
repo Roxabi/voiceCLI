@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ── build stage ──────────────────────────────────────────────────────────────
-ARG ML_BASE_TAG=cu128-py312-torch2.7.1
+ARG ML_BASE_TAG=cu128-staging
 FROM ghcr.io/roxabi/ml-base:${ML_BASE_TAG} AS builder
 
 ENV UV_LINK_MODE=copy \
