@@ -1,12 +1,29 @@
 {
   "extraKnownMarketplaces": {
-    "roxabi-marketplace": { "source": { "source": "github", "repo": "Roxabi/roxabi-plugins" } },
-    "voicecli-marketplace": { "source": { "source": "github", "repo": "Roxabi/voiceCLI" } },
-    "claude-plugins-official": { "source": { "source": "github", "repo": "anthropics/claude-plugins-official" } }
+    "roxabi-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "Roxabi/roxabi-plugins"
+      },
+      "autoUpdate": true
+    },
+    "voicecli-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "Roxabi/voiceCLI"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
   },
   "enabledPlugins": {
     "dev-core@roxabi-marketplace": true,
     "typescript-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true
+    "pyright-lsp@claude-plugins-official": true,
+    "dev-init@roxabi-marketplace": true
   }
 }
