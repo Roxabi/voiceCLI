@@ -122,6 +122,19 @@ WRAPPER_DST="$BIN_DIR/voicecli-dictate"
 install -m 0755 "$WRAPPER_SRC" "$WRAPPER_DST"
 say "Installed wrapper → $WRAPPER_DST"
 
+# Pin absolute checkout path so path-repair survives renames without hardcoding.
+REPO_PIN_DIR="$HOME/.roxabi/voicecli"
+REPO_PIN_FILE="$REPO_PIN_DIR/repo-path"
+mkdir -p "$REPO_PIN_DIR"
+printf '%s\n' "$REPO_DIR" >"$REPO_PIN_FILE"
+say "Pinned VOICECLI_REPO → $REPO_PIN_FILE ($REPO_DIR)"
+
+# Ensure ~/.local/bin/voicecli points at this checkout when the venv exists.
+if [ -x "$REPO_DIR/.venv/bin/voicecli" ]; then
+    ln -sf "$REPO_DIR/.venv/bin/voicecli" "$BIN_DIR/voicecli"
+    say "Linked voicecli → $BIN_DIR/voicecli"
+fi
+
 # ── Bind shortcut ─────────────────────────────────────────────────────────────
 case "$DE" in
     cosmic)

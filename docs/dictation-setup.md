@@ -353,7 +353,8 @@ still functions normally.
 | Notification **"Dictate failed: request timed out after 60s"** | `voicecli-stt` not running on the hub, or crash loop | On the hub: `systemctl --user is-active voicecli-stt` → `podman pull ghcr.io/roxabi/voicecli-stt:staging && systemctl --user restart voicecli-stt` |
 | First dictation slow (~5–15 s) after worker restart | Cold-load whisper on first NATS request (lazy VRAM) | Normal — subsequent dictations are faster |
 | Empty clipboard / no text | Silence or VAD removed all audio | Speak closer to the mic; check `~/.local/state/voicecli/recorder.log` |
-| **"Dictate failed: …"** with `ImportError` / `No such command 'nats'` | Stale local checkout or missing `[nats]` extra | Wrapper auto-heals when possible; else `cd ~/projects/voiceCLI && git checkout staging && uv sync --extra nats` |
+| **"Dictate failed: …"** with `ImportError` / `No such command 'nats'` | Stale local checkout or missing `[nats]` extra | Wrapper auto-heals when possible; else `cd ~/projects/roxabi/voiceCLI && git checkout staging && uv sync --extra nats` |
+| **"Dictate failed: … command not found"** / silent Ctrl+Space | `~/.local/bin/voicecli` symlink still points at an old checkout path after a repo move | Wrapper **path-repairs** locally (relink + optional `uv sync`, no git). Manual: `./scripts/install-shortcut.sh` from the new checkout, or `ln -sf <repo>/.venv/bin/voicecli ~/.local/bin/voicecli`. Heal log: `~/.local/state/voicecli/heal.log` |
 
 The wrapper only probes **TCP reachability** of the NATS port (2 s). A reachable hub with a
 down STT worker still accepts the recording; the failure appears on the **second** Ctrl+Space
